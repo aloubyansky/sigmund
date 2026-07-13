@@ -13,8 +13,8 @@ package dev.cyberstamp.sigmund.core;
  * {@link FingerprintCredential} never matches an {@link EmailCredential}, even if both
  * refer to the same person. Cross-backend matching works because
  * {@code SignatureTool.extractCredentials()} produces <em>all</em> applicable credential
- * types for a verified signature. For example, a Sigstore verification produces both an
- * {@link OidcCredential} and an {@link EmailCredential} (when the subject is an email),
+ * types for a verified signature. For example, a Sigstore verification produces both a
+ * {@link SigstoreCredential} and an {@link EmailCredential} (when the subject is an email),
  * so a signer configured with only an {@code email} credential matches via the
  * {@code EmailCredential} in the proven set — no cross-type matching is needed.
  *
@@ -23,13 +23,13 @@ package dev.cyberstamp.sigmund.core;
  * <li>{@code "openpgp4"}, {@code "openpgp6"} — {@link FingerprintCredential},
  * named by key version (not tool or algorithm)</li>
  * <li>{@code "email"} — {@link EmailCredential}</li>
- * <li>{@code "oidc"} — {@link OidcCredential} (issuer + subject)</li>
+ * <li>{@code "sigstore"} — {@link SigstoreCredential} (certificate-based identity)</li>
  * </ul>
  *
  * @see SignerIdentity
  * @see FingerprintCredential
  * @see EmailCredential
- * @see OidcCredential
+ * @see SigstoreCredential
  */
 public interface Credential {
 
@@ -39,14 +39,14 @@ public interface Credential {
     String TYPE_OPENPGP_V6 = "openpgp6";
     /** Email address credential type. */
     String TYPE_EMAIL = "email";
-    /** OIDC (issuer + subject) credential type. */
-    String TYPE_OIDC = "oidc";
+    /** Sigstore certificate credential type. */
+    String TYPE_SIGSTORE = "sigstore";
 
     /**
      * Returns the credential type identifier.
      * <p>
      * Built-in types include {@code "openpgp4"}, {@code "openpgp6"}, {@code "email"},
-     * and {@code "oidc"}. Custom types can be introduced for new signing backends.
+     * and {@code "sigstore"}. Custom types can be introduced for new signing backends.
      *
      * @return the type string, never {@code null}
      */

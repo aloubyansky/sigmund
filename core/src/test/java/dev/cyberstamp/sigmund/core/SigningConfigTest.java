@@ -85,7 +85,7 @@ class SigningConfigTest {
         void profilesIsDefensivelyCopied() {
             var profiles = new HashMap<>(Map.of("hybrid", List.of("openpgp4", "openpgp6")));
             var config = new SigningConfig(null, List.of(), profiles, null);
-            profiles.put("extra", List.of("oidc"));
+            profiles.put("extra", List.of("sigstore"));
             assertEquals(1, config.profiles().size());
         }
 
@@ -94,7 +94,7 @@ class SigningConfigTest {
             var config = new SigningConfig(null, List.of(),
                     Map.of("hybrid", List.of("openpgp4")), null);
             assertThrows(UnsupportedOperationException.class,
-                    () -> config.profiles().put("extra", List.of("oidc")));
+                    () -> config.profiles().put("extra", List.of("sigstore")));
         }
     }
 }

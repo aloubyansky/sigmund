@@ -18,7 +18,7 @@ Sigmund requires:
 - **JDK 17 or later** — Check with `java -version`
 - **Maven 3.9 or later** — Check with `mvn -version`
 
-No external tools are required for this walkthrough. Sigmund includes a pure-Java Bouncy Castle backend that handles classic OpenPGP signature verification without needing `gpg` or `sq` installed.
+No external tools are required for this walkthrough. Sigmund includes a pure-Java Bouncy Castle backend that handles classic OpenPGP signature verification without needing `gpg` or `sq` installed. Sigstore bundle (`.sigstore.json`) verification is also available when the `sigmund-sigstore` module is on the classpath — see [Signing with Sigstore](signing.md#signing-with-sigstore) for setup.
 
 > **Note:** The examples in this guide use the `sigmund` plugin prefix (e.g., `mvn sigmund:dependency-signers`). This requires adding the plugin to your project's `pluginManagement`:
 >
@@ -67,7 +67,7 @@ UNSIGNED
 Summary: All clear: 4 dependencies, 3 PGP4 signature(s), 0 PGP6 signature(s), 2 unique key(s)
 ```
 
-The output groups artifacts by signer. Each signer shows their name and email (if known) and key fingerprints. Classical v4 signatures (RSA, EdDSA) and post-quantum v6 signatures (ML-DSA) are reported separately. Unsigned artifacts appear in their own section.
+The output groups artifacts by signer. Each signer shows their name and email (if known) and key fingerprints. Classical v4 signatures (RSA, EdDSA) and post-quantum v6 signatures (ML-DSA) are reported separately. Unsigned artifacts appear in their own section. When the `sigmund-sigstore` module is on the classpath, `.sigstore.json` bundles are also resolved and verified — Sigstore signers appear with their OIDC identity (email or workflow URI) instead of a PGP fingerprint.
 
 Sigmund fetches unknown keys from `keys.openpgp.org` by default to resolve signer identities. The fetched keys are only kept in memory for the duration of the build and are not persisted to disk.
 
@@ -195,5 +195,6 @@ This workflow lets you incrementally maintain trust policies as your dependency 
 ## Next Steps
 
 - **[Trust Verification](trust-verification.md)** — Deep dive into trust configuration, wildcard patterns, and policy customization
-- **[Signing Guide](signing.md)** — Sign your own artifacts with GPG, Bouncy Castle, or hybrid post-quantum keys
+- **[Signing Guide](signing.md)** — Sign your own artifacts with GPG, Bouncy Castle, Sigstore, or hybrid post-quantum keys
 - **[Migrating from maven-gpg-plugin](migrating-from-gpg-plugin.md)** — Drop-in replacement guide for existing GPG workflows
+- **[Migrating from sigstore-maven-plugin](migrating-from-sigstore-maven-plugin.md)** — Migration guide for existing Sigstore workflows

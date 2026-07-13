@@ -57,21 +57,72 @@ class SigmundConfigParserTest {
         }
 
         @Test
-        void objectSignerWithOidc() {
+        void objectSignerWithSigstoreRepoUri() {
             var config = parse("""
                     signers:
                       ci-pipeline:
                         name: "CI Pipeline"
-                        oidc:
+                        sigstore:
                           issuer: "https://token.actions.githubusercontent.com"
-                          subject: "https://github.com/org/repo"
+                          source-repository-uri: "https://github.com/org/repo"
                     """);
             var ci = config.signers().get("ci-pipeline");
             assertEquals("CI Pipeline", ci.displayName());
             assertEquals(1, ci.credentials().size());
-            var oidc = assertInstanceOf(OidcCredential.class, ci.credentials().get(0));
-            assertEquals("https://token.actions.githubusercontent.com", oidc.issuer());
-            assertEquals("https://github.com/org/repo", oidc.subject());
+            var sc = assertInstanceOf(SigstoreCredential.class, ci.credentials().get(0));
+            assertEquals("https://token.actions.githubusercontent.com", sc.issuer());
+            assertEquals("https://github.com/org/repo", sc.sourceRepositoryUri());
+            assertNull(sc.subject());
+        }
+
+        @Test
+        void objectSignerWithSigstoreSubject() {
+            var config = parse("""
+                    signers:
+                      ci-pipeline:
+                        sigstore:
+                          issuer: "https://token.actions.githubusercontent.com"
+                          subject: "https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0"
+                    """);
+            var ci = config.signers().get("ci-pipeline");
+            var sc = assertInstanceOf(SigstoreCredential.class, ci.credentials().get(0));
+            assertEquals("https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0",
+                    sc.subject());
+        }
+
+        @Test
+        void sigstoreUnknownFieldThrows() {
+            var ex = assertThrows(PolicyConfigException.class, () -> parse("""
+                    signers:
+                      ci-pipeline:
+                        sigstore:
+                          issuer: "https://token.actions.githubusercontent.com"
+                          oidc-subject: "https://github.com/org/repo"
+                    """));
+            assertTrue(ex.getMessage().contains("oidc-subject"),
+                    "Error should name the unknown field: " + ex.getMessage());
+        }
+
+        @Test
+        void objectSignerWithSigstoreAllFields() {
+            var config = parse("""
+                    signers:
+                      ci-pipeline:
+                        sigstore:
+                          issuer: "https://token.actions.githubusercontent.com"
+                          source-repository-uri: "https://github.com/org/repo"
+                          build-trigger: "release"
+                          build-config-uri: "https://github.com/org/repo/.github/workflows/release.yml@refs/heads/main"
+                          runner-environment: "github-hosted"
+                    """);
+            var ci = config.signers().get("ci-pipeline");
+            var sc = assertInstanceOf(SigstoreCredential.class, ci.credentials().get(0));
+            assertEquals("https://token.actions.githubusercontent.com", sc.issuer());
+            assertEquals("https://github.com/org/repo", sc.sourceRepositoryUri());
+            assertEquals("release", sc.buildTrigger());
+            assertEquals("https://github.com/org/repo/.github/workflows/release.yml@refs/heads/main",
+                    sc.buildConfigUri());
+            assertEquals("github-hosted", sc.runnerEnvironment());
         }
 
         @Test

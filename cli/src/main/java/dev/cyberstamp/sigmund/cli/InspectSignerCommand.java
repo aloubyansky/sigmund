@@ -22,7 +22,7 @@ import picocli.CommandLine.Parameters;
  * CLI command that inspects a signer identity across all available sources.
  *
  * <p>
- * Takes a signer identifier (fingerprint, email, or OIDC identity) as input,
+ * Takes a signer identifier (fingerprint, email, or Sigstore identity) as input,
  * queries local stores and HKP keyservers, and prints a per-source report
  * showing key metadata, User IDs, and where the key was found vs. not found.
  *
@@ -30,7 +30,7 @@ import picocli.CommandLine.Parameters;
  * The identifier is auto-detected by default: hex strings are treated as
  * fingerprints, strings containing {@code @} as emails. Explicit
  * {@code --fingerprint} or {@code --email} flags override auto-detection.
- * OIDC identities require both {@code --oidc-issuer} and {@code --oidc-subject}.
+ * Sigstore identities require both {@code --sigstore-issuer} and {@code --sigstore-subject}.
  *
  * @see SignerInspectionReportFormatter
  */
@@ -46,11 +46,11 @@ public class InspectSignerCommand implements Callable<Integer> {
     @Option(names = "--email", description = "Treat identifier as an email")
     boolean forceEmail;
 
-    @Option(names = "--oidc-issuer", description = "OIDC issuer URL")
-    String oidcIssuer;
+    @Option(names = "--sigstore-issuer", description = "Sigstore certificate OIDC issuer URL")
+    String sigstoreIssuer;
 
-    @Option(names = "--oidc-subject", description = "OIDC subject")
-    String oidcSubject;
+    @Option(names = "--sigstore-subject", description = "Sigstore certificate SAN subject")
+    String sigstoreSubject;
 
     @Option(names = { "--keyservers", "--keyserver" }, split = ",", description = "Keyservers to query (comma-separated)")
     List<String> keyservers;
@@ -86,20 +86,20 @@ public class InspectSignerCommand implements Callable<Integer> {
      * Builds a {@link Credential} from the command-line arguments.
      *
      * <p>
-     * Priority: OIDC (if both issuer and subject are set) → forced email →
+     * Priority: Sigstore (if both issuer and subject are set) → forced email →
      * forced fingerprint → auto-detection via {@link CredentialParser#parse}.
      *
      * @return the parsed credential
      * @throws IllegalArgumentException if no identifier was provided or it cannot be parsed
      */
     Credential buildCredential() {
-        if (oidcIssuer != null && oidcSubject != null) {
-            return CredentialParser.fromOidc(oidcIssuer, oidcSubject);
+        if (sigstoreIssuer != null && sigstoreSubject != null) {
+            return CredentialParser.fromSigstore(sigstoreIssuer, sigstoreSubject);
         }
         if (identifier == null || identifier.isBlank()) {
             throw new IllegalArgumentException(
                     "Provide a fingerprint or email as a positional argument, "
-                            + "or use --oidc-issuer and --oidc-subject");
+                            + "or use --sigstore-issuer and --sigstore-subject");
         }
         if (forceEmail) {
             return CredentialParser.fromEmail(identifier);

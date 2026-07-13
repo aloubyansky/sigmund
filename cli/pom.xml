@@ -30,8 +30,16 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>dev.cyberstamp.sigmund</groupId>
+            <artifactId>sigmund-sigstore</artifactId>
+        </dependency>
+        <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-picocli</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.logging</groupId>
+            <artifactId>commons-logging-jboss-logging</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>

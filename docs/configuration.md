@@ -20,10 +20,13 @@ Sigmund uses a `sigmund.yaml` file for configuration. This reference documents e
   - [BC (BouncyCastle)](#bc-bouncycastle)
   - [SQ (Sequoia)](#sq-sequoia)
   - [GPG (GnuPG)](#gpg-gnupg)
+  - [Sigstore](#sigstore)
 - [Common Configuration Patterns](#common-configuration-patterns)
   - [Minimal Verification-Only Config](#minimal-verification-only-config)
   - [CI/CD Signing Config](#cicd-signing-config)
   - [Multi-Tool Hybrid Signing](#multi-tool-hybrid-signing)
+  - [Sigstore-Only Signing](#sigstore-only-signing)
+  - [Mixed OpenPGP + Sigstore Signing](#mixed-openpgp--sigstore-signing)
   - [Strict Trust Policy](#strict-trust-policy)
   - [Permissive Development Config](#permissive-development-config)
 
@@ -60,12 +63,12 @@ signers:
     openpgp6: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
     email: "jane@example.com"
   
-  # CI/CD identity using OIDC credentials
+  # CI/CD identity using Sigstore credentials
   github-bot:
     name: "GitHub Actions Bot"
-    oidc:
+    sigstore:
       issuer: "https://token.actions.githubusercontent.com"
-      subject: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/heads/main"
+      source-repository-uri: "https://github.com/myorg/myrepo"
     email: "bot@example.com"
   
   # Minimal form: email-only signer
@@ -160,6 +163,14 @@ tools:
     # Common settings
     executable: gpg
     home: ~/.gnupg
+  
+  sigstore:
+    # Use the Sigstore staging instance (for testing)
+    staging: false
+    # Custom trusted root file (optional, defaults to TUF-fetched root)
+    trusted-root: /path/to/trusted_root.json
+    # Allow interactive OIDC browser login (for desktop use)
+    interactive: true
 ```
 
 ## Section Reference
@@ -204,17 +215,26 @@ signers:
     openpgp6: "1234...CDEF"              # OpenPGP v6 fingerprint (64 hex chars)
     pgp6: "1234...CDEF"                  # Alias for openpgp6
     email: "jane@example.com"            # Email address
-    oidc:                                # OIDC credential (issuer + subject)
+    sigstore:                            # Sigstore credential (matchable fields)
       issuer: "https://token.actions.githubusercontent.com"
       subject: "https://github.com/org/repo/.github/workflows/ci.yml@refs/heads/main"
 ```
 
 **Credential types:**
 
-- **`openpgp4` / `pgp4`** — OpenPGP v4 fingerprint (40 hexadecimal characters). Matched against PGP and Sigstore signatures.
+- **`openpgp4` / `pgp4`** — OpenPGP v4 fingerprint (40 hexadecimal characters). Matched against OpenPGP v4 signatures.
 - **`openpgp6` / `pgp6`** — OpenPGP v6 fingerprint (64 hexadecimal characters). Matched against PGP signatures only (v6 keys).
 - **`email`** — Email address. Matched case-insensitively against PGP user IDs and Sigstore OIDC subjects (when subject is an email).
-- **`oidc`** — OIDC credential with `issuer` and `subject` fields. Both must match exactly (case-sensitive). Required for CI/CD pipelines and service accounts where issuer verification is critical.
+- **`sigstore`** — Sigstore certificate credential with matchable fields. Only the fields you specify need to match. Available fields:
+  - `issuer` — OIDC issuer URL
+  - `subject` — SAN subject (exact workflow+ref match, changes per release)
+  - `source-repository-uri` — source repository URL (stable across releases)
+  - `source-repository-owner-uri` — repository owner URL
+  - `build-trigger` — build trigger event (e.g., `release`, `push`)
+  - `build-config-uri` — build configuration URI (e.g., workflow file URI with ref)
+  - `runner-environment` — runner environment (e.g., `github-hosted`)
+
+  > **Signing-time vs verification-time matching:** When both `issuer` and `subject` are set and the signer is used for signing (`signing.signer`), the OIDC token is validated at signing time — mismatched identities are rejected before requesting a Fulcio certificate. All other fields (`source-repository-uri`, `build-trigger`, etc.) are Fulcio certificate extensions and are matched at verification time only. For CI pipelines where the `subject` includes a git ref that changes per release, use `issuer` + `source-repository-uri` for stable verification-time matching without config churn.
 
 **Shorthand aliases:**
 - `pgp4` is an alias for `openpgp4`
@@ -562,6 +582,29 @@ tools:
     executable: /usr/bin/gpg2
 ```
 
+### Sigstore
+
+Configured in the top-level `tools.sigstore` section. Sigstore uses OIDC-based keyless signing via `sigstore-java` — no long-lived keys to manage.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `staging` | `false` | Use the Sigstore staging instance instead of production. For testing only. |
+| `trusted-root` | (none) | Path to a custom `trusted_root.json` file. When omitted, the root is fetched via TUF from the Sigstore public-good instance. |
+| `interactive` | `false` | Allow interactive OIDC browser login. When `false`, only ambient credentials are used: the `SIGSTORE_JAVA_ID_TOKEN` environment variable (if set), then GitHub Actions OIDC. Set to `true` for desktop signing. |
+
+The Sigstore tool is pure Java (provided by the `sigmund-sigstore` module) and does not require any external CLI binary. It is ServiceLoader-discovered — adding the module to the classpath is sufficient.
+
+**Credential type:** `sigstore`  
+**File extension:** `.sigstore.json`
+
+**Example:**
+
+```yaml
+tools:
+  sigstore:
+    interactive: true
+```
+
 ## Common Configuration Patterns
 
 ### Minimal Verification-Only Config
@@ -581,14 +624,7 @@ trust:
 ```yaml
 version: 1
 
-signers:
-  ci-bot:
-    oidc:
-      issuer: "https://token.actions.githubusercontent.com"
-      subject: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/heads/main"
-
 signing:
-  signer: ci-bot
   toolchain: [bc]
 
 tools:
@@ -633,6 +669,64 @@ tools:
   gpg:
     key-name: "0xABCDEF12"  # Use v4 key
 ```
+
+### Sigstore-Only Signing
+
+```yaml
+version: 1
+
+signing:
+  toolchain: [sigstore]
+```
+
+No tool settings needed — ambient OIDC credentials from GitHub Actions are used automatically.
+
+To match signed artifacts against a specific Sigstore identity at verification time, add a signer with Sigstore credentials:
+
+```yaml
+version: 1
+
+signers:
+  ci-bot:
+    sigstore:
+      issuer: "https://token.actions.githubusercontent.com"
+      source-repository-uri: "https://github.com/myorg/myrepo"
+
+signing:
+  signer: ci-bot
+  toolchain: [sigstore]
+```
+
+### Mixed OpenPGP + Sigstore Signing
+
+```yaml
+version: 1
+
+signers:
+  release-lead:
+    name: "Release Lead"
+    openpgp4: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+    sigstore:
+      issuer: "https://token.actions.githubusercontent.com"
+      source-repository-uri: "https://github.com/myorg/myrepo"
+    email: "release@example.com"
+
+signing:
+  signer: release-lead
+  toolchain: [bc, sigstore]
+
+discovery:
+  toolchain: [bc, sigstore]
+
+tools:
+  bc:
+    signing-fingerprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+    passphrase-env: BC_PASSPHRASE
+  sigstore:
+    trusted-root: /etc/sigmund/trusted_root.json
+```
+
+This produces both a `.asc` (OpenPGP) and a `.sigstore.json` (Sigstore bundle) for each artifact. Verifiers match the `email` credential across both backends.
 
 ### Strict Trust Policy
 

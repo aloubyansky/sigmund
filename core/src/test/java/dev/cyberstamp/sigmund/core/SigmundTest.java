@@ -333,7 +333,7 @@ class SigmundTest {
             var openpgpFormat = mockFormat("openpgp", ".asc", true, List.of());
             var sigstoreFormat = mockFormat("sigstore", ".sigstore.json", false, List.of());
             var pgpTool = mockToolWithFormat("gpg", openpgpFormat, true, false, Set.of("openpgp4"));
-            var sigstoreTool = mockToolWithFormat("sigstore", sigstoreFormat, true, false, Set.of("oidc"));
+            var sigstoreTool = mockToolWithFormat("sigstore", sigstoreFormat, true, false, Set.of("sigstore"));
             var sigmund = Sigmund.builder().addTool(pgpTool).addTool(sigstoreTool).build();
 
             Set<String> extensions = sigmund.signatureFileExtensions();

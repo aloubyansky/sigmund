@@ -11,7 +11,7 @@ class CredentialMatchingTest {
     private static final VerifyResult PGP_PASS = new OpenPgpVerifyResult(
             Verdict.PASS, null, null, 4, null, null);
     private static final VerifyResult SIGSTORE_PASS = new SigstoreVerifyResult(
-            Verdict.PASS, null, null, null, null);
+            Verdict.PASS, null, null, null, null, -1);
 
     @Test
     void fingerprintMatchV4() {
@@ -32,7 +32,10 @@ class CredentialMatchingTest {
                 new EmailCredential("alice@example.com")));
 
         var evidence = new EvidenceResult(SIGSTORE_PASS, List.of(
-                new OidcCredential("https://accounts.google.com", "alice@example.com"),
+                new SigstoreCredential.Builder()
+                        .issuer("https://accounts.google.com")
+                        .subject("alice@example.com")
+                        .build(),
                 new EmailCredential("alice@example.com")),
                 "sigstore");
 
@@ -40,28 +43,36 @@ class CredentialMatchingTest {
     }
 
     @Test
-    void oidcMatchStrictIssuer() {
+    void sigstoreMatchStrictIssuer() {
         var signer = new SignerIdentity("ci", "CI Pipeline", List.of(
-                new OidcCredential("https://token.actions.githubusercontent.com",
-                        "https://github.com/org/repo")));
+                new SigstoreCredential.Builder()
+                        .issuer("https://token.actions.githubusercontent.com")
+                        .subject("https://github.com/org/repo")
+                        .build()));
 
         var evidence = new EvidenceResult(SIGSTORE_PASS, List.of(
-                new OidcCredential("https://token.actions.githubusercontent.com",
-                        "https://github.com/org/repo")),
+                new SigstoreCredential.Builder()
+                        .issuer("https://token.actions.githubusercontent.com")
+                        .subject("https://github.com/org/repo")
+                        .build()),
                 "sigstore");
 
         assertTrue(matchesAny(signer, evidence));
     }
 
     @Test
-    void oidcMismatchWrongIssuer() {
+    void sigstoreMismatchWrongIssuer() {
         var signer = new SignerIdentity("ci", "CI Pipeline", List.of(
-                new OidcCredential("https://token.actions.githubusercontent.com",
-                        "https://github.com/org/repo")));
+                new SigstoreCredential.Builder()
+                        .issuer("https://token.actions.githubusercontent.com")
+                        .subject("https://github.com/org/repo")
+                        .build()));
 
         var evidence = new EvidenceResult(SIGSTORE_PASS, List.of(
-                new OidcCredential("https://evil-issuer.com",
-                        "https://github.com/org/repo")),
+                new SigstoreCredential.Builder()
+                        .issuer("https://evil-issuer.com")
+                        .subject("https://github.com/org/repo")
+                        .build()),
                 "sigstore");
 
         assertFalse(matchesAny(signer, evidence));
