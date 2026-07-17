@@ -1,0 +1,46 @@
+package dev.cyberstamp.sigmund.plugin;
+
+import dev.cyberstamp.sigmund.core.Signer;
+import dev.cyberstamp.sigmund.core.SigningInfo;
+import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
+
+/**
+ * Displays the effective signing configuration and signer identities
+ * without performing any signing.
+ */
+@Mojo(name = "signing-info", requiresProject = false, threadSafe = true)
+public class SigningInfoMojo extends AbstractSigningMojo {
+
+    /**
+     * Signing profile to display. If not set, uses the default profile
+     * (or all signing tools when no default profile is configured).
+     */
+    @Parameter(property = "sigmund.profile")
+    private String profile;
+
+    @Override
+    public void execute() throws MojoExecutionException {
+        if (skip) {
+            getLog().info("Skipping signing-info");
+            return;
+        }
+        Signer signer = profile != null
+                ? createSigner(profile)
+                : createSigner();
+
+        var infos = signer.signingInfo();
+        if (infos.isEmpty()) {
+            getLog().warn("No signing identity information available");
+            return;
+        }
+
+        if (profile != null) {
+            getLog().info("Signing profile: " + profile);
+        }
+        for (SigningInfo info : infos) {
+            getLog().info(info.display());
+        }
+    }
+}

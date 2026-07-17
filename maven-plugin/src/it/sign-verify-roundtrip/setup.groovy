@@ -36,6 +36,14 @@ assert matcher.find() : "Could not find fingerprint in sq output:\n${output}"
 def fingerprint = matcher.group(1)
 println "Generated PQC key: ${fingerprint}"
 
+def sigmundYaml = new File(basedir, "sigmund.yaml")
+sigmundYaml.text = """\
+signing:
+  tools:
+    sq:
+      signing-fingerprint: "${fingerprint}"
+"""
+
 def props = new File(basedir, "test.properties")
-props.text = "sigmund.fingerprint=${fingerprint}\nsigmund.sqHome=${sqHome.absolutePath}\n"
+props.text = "sigmund.sqHome=${sqHome.absolutePath}\n"
 return true

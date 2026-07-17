@@ -83,7 +83,7 @@ jobs:
 
       - name: Verify PQC integration tests ran
         run: |
-          report=core/target/surefire-reports/io.github.cyberstamp.sigmund.core.RoundTripIntegrationTest.txt
+          report=core/target/surefire-reports/dev.cyberstamp.sigmund.core.RoundTripIntegrationTest.txt
           if [ ! -f "$report" ] || ! grep 'Tests run:' "$report" | grep -qvE 'Tests run: 0,'; then
             echo "::error::RoundTripIntegrationTest was not executed — PQC tests were silently skipped"
             exit 1

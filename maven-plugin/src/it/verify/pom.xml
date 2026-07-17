@@ -3,7 +3,7 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>io.github.cyberstamp.sigmund.it</groupId>
+    <groupId>dev.cyberstamp.sigmund.it</groupId>
     <artifactId>verify-test</artifactId>
     <version>1.0-SNAPSHOT</version>
     <properties>
@@ -20,16 +20,16 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>io.github.cyberstamp.sigmund</groupId>
+                <groupId>dev.cyberstamp.sigmund</groupId>
                 <artifactId>sigmund-maven-plugin</artifactId>
                 <version>@project.version@</version>
                 <executions>
-                    <!-- Phase 1: generate trust-config.yaml from actual dependency signatures -->
+                    <!-- Phase 1: generate sigmund.yaml from actual dependency signatures -->
                     <execution>
                         <id>generate-config</id>
                         <goals><goal>dependency-signers</goal></goals>
                         <configuration>
-                            <generateTrustConfig>${project.basedir}/trust-config.yaml</generateTrustConfig>
+                            <generateTrustConfig>${project.basedir}/sigmund.yaml</generateTrustConfig>
                             <fetchSignerInfo>true</fetchSignerInfo>
                         </configuration>
                     </execution>
@@ -38,7 +38,7 @@
                         <id>verify-trust</id>
                         <goals><goal>verify</goal></goals>
                         <configuration>
-                            <trustConfigFile>${project.basedir}/trust-config.yaml</trustConfigFile>
+                            <trustConfigFile>${project.basedir}/sigmund.yaml</trustConfigFile>
                         </configuration>
                     </execution>
                 </executions>
