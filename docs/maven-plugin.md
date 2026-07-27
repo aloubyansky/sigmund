@@ -200,21 +200,26 @@ mvn sigmund:dependency-signers \
 **Output:**
 
 ```
-Signer: Alice <alice@example.com>
-   PGP4 (RSA): 4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12
-   PGP6 (ML-DSA-65+Ed25519): D62AAB339E45E5EA2FD036872B01D46A517A2991...
+Signer: Alice Developer <alice@example.com>
+   PGP4 (EdDSA): 4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12
      com.example:lib-a:1.0
      com.example:lib-b:2.0
 
-Signer: UNKNOWN (key not in keyring)
-   PGP4 (RSA): DEADBEEFDEADBEEFDEADBEEF
+Signer: NOT VERIFIED
+   PGP4 (RSA): B2A3CF1E8D4F5A6B7C9D0E1F2A3B4C5D6E7F8A9B
      com.other:tool:3.0
+
+Signer: UNKNOWN (key not in keyring)
+   PGP4 (DSA): D1031D14464180E0
+     com.internal:messaging:2.1
 
 UNSIGNED
   com.internal:util:1.0
 
-Summary: All clear: 4 dependencies, 3 GPG signature(s), 1 PQC signature(s), 2 unique key(s)
+Summary: All clear: 4 dependencies, 3 PGP4 signature(s), 0 PQC signature(s), 2 unique key(s)
 ```
+
+Many signers appear as `NOT VERIFIED` because the default keyserver (`keys.openpgp.org`) only publishes identity information for keys whose owners have verified their email. See [Why Many Signers Appear as NOT VERIFIED](getting-started.md#why-many-signers-appear-as-not-verified) for details and how to resolve more names using additional keyservers.
 
 **Generating a trust config:**
 

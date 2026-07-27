@@ -151,11 +151,14 @@ When verifying a signature file:
 
 1. **Parse the `.asc` file** into armored blocks
 2. **Inspect each block** to extract packet version, algorithm ID, and issuer fingerprint
-3. **Try each tool** in priority order until one accepts the block
+3. **Try each tool** in priority order
    - Each tool's `canVerify()` method checks whether it can handle the signature
-   - BC attempts first by default, falling back to Sequoia or GPG if BC cannot verify
-4. **Verify the signature** using the selected tool
-5. **Retry with key fetching** if the result is `NO_KEY` (see [Key Discovery](#key-discovery))
+   - If a tool returns `PASS`, it is used immediately
+   - If a tool returns `NO_KEY` or `FAIL`, the next tool is tried — a different tool may have the key in its local keyring or support the algorithm
+   - If no tool returns `PASS`, the best non-PASS result is kept
+4. **Retry with key fetching** if the final result is `NO_KEY` (see [Key Discovery](#key-discovery))
+
+This fallthrough is important because each tool has access to different key stores. For example, BC checks its ephemeral cache and cert-d, GPG reads `pubring.kbx`, and Sequoia reads its own cert store. A key missing from one tool's store may be present in another's.
 
 ### Tool Capabilities
 
@@ -237,7 +240,7 @@ discovery:
 
 ### How Key Fetching Works
 
-1. Verification returns `NO_KEY`
+1. All tools return `NO_KEY` for a signature (key not in any local keyring)
 2. Sigmund extracts the issuer fingerprint from the signature packet
 3. Sigmund queries each keyserver in order until a key is found
 4. The key is imported (persistently if `import-to-keyring: true`, or in-memory if `false`)

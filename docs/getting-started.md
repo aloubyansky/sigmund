@@ -6,7 +6,6 @@ This guide walks you through your first experience with Sigmund — discovering 
 
 - [Prerequisites](#prerequisites)
 - [See Who Signed Your Dependencies](#see-who-signed-your-dependencies)
-- [Add the Plugin](#add-the-plugin)
 - [Generate a Trust Policy](#generate-a-trust-policy)
 - [Enforce the Policy](#enforce-the-policy)
 - [Update When Dependencies Change](#update-when-dependencies-change)
@@ -21,53 +20,77 @@ Sigmund requires:
 
 No external tools are required for this walkthrough. Sigmund includes a pure-Java Bouncy Castle backend that handles classic OpenPGP signature verification without needing `gpg` or `sq` installed.
 
+> **Note:** The examples in this guide use the `sigmund` plugin prefix (e.g., `mvn sigmund:dependency-signers`). This requires adding the plugin to your project's `pluginManagement`:
+>
+> ```xml
+> <pluginManagement>
+>   <plugins>
+>     <plugin>
+>       <groupId>dev.cyberstamp.sigmund</groupId>
+>       <artifactId>sigmund-maven-plugin</artifactId>
+>       <version>0.0.1-SNAPSHOT</version>
+>     </plugin>
+>   </plugins>
+> </pluginManagement>
+> ```
+>
+> Alternatively, replace `sigmund` with the full plugin coordinates, e.g.:
+> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1-SNAPSHOT:dependency-signers`
+
 ## See Who Signed Your Dependencies
 
-Run the `dependency-signers` goal on any Maven project to inspect signatures on all its dependencies — no POM changes required:
+Run the `dependency-signers` goal on any Maven project to inspect signatures on all its dependencies:
 
 ```bash
-mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1-SNAPSHOT:dependency-signers
+mvn sigmund:dependency-signers
 ```
 
 Sample output:
 
 ```
 Signer: Alice Developer <alice@example.com>
-   PGP4 (RSA): 4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12
-   PGP6 (ML-DSA-65+Ed25519): D62AAB339E45E5EA2FD036872B01D46A517A2991...
+   PGP4 (EdDSA): 4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12
      com.example:lib-a:1.0
      com.example:lib-b:2.0
 
-Signer: UNKNOWN (key not in keyring)
-   PGP4 (RSA): DEADBEEFDEADBEEFDEADBEEF
+Signer: NOT VERIFIED
+   PGP4 (RSA): B2A3CF1E8D4F5A6B7C9D0E1F2A3B4C5D6E7F8A9B
      com.other:tool:3.0
+
+Signer: UNKNOWN (key not in keyring)
+   PGP4 (DSA): D1031D14464180E0
+     com.internal:messaging:2.1
 
 UNSIGNED
   com.internal:util:1.0
 
-Summary: All clear: 4 dependencies, 3 PGP4 signature(s), 1 PGP6 signature(s), 2 unique key(s)
-PQ coverage: 1/4 dependencies have a post-quantum signature
+Summary: All clear: 4 dependencies, 3 PGP4 signature(s), 0 PGP6 signature(s), 2 unique key(s)
 ```
 
-The output groups artifacts by signer. Each signer shows their name/email (if known) and key fingerprints. Classical v4 signatures (RSA, EdDSA) and post-quantum v6 signatures (ML-DSA) are reported separately. Unsigned artifacts appear in their own section.
+The output groups artifacts by signer. Each signer shows their name and email (if known) and key fingerprints. Classical v4 signatures (RSA, EdDSA) and post-quantum v6 signatures (ML-DSA) are reported separately. Unsigned artifacts appear in their own section.
 
-Sigmund fetches unknown keys from `keys.openpgp.org` by default to resolve signer names and emails. The fetched keys are only kept in memory for the duration of the build and are not persisted to disk.
+Sigmund fetches unknown keys from `keys.openpgp.org` by default to resolve signer identities. The fetched keys are only kept in memory for the duration of the build and are not persisted to disk.
 
-## Add the Plugin
+### Why Many Signers Appear as NOT VERIFIED
 
-To use the shorthand `mvn sigmund:<goal>` syntax for the remaining steps, add the plugin to your project's `pom.xml`:
+You'll notice that many signers show as `NOT VERIFIED` rather than with a name and email. This is expected and is a consequence of how `keys.openpgp.org` — Sigmund's default keyserver — works.
 
-```xml
-<pluginManagement>
-  <plugins>
-    <plugin>
-      <groupId>dev.cyberstamp.sigmund</groupId>
-      <artifactId>sigmund-maven-plugin</artifactId>
-      <version>0.0.1-SNAPSHOT</version>
-    </plugin>
-  </plugins>
-</pluginManagement>
+Unlike older keyservers, `keys.openpgp.org` is a **verifying keyserver**: it only publishes a key's user ID (the name and email) after the key owner confirms their email address through a verification link. Keys whose owners haven't completed this step are served without user IDs — Sigmund gets the key material (enough for signature verification) but not the identity information, so the signer is reported as `NOT VERIFIED`.
+
+This is why `keys.openpgp.org` is the default rather than alternatives like `keyserver.ubuntu.com` or the legacy SKS pool. Those servers accept key uploads from anyone without any identity verification, which means anyone can upload a key claiming to be `Alice Developer <alice@example.com>`. The `keys.openpgp.org` model trades convenience for integrity: fewer names are visible, but the names you do see are backed by verified email ownership.
+
+### Resolving More Signer Names
+
+To resolve more signer names, you can add additional keyservers such as `keyserver.ubuntu.com` and `pgp.mit.edu`:
+
+```bash
+mvn sigmund:dependency-signers \
+  -Dsigmund.keyservers=hkps://keys.openpgp.org,hkps://keyserver.ubuntu.com,hkps://pgp.mit.edu
 ```
+
+With these additional keyservers, most signers will now show names and emails — including those previously listed as `NOT VERIFIED` or `UNKNOWN (key not in keyring)`.
+
+**Important:** The names and emails returned by keyservers other than `keys.openpgp.org` are **not verified**. Anyone can upload a key to those servers claiming any identity. Treat these as hints for investigation, not proof of who signed an artifact. Trust decisions in `sigmund.yaml` should be based on key fingerprints, not on self-reported names.
 
 ## Generate a Trust Policy
 

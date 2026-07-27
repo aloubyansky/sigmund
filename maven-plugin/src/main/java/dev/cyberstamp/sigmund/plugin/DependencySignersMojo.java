@@ -191,32 +191,45 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
                     .map(Map.Entry::getValue)
                     .toList();
 
-            boolean groupHasIssue = sortedKeys.stream()
-                    .noneMatch(vr -> vr.signerDisplayName() != null);
-
-            // Print signer name once, then all key lines
-            String signerName = sortedKeys.stream()
-                    .map(VerifyResult::signerDisplayName)
-                    .filter(n -> n != null)
-                    .findFirst().orElse(null);
-            if (signerName != null) {
-                getLog().info("Signer: " + signerName);
-            } else if (sortedKeys.stream().allMatch(vr -> vr.verdict() == Verdict.NO_KEY)) {
-                getLog().warn("Signer: UNKNOWN (key not in keyring)");
-            } else if (sortedKeys.stream().anyMatch(vr -> vr.verdict() == Verdict.FAIL)) {
-                getLog().warn("Signer: VERIFICATION FAILED");
-            } else {
-                getLog().warn("Signer: NOT VERIFIED");
-            }
+            // Sub-group keys by signer: same display name = same signer,
+            // no display name = each key is its own signer
+            Map<String, List<VerifyResult>> signerSubGroups = new LinkedHashMap<>();
             for (VerifyResult vr : sortedKeys) {
-                int pgpVersion = vr instanceof OpenPgpVerifyResult opvr ? opvr.version() : -1;
-                String ver = SignatureInspector.versionLabel(pgpVersion);
-                String keyId = vr.signerIdentifier() != null ? vr.signerIdentifier() : "-";
-                String keyLine = "   " + ver + formatAlgorithm(vr) + ": " + keyId;
-                if (signerName != null) {
-                    getLog().info(keyLine);
+                String key = vr.signerDisplayName() != null
+                        ? "name:" + vr.signerDisplayName()
+                        : "key:" + (vr.signerIdentifier() != null ? vr.signerIdentifier() : "?");
+                signerSubGroups.computeIfAbsent(key, k -> new ArrayList<>(2)).add(vr);
+            }
+
+            boolean anyIdentified = false;
+            for (var signerSub : signerSubGroups.values()) {
+                VerifyResult first = signerSub.get(0);
+                boolean identified;
+                if (first.signerDisplayName() != null) {
+                    getLog().info("Signer: " + first.signerDisplayName());
+                    identified = true;
+                } else if (signerSub.stream().allMatch(vr -> vr.verdict() == Verdict.NO_KEY)) {
+                    getLog().warn("Signer: UNKNOWN (key not in keyring)");
+                    identified = false;
+                } else if (signerSub.stream().anyMatch(vr -> vr.verdict() == Verdict.FAIL)) {
+                    getLog().warn("Signer: VERIFICATION FAILED");
+                    identified = false;
                 } else {
-                    getLog().warn(keyLine);
+                    getLog().warn("Signer: NOT VERIFIED");
+                    identified = false;
+                }
+                anyIdentified |= identified;
+                for (VerifyResult vr : signerSub) {
+                    int pgpVersion = vr instanceof OpenPgpVerifyResult opvr ? opvr.version() : -1;
+                    String ver = SignatureInspector.versionLabel(pgpVersion);
+                    String keyId = vr.signerIdentifier() != null ? vr.signerIdentifier() : "-";
+                    String keyLine = "   " + ver + formatAlgorithm(vr) + ": " + keyId;
+                    if (identified) {
+                        getLog().info(keyLine);
+                    } else {
+                        keyLine += formatVerdict(vr.verdict());
+                        getLog().warn(keyLine);
+                    }
                 }
             }
 
@@ -227,7 +240,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
                 String line = "     " + coords;
                 if (hasFail) {
                     getLog().error(line + "   (BAD SIGNATURE)");
-                } else if (groupHasIssue) {
+                } else if (!anyIdentified) {
                     getLog().warn(line);
                 } else {
                     getLog().info(line);
@@ -314,6 +327,14 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             return "";
         }
         return " (" + algo + ")";
+    }
+
+    private static String formatVerdict(Verdict verdict) {
+        return switch (verdict) {
+            case NO_KEY -> " (no key)";
+            case FAIL -> " (bad signature)";
+            default -> "";
+        };
     }
 
     private static String firstSigner(List<String> coordsList,

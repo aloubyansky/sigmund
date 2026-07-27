@@ -259,17 +259,35 @@ public class Sigmund {
         return null;
     }
 
+    /**
+     * Verifies a single verification unit against the artifact file.
+     * <p>
+     * Tries each tool in priority order. Only {@link Verdict#PASS} stops
+     * iteration immediately; {@code NO_KEY} and {@code FAIL} fall through
+     * to the next tool, keeping the highest-ranked non-PASS result. This
+     * allows tools with different key stores (BC ephemeral cache, GPG
+     * {@code pubring.kbx}, Sequoia cert store) to complement each other.
+     *
+     * @return the best result, or {@code null} if all tools returned {@code SKIPPED}
+     */
     private VerifyResult verifyUnit(Path artifactFile, VerificationUnit unit) {
+        VerifyResult best = null;
         for (SignatureTool tool : tools) {
             if (!tool.canVerify(unit)) {
                 continue;
             }
             VerifyResult result = tool.verify(artifactFile, unit);
-            if (result.verdict() != Verdict.SKIPPED) {
+            if (result.verdict() == Verdict.PASS) {
                 return result;
             }
+            if (result.verdict() == Verdict.SKIPPED) {
+                continue;
+            }
+            if (best == null || result.verdict().outranks(best.verdict())) {
+                best = result;
+            }
         }
-        return null;
+        return best;
     }
 
     /**

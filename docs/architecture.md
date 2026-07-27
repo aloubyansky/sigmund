@@ -57,15 +57,20 @@ Verification units are routed to tools based on a configurable priority list. Th
 [bc, sq, gpg]
 ```
 
-BC attempts verification first. If BC cannot verify a signature (e.g., missing key or unsupported algorithm), the next tool in the priority list is tried. This ensures maximum use of the zero-dependency backend while maintaining compatibility with external tools when needed.
+BC attempts verification first. If BC cannot fully verify a signature (missing key, unsupported algorithm, or verification failure), the next tool in the priority list is tried. This ensures that each tool's strengths are leveraged — BC's zero-dependency backend, GPG's local keyring (`pubring.kbx`), and Sequoia's PQC support and cert store.
 
 The routing mechanism works as follows:
 
 1. Each signature file is parsed into one or more `VerificationUnit`s by its `SignatureFormat`
 2. For each unit, tools are checked in priority order
-3. The first tool where `canVerify(unit)` returns true handles the unit
-4. If verification returns `SKIPPED`, the next tool is tried
-5. If all tools skip or no tool can verify, the unit is reported as unverified
+3. Each tool where `canVerify(unit)` returns true attempts verification
+4. If a tool returns `PASS`, it is used immediately
+5. If a tool returns `NO_KEY` or `FAIL`, the next tool is tried — a different tool may have the key in its local keyring or support the algorithm
+6. If no tool returns `PASS`, the best non-PASS result is used (`FAIL` over `NO_KEY` over `SKIPPED`)
+
+For example, a hybrid `.asc` with both a PGP4 (RSA) and PGP6 (ML-DSA) signature:
+- **PGP4 block:** BC may return `NO_KEY` if the key is not in its stores, but GPG finds it in `pubring.kbx` and returns `PASS`
+- **PGP6 block:** BC and GPG cannot verify ML-DSA, but Sequoia finds the key in its cert store and returns `PASS`
 
 Configure priority in `sigmund.yaml`:
 

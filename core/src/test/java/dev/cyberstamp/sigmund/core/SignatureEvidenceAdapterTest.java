@@ -179,6 +179,29 @@ class SignatureEvidenceAdapterTest {
 
             assertEquals(Verdict.NO_KEY, results.get(0).verdict());
         }
+
+        @Test
+        void failContinuesToNextTool() {
+            var failTool = mockTool("bc", true, true, failVerifyResult(), List.of());
+            var passingTool = mockTool("gpg", true, true, passVerifyResult(),
+                    List.of(new FingerprintCredential("openpgp4", FP)));
+            var adapter = adapterWith(singleUnitFormat(), List.of(failTool, passingTool));
+
+            List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
+
+            assertEquals(Verdict.PASS, results.get(0).verdict());
+        }
+
+        @Test
+        void failOverridesNoKey() {
+            var noKeyTool = mockTool("bc", true, true, noKeyVerifyResult(), List.of());
+            var failTool = mockTool("gpg", true, true, failVerifyResult(), List.of());
+            var adapter = adapterWith(singleUnitFormat(), List.of(noKeyTool, failTool));
+
+            List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
+
+            assertEquals(Verdict.FAIL, results.get(0).verdict());
+        }
     }
 
     // --- Helpers ---
@@ -223,6 +246,10 @@ class SignatureEvidenceAdapterTest {
 
     private static OpenPgpVerifyResult noKeyVerifyResult() {
         return new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, FP, FP);
+    }
+
+    private static OpenPgpVerifyResult failVerifyResult() {
+        return new OpenPgpVerifyResult(Verdict.FAIL, null, "RSA", 4, FP, FP);
     }
 
     private static SignatureTool mockTool(String name, boolean available, boolean canVerify,
