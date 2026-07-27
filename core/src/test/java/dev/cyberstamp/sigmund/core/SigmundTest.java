@@ -147,6 +147,86 @@ class SigmundTest {
         }
 
         @Test
+        void verifyFallsThroughOnNoKey() throws IOException {
+            Path artifact = createTempFile("nokey.jar");
+            Path sigFile = createTempFile("nokey.jar.asc",
+                    "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
+
+            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var noKeyTool = mockVerifyingTool("bc", format, true,
+                    new OpenPgpVerifyResult(Verdict.NO_KEY, null, "RSA", 4, "KEY", "FP"));
+            var passingTool = mockVerifyingTool("gpg", format, true,
+                    new OpenPgpVerifyResult(Verdict.PASS, "Alice", "RSA", 4, "KEY", "FP"));
+            var sigmund = Sigmund.builder().addTool(noKeyTool).addTool(passingTool).build();
+
+            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+
+            assertEquals(ReportVerdict.ALL_PASS, report.verdict());
+            assertEquals(Verdict.PASS, report.files().get(0).results().get(0).verdict());
+            assertEquals("Alice", report.files().get(0).results().get(0).signerDisplayName());
+        }
+
+        @Test
+        void verifyFallsThroughOnFail() throws IOException {
+            Path artifact = createTempFile("fail.jar");
+            Path sigFile = createTempFile("fail.jar.asc",
+                    "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
+
+            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var failTool = mockVerifyingTool("bc", format, true,
+                    new OpenPgpVerifyResult(Verdict.FAIL, null, "RSA", 4, "KEY", "FP"));
+            var passingTool = mockVerifyingTool("gpg", format, true,
+                    new OpenPgpVerifyResult(Verdict.PASS, "Alice", "RSA", 4, "KEY", "FP"));
+            var sigmund = Sigmund.builder().addTool(failTool).addTool(passingTool).build();
+
+            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+
+            assertEquals(ReportVerdict.ALL_PASS, report.verdict());
+            assertEquals(Verdict.PASS, report.files().get(0).results().get(0).verdict());
+        }
+
+        @Test
+        void verifyKeepsBestNonPassResult() throws IOException {
+            Path artifact = createTempFile("best.jar");
+            Path sigFile = createTempFile("best.jar.asc",
+                    "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
+
+            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var noKeyTool = mockVerifyingTool("bc", format, true,
+                    new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, "KEY", "FP"));
+            var failTool = mockVerifyingTool("gpg", format, true,
+                    new OpenPgpVerifyResult(Verdict.FAIL, null, "RSA", 4, "KEY", "FP"));
+            var sigmund = Sigmund.builder().addTool(noKeyTool).addTool(failTool).build();
+
+            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+
+            assertEquals(Verdict.FAIL, report.files().get(0).results().get(0).verdict());
+        }
+
+        @Test
+        void verifyAllToolsReturnNoKey() throws IOException {
+            Path artifact = createTempFile("allnokey.jar");
+            Path sigFile = createTempFile("allnokey.jar.asc",
+                    "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
+
+            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var tool1 = mockVerifyingTool("bc", format, true,
+                    new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, "KEY", "FP"));
+            var tool2 = mockVerifyingTool("gpg", format, true,
+                    new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, "KEY", "FP"));
+            var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2).build();
+
+            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+
+            assertEquals(1, report.files().get(0).results().size());
+            assertEquals(Verdict.NO_KEY, report.files().get(0).results().get(0).verdict());
+        }
+
+        @Test
         void verifyAllToolsSkipReturnsEmpty() throws IOException {
             Path artifact = createTempFile("allskip.jar");
             Path sigFile = createTempFile("allskip.jar.asc",

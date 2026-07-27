@@ -113,15 +113,16 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * <p>
      * Routes the unit to each tool in priority order. If a tool returns
      * {@link Verdict#NO_KEY} and implements {@link KeyImporter}, the adapter
-     * asks it to fetch the key and re-verifies. If the result is still
-     * {@code NO_KEY}, iteration continues to the next tool.
+     * asks it to fetch the key and re-verifies. Only {@link Verdict#PASS}
+     * stops iteration immediately; {@code NO_KEY} and {@code FAIL} fall
+     * through to the next tool, keeping the highest-ranked non-PASS result.
      *
      * @param artifactFile the artifact whose signature is being verified
      * @param unit the verification unit to verify
      * @return the evidence result for this unit
      */
     private EvidenceResult verifyUnit(Path artifactFile, VerificationUnit unit) {
-        EvidenceResult lastNoKey = null;
+        EvidenceResult best = null;
         for (SignatureTool tool : tools) {
             if (!tool.canVerify(unit)) {
                 continue;
@@ -133,14 +134,15 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
             if (result.verdict() == Verdict.NO_KEY) {
                 result = fetchKeyAndRetry(artifactFile, unit, tool, result);
             }
-            if (result.verdict() == Verdict.NO_KEY) {
-                lastNoKey = wrapAsEvidence(tool, result);
-                continue;
+            if (result.verdict() == Verdict.PASS) {
+                return wrapAsEvidence(tool, result);
             }
-            return wrapAsEvidence(tool, result);
+            if (best == null || result.verdict().outranks(best.verdict())) {
+                best = wrapAsEvidence(tool, result);
+            }
         }
-        if (lastNoKey != null) {
-            return lastNoKey;
+        if (best != null) {
+            return best;
         }
         return new EvidenceResult(new UnverifiedResult(Verdict.SKIPPED), List.of(), name());
     }

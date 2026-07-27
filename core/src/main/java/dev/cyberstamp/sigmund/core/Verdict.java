@@ -48,5 +48,23 @@ public enum Verdict {
      * which indicates that verification was attempted and the signature
      * was invalid.
      */
-    SKIPPED
+    SKIPPED;
+
+    /**
+     * Returns {@code true} if this verdict should take precedence over another
+     * when multiple tools produce different results for the same signature.
+     * Ranking from highest to lowest: PASS, FAIL, NO_KEY, SKIPPED.
+     */
+    public boolean outranks(Verdict other) {
+        return rank() > other.rank();
+    }
+
+    private int rank() {
+        return switch (this) {
+            case PASS -> 3;
+            case FAIL -> 2;
+            case NO_KEY -> 1;
+            case SKIPPED -> 0;
+        };
+    }
 }
