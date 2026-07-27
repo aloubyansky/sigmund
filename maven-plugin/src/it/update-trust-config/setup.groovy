@@ -9,10 +9,10 @@ gpghome.setWritable(true, true)
 gpghome.setExecutable(false, false)
 gpghome.setExecutable(true, true)
 
-// Create a partial trust-config.yaml that only covers commons-lang3.
+// Create a partial sigmund.yaml that only covers commons-lang3.
 // Includes a comment that should be preserved after update.
 // The update goal should add the missing jspecify signer.
-def config = new File(basedir, "trust-config.yaml")
+def config = new File(basedir, "sigmund.yaml")
 config.text = """\
 # Trust configuration for update test
 signers:
@@ -24,6 +24,6 @@ signers:
 trust:
   org.apache.commons:commons-lang3: gary-gregory
 """
-println "Created partial trust-config.yaml (commons-lang3 only, with comments)"
+println "Created partial sigmund.yaml (commons-lang3 only, with comments)"
 println "Created clean GNUPGHOME at ${gpghome}"
 return true

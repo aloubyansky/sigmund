@@ -17,7 +17,7 @@ assert !log.contains("UNSIGNED") || log.contains("Signer: UNKNOWN") || log.conta
 assert log.contains("Trust configuration updated") : "Should log config update"
 
 // The config should have the original signer plus an entry for jspecify
-File trustConfig = new File(basedir, "trust-config.yaml")
+File trustConfig = new File(basedir, "sigmund.yaml")
 assert trustConfig.exists()
 String yaml = trustConfig.text
 assert yaml.contains("gary-gregory") : "Should still have original signer"
@@ -33,4 +33,4 @@ assert trustCount == 1 : "Should have exactly one trust: section, found ${trustC
 assert yaml.contains("# Trust configuration for update test") : "Header comment should be preserved"
 assert yaml.contains("# Gary Gregory signs commons-lang3") : "Inline comment should be preserved"
 
-println "SUCCESS: updated trust-config.yaml with missing signer, preserved comments, and reported UNKNOWN for jspecify"
+println "SUCCESS: updated sigmund.yaml with missing signer, preserved comments, and reported UNKNOWN for jspecify"

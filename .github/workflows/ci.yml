@@ -8,15 +8,15 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Ubuntu 26.04 ships OpenSSL 3.5 with native PQC support (ML-KEM, ML-DSA, SLH-DSA),
+    # which eliminates the need to build OpenSSL from source.
+    runs-on: ubuntu-26.04
 
     env:
       SQ_VERSION: '1.4.0'
+      # Build sq against the system OpenSSL 3.5 for PQC algorithm support.
+      # The distro-packaged sq (1.3.1) uses the Nettle backend, which lacks PQC.
       SQ_CARGO_FEATURES: crypto-openssl
-      OPENSSL_VERSION: '3.5.0'
-      OPENSSL_DIR: /opt/openssl
-      LD_LIBRARY_PATH: /opt/openssl/lib64
-      PKG_CONFIG_PATH: /opt/openssl/lib64/pkgconfig
 
     steps:
       - uses: actions/checkout@v7
@@ -32,38 +32,21 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cargo rustc gcc clang libsqlite3-dev \
+            cargo rustc gcc clang libsqlite3-dev libssl-dev \
             pkg-config nettle-dev capnproto
-
-      - name: Cache OpenSSL 3.5
-        id: cache-openssl
-        uses: actions/cache@v6
-        with:
-          path: /opt/openssl
-          key: openssl-${{ env.OPENSSL_VERSION }}-${{ runner.os }}
-
-      - name: Build OpenSSL
-        if: steps.cache-openssl.outputs.cache-hit != 'true'
-        run: |
-          wget -q "https://github.com/openssl/openssl/releases/download/openssl-$OPENSSL_VERSION/openssl-$OPENSSL_VERSION.tar.gz"
-          tar xf "openssl-$OPENSSL_VERSION.tar.gz"
-          cd "openssl-$OPENSSL_VERSION"
-          ./config --prefix=/opt/openssl --openssldir=/opt/openssl
-          make -j$(nproc)
-          sudo make install_sw
 
       - name: Cache sq binary
         uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/sq
-          key: sq-${{ env.SQ_VERSION }}-${{ env.SQ_CARGO_FEATURES }}-openssl${{ env.OPENSSL_VERSION }}-${{ runner.os }}
+          key: sq-${{ env.SQ_VERSION }}-${{ env.SQ_CARGO_FEATURES }}-${{ runner.os }}-${{ runner.image_version }}
 
       - name: Install sq
         run: |
           if sq version 2>/dev/null | grep -q "$SQ_VERSION"; then
             echo "sq $SQ_VERSION already cached"
           else
-            cargo install "sequoia-sq@$SQ_VERSION" --features "$SQ_CARGO_FEATURES" --no-default-features
+            cargo install "sequoia-sq@$SQ_VERSION" --features "$SQ_CARGO_FEATURES" --no-default-features --force
           fi
           sq version
 
@@ -83,7 +66,7 @@ jobs:
 
       - name: Verify PQC integration tests ran
         run: |
-          report=core/target/surefire-reports/io.github.cyberstamp.sigmund.core.RoundTripIntegrationTest.txt
+          report=core/target/surefire-reports/dev.cyberstamp.sigmund.core.RoundTripIntegrationTest.txt
           if [ ! -f "$report" ] || ! grep 'Tests run:' "$report" | grep -qvE 'Tests run: 0,'; then
             echo "::error::RoundTripIntegrationTest was not executed — PQC tests were silently skipped"
             exit 1

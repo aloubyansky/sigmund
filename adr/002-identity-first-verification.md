@@ -209,7 +209,7 @@ Operational settings for key discovery, signer info resolution, and per-tool ver
 
 ```java
 public record DiscoveryConfig(
-    boolean fetchSignerInfo,                // attempt to fetch missing signer info?
+    boolean resolveSigners,                // attempt to fetch missing signer info?
     boolean importToKeyring,                // true: persist fetched keys into the tool's keyring
                                             // false (default): fetch ephemerally, discard after verification
     List<String> keyservers,                // keyservers for key discovery (empty = tool defaults)
@@ -220,19 +220,19 @@ public record DiscoveryConfig(
 }
 ```
 
-**`keyservers`** — when non-empty, these keyservers are used for key fetching, overriding the tool's built-in defaults. When empty (the default), each tool uses its own default resolution — GPG delegates to dirmngr (which has its own keyserver configuration), Sequoia uses its configured certificate sources. This means `fetchSignerInfo: true` with an empty keyservers list is valid: the tools know where to look.
+**`keyservers`** — when non-empty, these keyservers are used for key fetching, overriding the tool's built-in defaults. When empty (the default), each tool uses its own default resolution — GPG delegates to dirmngr (which has its own keyserver configuration), Sequoia uses its configured certificate sources. This means `resolveSigners: true` with an empty keyservers list is valid: the tools know where to look.
 
-When `fetchSignerInfo` is true and a key is missing during verification, the behavior depends on `importToKeyring`:
+When `resolveSigners` is true and a key is missing during verification, the behavior depends on `importToKeyring`:
 - **`false`** (default) — the key is fetched to a temporary location, used for verification, then discarded. This avoids side effects on the shared GPG keyring, which other tools on the system may interpret as extending trust. Safe for CI and multi-tool environments.
 - **`true`** — the key is imported into the tool's keyring (GPG keyring, Sequoia cert store). Convenient for interactive use where the user wants their keyring populated as a side effect of verification.
 
 To avoid repeated keyserver fetches when `importToKeyring` is false, the `Sigmund` instance maintains an internal key cache (in-memory or temp directory) scoped to its lifetime. The first fetch for a given key ID goes to the keyserver; subsequent verifications within the same session reuse the cached copy. The cache is discarded when the `Sigmund` instance is garbage-collected or closed.
 
-**`tools`** — per-tool verification settings, keyed by tool name. This mirrors the `signing.tools` section but for verification/discovery concerns. Each tool defines its own recognized keys. The top-level `fetchSignerInfo`, `importToKeyring`, and `keyservers` fields cover OpenPGP tools; backends with fundamentally different verification models use their own `tools` entry:
+**`tools`** — per-tool verification settings, keyed by tool name. This mirrors the `signing.tools` section but for verification/discovery concerns. Each tool defines its own recognized keys. The top-level `resolveSigners`, `importToKeyring`, and `keyservers` fields cover OpenPGP tools; backends with fundamentally different verification models use their own `tools` entry:
 
 ```yaml
 discovery:
-  fetch-signer-info: true
+  resolve-signers: true
   import-to-keyring: false
   keyservers:
     - "hkps://keys.openpgp.org"
@@ -375,7 +375,7 @@ policy:
   require-all-evidence-match: true
 
 discovery:
-  fetch-signer-info: true
+  resolve-signers: true
   import-to-keyring: false
   keyservers:
     - "hkps://keys.openpgp.org"
@@ -438,7 +438,7 @@ public interface EvidenceProvider {
 2. `SignatureFormat.parse(file)` → `VerificationUnit`s
 3. For each unit, find a `SignatureTool` where `canVerify(unit)` is true
 4. `SignatureTool.verify(artifact, unit)` → `VerifyResult`
-5. If `NO_KEY` and `DiscoveryConfig.fetchSignerInfo()` is enabled, fetch the key using the unit's metadata (e.g., `issuerFingerprint()` for OpenPGP) and re-verify. If `importToKeyring` is true, the key is imported via `KeyImporter.importKey()`; otherwise the key is fetched to a temporary location and discarded after verification.
+5. If `NO_KEY` and `DiscoveryConfig.resolveSigners()` is enabled, fetch the key using the unit's metadata (e.g., `issuerFingerprint()` for OpenPGP) and re-verify. If `importToKeyring` is true, the key is imported via `KeyImporter.importKey()`; otherwise the key is fetched to a temporary location and discarded after verification.
 6. `SignatureTool.extractCredentials(result)` → proven credentials
 7. Wrap into `EvidenceResult`
 
