@@ -39,7 +39,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/sq
-          key: sq-${{ env.SQ_VERSION }}-${{ env.SQ_CARGO_FEATURES }}-${{ runner.os }}-${{ runner.image_version }}
+          key: sq-${{ env.SQ_VERSION }}-${{ env.SQ_CARGO_FEATURES }}-${{ runner.os }}-${{ env.ImageVersion }}
 
       - name: Install sq
         run: |
