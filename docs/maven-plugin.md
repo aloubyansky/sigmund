@@ -7,7 +7,7 @@ The Sigmund Maven plugin provides goals for signing artifacts and verifying depe
 - [Plugin Coordinates](#plugin-coordinates)
 - [Goals](#goals)
   - [sigmund:sign](#sigmundsign)
-  - [sigmund:signing-info](#sigmundsigning-info)
+  - [sigmund:signer-info](#sigmundsigner-info)
   - [sigmund:verify](#sigmundverify)
   - [sigmund:verify-signature](#sigmundverify-signature)
   - [sigmund:dependency-signers](#sigmunddependency-signers)
@@ -71,7 +71,7 @@ Signs all project artifacts (JAR, POM, sources, javadoc) with hybrid GPG and PQC
 
 Tool-specific settings (key fingerprints, passphrases) are configured in `sigmund.yaml`. See [Configuration Reference](configuration.md).
 
-### sigmund:signing-info
+### sigmund:signer-info
 
 **Default Phase:** none (standalone goal)
 
@@ -89,10 +89,10 @@ Displays the effective signing configuration and signer identities without perfo
 
 ```bash
 # Show default signing configuration
-mvn sigmund:signing-info
+mvn sigmund:signer-info
 
 # Show configuration for a specific profile
-mvn sigmund:signing-info -Dsigmund.profile=hybrid
+mvn sigmund:signer-info -Dsigmund.profile=hybrid
 ```
 
 **Output:**

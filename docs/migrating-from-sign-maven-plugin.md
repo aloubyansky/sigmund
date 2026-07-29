@@ -191,7 +191,7 @@ No `sigmund.yaml` configuration is needed when using the default env var names. 
 Check the signing configuration:
 
 ```bash
-mvn sigmund:signing-info
+mvn sigmund:signer-info
 ```
 
 Sign an artifact and verify the signature:

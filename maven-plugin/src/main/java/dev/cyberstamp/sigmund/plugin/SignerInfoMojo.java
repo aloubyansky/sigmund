@@ -7,11 +7,10 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 
 /**
- * Displays the effective signing configuration and signer identities
- * without performing any signing.
+ * Displays signing tool and identity information without performing any signing.
  */
-@Mojo(name = "signing-info", requiresProject = false, threadSafe = true)
-public class SigningInfoMojo extends AbstractSigningMojo {
+@Mojo(name = "signer-info", requiresProject = false, threadSafe = true)
+public class SignerInfoMojo extends AbstractSigningMojo {
 
     /**
      * Signing profile to display. If not set, uses the default profile
@@ -23,7 +22,7 @@ public class SigningInfoMojo extends AbstractSigningMojo {
     @Override
     public void execute() throws MojoExecutionException {
         if (skip) {
-            getLog().info("Skipping signing-info");
+            getLog().info("Skipping signer-info");
             return;
         }
         Signer signer = profile != null

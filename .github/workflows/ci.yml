@@ -35,20 +35,15 @@ jobs:
             cargo rustc gcc clang libsqlite3-dev libssl-dev \
             pkg-config nettle-dev capnproto
 
-      - name: Detect runner image version
+      - name: Detect sq dependency versions
         run: |
-          if [ -n "$ImageVersion" ]; then
-            echo "IMAGE_VERSION=$ImageVersion" >> "$GITHUB_ENV"
-          else
-            echo "::warning::ImageVersion not set — sq binary cache disabled"
-          fi
+          echo "SQ_DEPS=$(dpkg-query -W -f '${Package}=${Version}\n' libssl3t64 libsqlite3-0 | sort | sha256sum | cut -c1-12)" >> "$GITHUB_ENV"
 
       - name: Cache sq binary
-        if: env.IMAGE_VERSION != ''
         uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/sq
-          key: sq-${{ env.SQ_VERSION }}-${{ env.SQ_CARGO_FEATURES }}-${{ runner.os }}-${{ env.IMAGE_VERSION }}
+          key: sq-${{ env.SQ_VERSION }}-${{ env.SQ_CARGO_FEATURES }}-${{ runner.os }}-${{ env.SQ_DEPS }}
 
       - name: Install sq
         run: |

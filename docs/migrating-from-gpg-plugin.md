@@ -326,4 +326,4 @@ This should not happen — hybrid signatures are backward-compatible. Maven Cent
 
 - **Verify dependencies:** Use `mvn sigmund:verify` to enforce trust policies on your dependencies — see [Trust Verification](trust-verification.md)
 - **Advanced signing:** Configure multiple signing backends and profiles — see [Signing Guide](signing.md)
-- **Check signing config:** Use `mvn sigmund:signing-info` to display effective signing configuration
+- **Check signing config:** Use `mvn sigmund:signer-info` to display effective signing configuration

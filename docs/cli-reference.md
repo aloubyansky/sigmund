@@ -13,7 +13,7 @@ The Sigmund CLI provides command-line tools for key management, artifact signing
 - [Global Options](#global-options)
 - [Commands](#commands)
   - [sigmund keygen](#sigmund-keygen)
-  - [sigmund signing-info](#sigmund-signing-info)
+  - [sigmund signer-info](#sigmund-signer-info)
   - [sigmund sign](#sigmund-sign)
   - [sigmund verify-signature](#sigmund-verify-signature)
   - [sigmund export-cert](#sigmund-export-cert)
@@ -109,12 +109,12 @@ The command outputs the fingerprint of the generated key. Save this fingerprint 
 
 ---
 
-### `sigmund signing-info`
+### `sigmund signer-info`
 
 Display the effective signing configuration and signer identities without performing any signing.
 
 ```bash
-sigmund signing-info [options]
+sigmund signer-info [options]
 ```
 
 **Options:**
@@ -128,10 +128,10 @@ sigmund signing-info [options]
 
 ```bash
 # Show default signing configuration
-sigmund signing-info
+sigmund signer-info
 
 # Show configuration for a specific profile
-sigmund signing-info --profile hybrid
+sigmund signer-info --profile hybrid
 ```
 
 **Output:**
@@ -296,7 +296,7 @@ See [configuration.md](configuration.md) for full configuration reference.
 |----------|------|--------|
 | Sign artifacts during Maven build | Maven plugin | Integrates with Maven lifecycle, automatic artifact handling |
 | Verify dependencies during build | Maven plugin | Access to Maven dependency graph and repositories |
-| Inspect signing configuration | Both | `sigmund:signing-info` or `sigmund signing-info` |
+| Inspect signing configuration | Both | `sigmund:signer-info` or `sigmund signer-info` |
 | Generate signing keys | CLI | One-time key management task |
 | Sign individual files | CLI | No Maven project needed |
 | Export certificates | CLI | Key management utility |
