@@ -17,6 +17,23 @@ The Sigmund Maven plugin provides goals for signing artifacts and verifying depe
   - [Ephemeral CI Runners](#ephemeral-ci-runners)
   - [Skipping Verification](#skipping-verification)
 
+> **Note:** The examples in this guide use the `sigmund` plugin prefix (e.g., `mvn sigmund:sign`). This requires adding the plugin to your project's `pluginManagement`:
+>
+> ```xml
+> <pluginManagement>
+>   <plugins>
+>     <plugin>
+>       <groupId>dev.cyberstamp.sigmund</groupId>
+>       <artifactId>sigmund-maven-plugin</artifactId>
+>       <version>0.0.1-SNAPSHOT</version>
+>     </plugin>
+>   </plugins>
+> </pluginManagement>
+> ```
+>
+> Alternatively, replace `sigmund` with the full plugin coordinates, e.g.:
+> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1-SNAPSHOT:sign`
+
 ## Plugin Coordinates
 
 ```xml
