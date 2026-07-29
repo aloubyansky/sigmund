@@ -40,6 +40,7 @@ def sigmundYaml = new File(basedir, "sigmund.yaml")
 sigmundYaml.text = """\
 signing:
   tools:
+    gpg: {}
     sq:
       signing-fingerprint: "${fingerprint}"
 """

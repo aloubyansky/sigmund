@@ -1,6 +1,5 @@
 package dev.cyberstamp.sigmund.cli;
 
-import dev.cyberstamp.sigmund.core.SqRunner;
 import java.nio.file.Path;
 import picocli.CommandLine;
 
@@ -10,7 +9,7 @@ import picocli.CommandLine;
  */
 public class SqHomeMixin {
 
-    @CommandLine.Option(names = { "--sq-home" }, description = "Sequoia home directory (default: ~/.local/share/sequoia)")
+    @CommandLine.Option(names = { "--sq-home" }, description = "Sequoia home directory (overrides SEQUOIA_HOME)")
     private String sqHome;
 
     boolean hasExplicitHome() {
@@ -21,7 +20,7 @@ public class SqHomeMixin {
         if (sqHome != null && !sqHome.isEmpty()) {
             return expandTilde(sqHome);
         }
-        return SqRunner.defaultHome();
+        return null;
     }
 
     Path expandTilde(String path) {

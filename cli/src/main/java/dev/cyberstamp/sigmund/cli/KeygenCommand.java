@@ -64,7 +64,9 @@ public class KeygenCommand implements Callable<Integer> {
         System.out.println("Key generated successfully!");
         System.out.println();
         System.out.println("Fingerprint: " + fingerprint);
-        System.out.println("Stored in:   " + sqHomeDir.toAbsolutePath());
+        if (sqHomeDir != null) {
+            System.out.println("Stored in:   " + sqHomeDir.toAbsolutePath());
+        }
         System.out.println();
         System.out.println("Use this fingerprint with the 'sign' command.");
         return 0;

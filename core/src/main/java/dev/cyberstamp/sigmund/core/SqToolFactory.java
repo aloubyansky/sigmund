@@ -27,7 +27,7 @@ final class SqToolFactory implements SignatureToolFactory {
         if (fingerprint != null) {
             return new SqRunner(executable, home, fingerprint);
         }
-        String defaultSigner = SqRunner.querySignerSelf(executable, home);
+        String defaultSigner = SqRunner.querySignerSelf(executable, SqRunner.envFor(home));
         return new SqRunner(executable, home, null, defaultSigner);
     }
 
@@ -40,13 +40,6 @@ final class SqToolFactory implements SignatureToolFactory {
 
     private static Path resolveHome(Map<String, String> settings) {
         String homeSetting = settings.get("home");
-        if (homeSetting != null) {
-            return Path.of(homeSetting);
-        }
-        Path defaultHome = SqRunner.defaultHome();
-        if (defaultHome == null) {
-            throw new SigmundException("Cannot determine Sequoia home directory: user.home is not set");
-        }
-        return defaultHome;
+        return homeSetting != null ? Path.of(homeSetting) : null;
     }
 }

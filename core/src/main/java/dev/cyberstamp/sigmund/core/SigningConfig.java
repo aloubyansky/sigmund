@@ -1,5 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -29,7 +31,9 @@ public record SigningConfig(
      * Creates a signing config with defensive copies.
      */
     public SigningConfig {
-        tools = tools != null ? Map.copyOf(tools) : Map.of();
+        tools = tools != null
+                ? Collections.unmodifiableMap(new LinkedHashMap<>(tools))
+                : Map.of();
         profiles = profiles != null ? Map.copyOf(profiles) : Map.of();
     }
 }

@@ -88,9 +88,8 @@ public class Sigmund {
         if (signingConfig != null && signingConfig.defaultProfile() != null) {
             return signer(signingConfig.defaultProfile());
         }
-        List<SignatureTool> signingTools = tools.stream()
-                .filter(SignatureTool::canSign)
-                .toList();
+        List<SignatureTool> signingTools = configuredSigningTools(
+                tools.stream().filter(SignatureTool::canSign).toList());
         return new Signer(signingTools);
     }
 
@@ -114,12 +113,66 @@ public class Sigmund {
             throw new SigmundException("Unknown signing profile: " + profileName
                     + ". Available profiles: " + signingConfig.profiles().keySet());
         }
-        List<SignatureTool> profileTools = tools.stream()
-                .filter(SignatureTool::canSign)
-                .filter(t -> t.supportedCredentialTypes().stream()
-                        .anyMatch(credentialTypes::contains))
-                .toList();
+        List<SignatureTool> profileTools = configuredSigningTools(
+                tools.stream()
+                        .filter(SignatureTool::canSign)
+                        .filter(t -> t.supportedCredentialTypes().stream()
+                                .anyMatch(credentialTypes::contains))
+                        .toList());
         return new Signer(profileTools);
+    }
+
+    /**
+     * Filters signing tool candidates to only those listed in {@link SigningConfig#tools()}.
+     * <p>
+     * When no signing tools are explicitly configured, returns the candidates unchanged.
+     * When tools are configured, each must be present in the candidates list; if a
+     * configured tool is missing, an exception is thrown with a diagnostic message
+     * (not available, not signing-capable, or credential type mismatch).
+     * <p>
+     * The result preserves the iteration order of {@link SigningConfig#tools()}, so
+     * the signing order matches the user's YAML configuration.
+     *
+     * @param candidates signing-capable tools, possibly pre-filtered by profile credential types
+     * @return the configured subset of candidates
+     * @throws SigmundException if a configured tool is not in the candidates list
+     */
+    private List<SignatureTool> configuredSigningTools(List<SignatureTool> candidates) {
+        if (signingConfig == null || signingConfig.tools().isEmpty()) {
+            return candidates;
+        }
+        Map<String, SignatureTool> candidatesByName = new HashMap<>();
+        for (SignatureTool t : candidates) {
+            candidatesByName.put(t.name(), t);
+        }
+        List<SignatureTool> result = new ArrayList<>();
+        for (String toolName : signingConfig.tools().keySet()) {
+            SignatureTool t = candidatesByName.get(toolName);
+            if (t != null) {
+                result.add(t);
+            } else {
+                throw new SigmundException(
+                        "Configured signing tool '" + toolName + "': "
+                                + diagnoseSigningFailure(toolName));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Returns a human-readable reason why a configured signing tool is absent
+     * from the candidate list: not registered, not signing-capable, or filtered
+     * out by profile credential types.
+     */
+    private String diagnoseSigningFailure(String toolName) {
+        SignatureTool registered = tool(toolName);
+        if (registered == null) {
+            return "not available";
+        }
+        if (!registered.canSign()) {
+            return "not signing-capable";
+        }
+        return "does not match the requested credential types";
     }
 
     /**
