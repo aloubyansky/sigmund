@@ -2,7 +2,11 @@ package dev.cyberstamp.sigmund.core;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class GpgRunnerTest {
 
@@ -157,5 +161,95 @@ class GpgRunnerTest {
         assertEquals("41A2197725BD63EB00D071D46A7F5DB1C68BDB81", info.fingerprint());
         assertEquals("RSA", info.algorithm());
         assertNull(info.userId());
+    }
+
+    // --- parseDefaultKey ---
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void parseDefaultKeyFound() throws IOException {
+        Path conf = tempDir.resolve("gpg.conf");
+        Files.writeString(conf, "default-key ABCD1234ABCD1234\n");
+        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
+    }
+
+    @Test
+    void parseDefaultKeyWithComments() throws IOException {
+        Path conf = tempDir.resolve("gpg.conf");
+        Files.writeString(conf, """
+                # This is a comment
+                keyserver hkps://keys.openpgp.org
+
+                # default-key OLD_KEY
+                default-key 41A2197725BD63EB00D071D46A7F5DB1C68BDB81
+                """);
+        assertEquals("41A2197725BD63EB00D071D46A7F5DB1C68BDB81", GpgRunner.parseDefaultKey(conf));
+    }
+
+    @Test
+    void parseDefaultKeyLastWins() throws IOException {
+        Path conf = tempDir.resolve("gpg.conf");
+        Files.writeString(conf, """
+                default-key FIRST_KEY
+                default-key SECOND_KEY
+                """);
+        assertEquals("SECOND_KEY", GpgRunner.parseDefaultKey(conf));
+    }
+
+    @Test
+    void parseDefaultKeyNotPresent() throws IOException {
+        Path conf = tempDir.resolve("gpg.conf");
+        Files.writeString(conf, """
+                keyserver hkps://keys.openpgp.org
+                auto-key-locate local,wkd
+                """);
+        assertNull(GpgRunner.parseDefaultKey(conf));
+    }
+
+    @Test
+    void parseDefaultKeyFileNotFound() {
+        assertNull(GpgRunner.parseDefaultKey(tempDir.resolve("nonexistent.conf")));
+    }
+
+    @Test
+    void parseDefaultKeyNullPath() {
+        assertNull(GpgRunner.parseDefaultKey(null));
+    }
+
+    @Test
+    void parseDefaultKeyQuoted() throws IOException {
+        Path conf = tempDir.resolve("gpg.conf");
+        Files.writeString(conf, "default-key \"ABCD1234ABCD1234\"\n");
+        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
+    }
+
+    @Test
+    void parseDefaultKeyHexPrefix() throws IOException {
+        Path conf = tempDir.resolve("gpg.conf");
+        Files.writeString(conf, "default-key 0xABCD1234ABCD1234\n");
+        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
+    }
+
+    @Test
+    void parseDefaultKeyExactSubkeyMarker() throws IOException {
+        Path conf = tempDir.resolve("gpg.conf");
+        Files.writeString(conf, "default-key ABCD1234ABCD1234!\n");
+        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
+    }
+
+    @Test
+    void parseDefaultKeyQuotedHexPrefixAndExclamation() throws IOException {
+        Path conf = tempDir.resolve("gpg.conf");
+        Files.writeString(conf, "default-key \"0xABCD1234ABCD1234!\"\n");
+        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
+    }
+
+    @Test
+    void parseDefaultKeyTabDelimiter() throws IOException {
+        Path conf = tempDir.resolve("gpg.conf");
+        Files.writeString(conf, "default-key\tABCD1234ABCD1234\n");
+        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
     }
 }

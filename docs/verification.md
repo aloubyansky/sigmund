@@ -34,6 +34,23 @@ This guide covers how to verify artifact signatures using Sigmund. Signature ver
   - [Example: Failed Signature](#example-failed-signature)
 - [Troubleshooting](#troubleshooting)
 
+> **Note:** The examples in this guide use the `sigmund` plugin prefix (e.g., `mvn sigmund:verify-signature`). This requires adding the plugin to your project's `pluginManagement`:
+>
+> ```xml
+> <pluginManagement>
+>   <plugins>
+>     <plugin>
+>       <groupId>dev.cyberstamp.sigmund</groupId>
+>       <artifactId>sigmund-maven-plugin</artifactId>
+>       <version>0.0.1-SNAPSHOT</version>
+>     </plugin>
+>   </plugins>
+> </pluginManagement>
+> ```
+>
+> Alternatively, replace `sigmund` with the full plugin coordinates, e.g.:
+> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1-SNAPSHOT:verify-signature`
+
 ## Overview
 
 Sigmund verifies OpenPGP signatures by:

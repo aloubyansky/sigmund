@@ -124,6 +124,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
     private final String keyName;
     private final String passphrase;
     private final Map<String, String> env;
+    private final Path gpgHome;
     private final OpenPgpSignatureFormat format;
     private volatile String detectedAlgorithm;
     private final boolean resolveSigners;
@@ -196,6 +197,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
         this.keyName = keyName;
         this.passphrase = passphrase;
         this.env = home != null ? Map.of("GNUPGHOME", home) : null;
+        this.gpgHome = home != null ? Path.of(home) : Path.of(System.getProperty("user.home"), ".gnupg");
         this.format = new OpenPgpSignatureFormat();
         this.resolveSigners = resolveSigners;
         this.importToKeyring = importToKeyring;
@@ -375,13 +377,59 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
 
     @Override
     public List<SigningInfo> signingInfo() {
-        CliTool.Result result = keyName != null
-                ? CliTool.run(env, gpgExecutable, "--list-keys", "--with-colons", keyName)
+        String effectiveKey = keyName;
+        if (effectiveKey == null) {
+            effectiveKey = parseDefaultKey(gpgConfPath());
+        }
+        CliTool.Result result = effectiveKey != null
+                ? CliTool.run(env, gpgExecutable, "--list-secret-keys", "--with-colons", effectiveKey)
                 : CliTool.run(env, gpgExecutable, "--list-secret-keys", "--with-colons");
         if (result.exitCode() != 0) {
             return List.of();
         }
         return List.of(parseColonsSigningInfo(result.stdout()));
+    }
+
+    private Path gpgConfPath() {
+        return gpgHome.resolve("gpg.conf");
+    }
+
+    static String parseDefaultKey(Path gpgConfPath) {
+        if (gpgConfPath == null || !Files.isRegularFile(gpgConfPath)) {
+            return null;
+        }
+        try {
+            String result = null;
+            for (String line : Files.readAllLines(gpgConfPath)) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                    continue;
+                }
+                String[] parts = trimmed.split("\\s+", 2);
+                if (parts.length == 2 && "default-key".equals(parts[0])) {
+                    String value = stripKeyDecorations(parts[1]);
+                    if (!value.isEmpty()) {
+                        result = value;
+                    }
+                }
+            }
+            return result;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private static String stripKeyDecorations(String value) {
+        if (value.startsWith("\"") && value.endsWith("\"") && value.length() > 1) {
+            value = value.substring(1, value.length() - 1);
+        }
+        if (value.startsWith("0x") || value.startsWith("0X")) {
+            value = value.substring(2);
+        }
+        if (value.endsWith("!")) {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value.trim();
     }
 
     /**

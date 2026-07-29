@@ -5,6 +5,7 @@ This guide covers artifact signing with Sigmund's three OpenPGP backends: GPG (s
 ## Contents
 
 - [Overview](#overview)
+- [Checking the Signing Setup](#checking-the-signing-setup)
 - [Signing with Existing GPG Keys](#signing-with-existing-gpg-keys)
 - [Signing with Bouncy Castle](#signing-with-bouncy-castle)
   - [Key Generation](#key-generation)
@@ -22,6 +23,23 @@ This guide covers artifact signing with Sigmund's three OpenPGP backends: GPG (s
 - [Backward Compatibility](#backward-compatibility)
 - [Maven Central Compatibility](#maven-central-compatibility)
 
+> **Note:** The examples in this guide use the `sigmund` plugin prefix (e.g., `mvn sigmund:sign`). This requires adding the plugin to your project's `pluginManagement`:
+>
+> ```xml
+> <pluginManagement>
+>   <plugins>
+>     <plugin>
+>       <groupId>dev.cyberstamp.sigmund</groupId>
+>       <artifactId>sigmund-maven-plugin</artifactId>
+>       <version>0.0.1-SNAPSHOT</version>
+>     </plugin>
+>   </plugins>
+> </pluginManagement>
+> ```
+>
+> Alternatively, replace `sigmund` with the full plugin coordinates, e.g.:
+> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1-SNAPSHOT:sign`
+
 ## Overview
 
 Sigmund signs artifacts using one or more OpenPGP backends. The signing pipeline produces a detached `.asc` signature file. When multiple tools sign, their signatures are combined into a single `.asc` as separate armored blocks:
@@ -37,20 +55,45 @@ Sigmund signs artifacts using one or more OpenPGP backends. The signing pipeline
 
 Existing tools (GPG, Maven Central) see only the first block and work as before. PQC-aware tools can verify all blocks.
 
-## Signing with Existing GPG Keys
+## Checking the Signing Setup
 
-The simplest path if you already have GPG keys.
+Use `signing-info` to display the effective signing configuration — which tools are active, what keys they will use, and which credential types they produce — without signing anything.
 
-Configure the GPG key in `sigmund.yaml`:
+**CLI:**
 
-```yaml
-signing:
-  tools:
-    gpg:
-      key-name: your@email.com
+```bash
+sigmund signing-info
 ```
 
-Then sign with the Maven plugin or CLI:
+**Maven:**
+
+```bash
+mvn sigmund:signing-info
+```
+
+Example output:
+
+```
+bc: Ed25519 D62AAB339E45E5EA2FD036872B01D46A517A2991... (Alice <alice@example.com>)
+sq: ML-DSA-87+Ed448 A1B2C3D4E5F6... (Alice <alice@example.com>)
+```
+
+Each line shows the tool name, algorithm, key fingerprint, and user ID.
+
+**Options:**
+
+| | CLI | Maven |
+|---|---|---|
+| Select profile | `--profile hybrid` | `-Dsigmund.profile=hybrid` |
+| Explicit config | `--config path/to/sigmund.yaml` | `-Dsigmund.trustConfig=path/to/sigmund.yaml` |
+
+When `--profile` is specified, only the tools matching that profile are shown. Without it, the default profile is used (or all configured tools if no default profile is set).
+
+This is useful for verifying your setup before a release, debugging CI signing configuration, or confirming that a config file is being loaded correctly.
+
+## Signing with Existing GPG Keys
+
+The simplest path if you already have GPG keys. If you have a single GPG secret key (or a `default-key` set in `gpg.conf`), no configuration is needed — Sigmund uses it automatically:
 
 ```bash
 mvn sigmund:sign
@@ -58,6 +101,21 @@ mvn sigmund:sign
 
 ```bash
 sigmund sign --file artifact.jar
+```
+
+**Key resolution order:**
+
+1. `key-name` in `sigmund.yaml` (explicit override)
+2. `default-key` in `gpg.conf` (`$GNUPGHOME/gpg.conf` or `~/.gnupg/gpg.conf`)
+3. First secret key in the GPG keyring
+
+To override the default, set `key-name` in `sigmund.yaml`:
+
+```yaml
+signing:
+  tools:
+    gpg:
+      key-name: your@email.com
 ```
 
 ## Signing with Bouncy Castle

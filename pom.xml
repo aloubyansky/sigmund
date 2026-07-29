@@ -253,7 +253,7 @@
             </build>
         </profile>
         <profile>
-            <id>update-readme</id>
+            <id>update-docs-version</id>
             <activation>
                 <file>
                     <exists>README.md</exists>
@@ -277,7 +277,7 @@
                                     <executable>bash</executable>
                                     <arguments>
                                         <argument>-c</argument>
-                                        <argument>echo '${project.version}' | grep -q SNAPSHOT || sed -i '/sigmund-maven-plugin/{n;s/&lt;version&gt;[^&lt;]*&lt;\/version&gt;/&lt;version&gt;${project.version}&lt;\/version&gt;/}' ${project.basedir}/README.md</argument>
+                                        <argument>echo '${project.version}' | grep -q SNAPSHOT || find ${project.basedir}/README.md ${project.basedir}/docs -name '*.md' -exec sed -i -e '/&lt;artifactId&gt;sigmund-maven-plugin&lt;\/artifactId&gt;/{n;s/&lt;version&gt;[^&lt;]*&lt;\/version&gt;/&lt;version&gt;${project.version}&lt;\/version&gt;/}' -e 's/sigmund-maven-plugin:[^:]*:/sigmund-maven-plugin:${project.version}:/g' -e 's/^\*\*Version:\*\* .*/\*\*Version:\*\* ${project.version}/' {} +</argument>
                                     </arguments>
                                 </configuration>
                             </execution>
@@ -292,7 +292,7 @@
                                     <executable>bash</executable>
                                     <arguments>
                                         <argument>-c</argument>
-                                        <argument>echo '${project.version}' | grep -q SNAPSHOT || { cd ${project.basedir} &amp;&amp; git diff --quiet README.md 2&gt;/dev/null || (git add README.md &amp;&amp; git commit -m "Update README.md plugin version to ${project.version}"); }</argument>
+                                        <argument>echo '${project.version}' | grep -q SNAPSHOT || { cd ${project.basedir} &amp;&amp; git diff --quiet README.md docs/ 2&gt;/dev/null || (git add README.md docs/ &amp;&amp; git commit -m "Update docs plugin version to ${project.version}"); }</argument>
                                     </arguments>
                                 </configuration>
                             </execution>
