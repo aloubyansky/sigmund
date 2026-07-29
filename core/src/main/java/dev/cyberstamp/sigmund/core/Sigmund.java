@@ -4,8 +4,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The central facade for Sigmund — tool registry, signature verification, and session creation.
@@ -55,11 +57,12 @@ public class Sigmund {
     private final SigningConfig signingConfig;
     private final List<SignatureFormat> formats;
     private final ToolsConfig toolsConfig;
+    private final Set<String> signingToolNames;
     private volatile boolean fetchWarningEmitted;
 
     private Sigmund(List<SignatureTool> tools, List<SignatureFormat> formats,
             List<EvidenceProvider> evidenceProviders, SigningConfig signingConfig,
-            ToolsConfig toolsConfig) {
+            ToolsConfig toolsConfig, Set<String> signingToolNames) {
         if (tools.isEmpty()) {
             throw new SigmundException("No tools available");
         }
@@ -68,6 +71,7 @@ public class Sigmund {
         this.evidenceProviders = evidenceProviders;
         this.signingConfig = signingConfig;
         this.toolsConfig = toolsConfig;
+        this.signingToolNames = signingToolNames;
     }
 
     /**
@@ -81,6 +85,10 @@ public class Sigmund {
 
     /**
      * Creates a signer using the default profile (if configured) or all signing tools.
+     * <p>
+     * When tools were explicitly added for signing (via {@link Builder#addSigningTool}),
+     * only those tools are included. Otherwise, all tools with {@code canSign() → true}
+     * are used.
      *
      * @return a new signer
      */
@@ -88,10 +96,7 @@ public class Sigmund {
         if (signingConfig != null && signingConfig.defaultProfile() != null) {
             return signer(signingConfig.defaultProfile());
         }
-        List<SignatureTool> signingTools = tools.stream()
-                .filter(SignatureTool::canSign)
-                .toList();
-        return new Signer(signingTools);
+        return new Signer(resolveSigningTools());
     }
 
     /**
@@ -114,12 +119,31 @@ public class Sigmund {
             throw new SigmundException("Unknown signing profile: " + profileName
                     + ". Available profiles: " + signingConfig.profiles().keySet());
         }
-        List<SignatureTool> profileTools = tools.stream()
-                .filter(SignatureTool::canSign)
+        List<SignatureTool> profileTools = resolveSigningTools().stream()
                 .filter(t -> t.supportedCredentialTypes().stream()
                         .anyMatch(credentialTypes::contains))
                 .toList();
         return new Signer(profileTools);
+    }
+
+    private List<SignatureTool> resolveSigningTools() {
+        if (signingToolNames.isEmpty()) {
+            return tools.stream()
+                    .filter(SignatureTool::canSign)
+                    .toList();
+        }
+        List<SignatureTool> result = new ArrayList<>();
+        for (SignatureTool tool : tools) {
+            if (!signingToolNames.contains(tool.name())) {
+                continue;
+            }
+            if (!tool.canSign()) {
+                throw new SigmundException(
+                        "Tool '" + tool.name() + "' is configured for signing but has no signing credentials");
+            }
+            result.add(tool);
+        }
+        return result;
     }
 
     /**
@@ -301,6 +325,7 @@ public class Sigmund {
     public static class Builder {
 
         private final List<SignatureTool> tools = new ArrayList<>(2);
+        private final Set<String> signingToolNames = new LinkedHashSet<>();
         private final List<EvidenceProvider> extraProviders = new ArrayList<>();
         private ToolsConfig toolsConfig = ToolsConfig.DEFAULT;
         private SigningConfig signingConfig;
@@ -355,7 +380,8 @@ public class Sigmund {
         }
 
         /**
-         * Adds or replaces a {@link SignatureTool} by {@link SignatureTool#name()}.
+         * Adds a {@link SignatureTool}, replacing any existing tool with the same name
+         * unless the existing tool was explicitly added for signing.
          *
          * @param tool the tool to add
          * @return this builder
@@ -367,6 +393,9 @@ public class Sigmund {
                         "Tool '" + tool.name() + "' is not available");
             }
             String name = tool.name();
+            if (signingToolNames.contains(name) && findByName(name) != null) {
+                return this;
+            }
             tools.removeIf(t -> t.name().equals(name));
             tools.add(tool);
             return this;
@@ -398,7 +427,19 @@ public class Sigmund {
          *         or the tool is not available
          */
         public Builder addSigningTool(String toolName, Map<String, String> settings) {
-            return addTool(createFromFactory(toolName, true, settings));
+            SignatureTool tool = createFromFactory(toolName, true, settings);
+            signingToolNames.add(tool.name());
+            return addSigningToolDirect(tool);
+        }
+
+        private Builder addSigningToolDirect(SignatureTool tool) {
+            if (!tool.isAvailable()) {
+                throw new SigmundException(
+                        "Tool '" + tool.name() + "' is not available");
+            }
+            tools.removeIf(t -> t.name().equals(tool.name()));
+            tools.add(tool);
+            return this;
         }
 
         private SignatureTool createFromFactory(String toolName, boolean signing,
@@ -460,7 +501,8 @@ public class Sigmund {
             }
 
             return new Sigmund(List.copyOf(tools), List.copyOf(formats),
-                    List.copyOf(providers), signingConfig, toolsConfig);
+                    List.copyOf(providers), signingConfig, toolsConfig,
+                    Set.copyOf(signingToolNames));
         }
 
         private static final List<SignatureToolFactory> FACTORIES = List.of(
