@@ -189,6 +189,68 @@ class SqRunnerTest {
     }
 
     @Nested
+    class ParseCertStorePathTests {
+
+        @Test
+        void normalOutput() {
+            String output = """
+                     - home directory
+                       - /home/user
+                       - This holds the configuration file.
+
+                     - certificate store
+                       - /home/user/.local/share/pgp.cert.d
+                       - This holds all the certificates.
+
+                     - key store
+                       - /home/user/.local/share/sequoia/keystore
+                    """;
+            assertEquals(Path.of("/home/user/.local/share/pgp.cert.d"),
+                    SqRunner.parseCertStorePath(output));
+        }
+
+        @Test
+        void withSequoiaHome() {
+            String output = """
+                     - certificate store
+                       - /tmp/sq-home/data/pgp.cert.d
+                       - This holds all the certificates.
+                    """;
+            assertEquals(Path.of("/tmp/sq-home/data/pgp.cert.d"),
+                    SqRunner.parseCertStorePath(output));
+        }
+
+        @Test
+        void trailingWhitespace() {
+            String output = " - certificate store  \n   - /some/path/pgp.cert.d   \n";
+            assertEquals(Path.of("/some/path/pgp.cert.d"),
+                    SqRunner.parseCertStorePath(output));
+        }
+
+        @Test
+        void missingCertificateStoreSection() {
+            String output = """
+                     - home directory
+                       - /home/user
+
+                     - key store
+                       - /home/user/.local/share/sequoia/keystore
+                    """;
+            assertNull(SqRunner.parseCertStorePath(output));
+        }
+
+        @Test
+        void nullInput() {
+            assertNull(SqRunner.parseCertStorePath(null));
+        }
+
+        @Test
+        void emptyInput() {
+            assertNull(SqRunner.parseCertStorePath(""));
+        }
+    }
+
+    @Nested
     class FindCertFileTests {
 
         @TempDir

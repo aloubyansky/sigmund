@@ -35,6 +35,42 @@ class SigmundTest {
         }
 
         @Test
+        void signerExcludesUnconfiguredTools() throws IOException {
+            var bc = mockTool("bc", true, true, Set.of("openpgp4"));
+            var gpg = mockTool("gpg", true, true, Set.of("openpgp4"));
+            var config = new SigmundConfig(1, Map.of(), Map.of(), null,
+                    new SigningConfig(null,
+                            Map.of("bc", new ToolConfig(null, Map.of())),
+                            Map.of(), null),
+                    ToolsConfig.DEFAULT);
+            var sigmund = Sigmund.builder().config(config)
+                    .addTool(bc).addTool(gpg).build();
+
+            Signer signer = sigmund.signer();
+            Path artifact = createTempFile("configured-only.jar");
+            SigningOutput output = signer.sign(artifact, tempDir);
+
+            assertEquals(1, output.files().size());
+            assertEquals("bc", output.files().get(0).toolName());
+        }
+
+        @Test
+        void signerThrowsWhenConfiguredToolCannotSign() {
+            var bc = mockTool("bc", true, false, Set.of("openpgp4"));
+            var config = new SigmundConfig(1, Map.of(), Map.of(), null,
+                    new SigningConfig(null,
+                            Map.of("bc", new ToolConfig(null, Map.of())),
+                            Map.of(), null),
+                    ToolsConfig.DEFAULT);
+            var sigmund = Sigmund.builder().config(config)
+                    .addTool(bc).build();
+
+            var ex = assertThrows(SigmundException.class, sigmund::signer);
+            assertTrue(ex.getMessage().contains("bc"));
+            assertTrue(ex.getMessage().contains("not signing-capable"));
+        }
+
+        @Test
         void signerWithDefaultProfile() {
             var v4Tool = mockTool("gpg", true, true, Set.of("openpgp4"));
             var v6Tool = mockTool("sq", true, true, Set.of("openpgp6"));

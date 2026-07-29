@@ -19,8 +19,9 @@ import java.util.regex.Pattern;
  * This class provides a Java interface to Sequoia's post-quantum cryptography
  * capabilities, using hybrid cipher suites as defined in RFC 9580. The default
  * cipher suite is {@value #DEFAULT_CIPHER_SUITE} (configurable via
- * {@link #generateKey(String, String)}). All operations are isolated to a
- * specific Sequoia home directory via the SEQUOIA_HOME environment variable.
+ * {@link #generateKey(String, String)}). When a Sequoia home directory is
+ * provided, operations are isolated via the SEQUOIA_HOME environment variable;
+ * otherwise sq uses its own defaults.
  *
  * <p>
  * Example usage:
@@ -71,30 +72,19 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     private static final String SEQUOIA_HOME = "SEQUOIA_HOME";
 
     private final String sqExecutable;
-    private final Path sequoiaHome;
+    private final Map<String, String> sqEnv;
+    private volatile Path certDDir;
+    private volatile boolean certDDirResolved;
     private final String signingFingerprint;
     private final String defaultSignerFingerprint;
     private final OpenPgpSignatureFormat format;
     private volatile String detectedAlgorithm;
 
     /**
-     * Returns the default Sequoia home directory ({@code ~/.local/share/sequoia}).
-     *
-     * @return the default path, or null if {@code user.home} is not set
-     */
-    public static Path defaultHome() {
-        String userHome = System.getProperty("user.home");
-        if (userHome == null || userHome.isEmpty()) {
-            return null;
-        }
-        return Path.of(userHome, ".local", "share", "sequoia");
-    }
-
-    /**
      * Constructs a verify-only SqRunner using the default "sq" executable.
      *
-     * @param sequoiaHome the directory to use as SEQUOIA_HOME for key/cert storage
-     * @throws IllegalArgumentException if sequoiaHome is null
+     * @param sequoiaHome the directory to use as SEQUOIA_HOME, or {@code null} to let sq
+     *        use its own defaults
      */
     public SqRunner(Path sequoiaHome) {
         this("sq", sequoiaHome, null);
@@ -104,9 +94,9 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
      * Constructs an SqRunner with a custom sq executable path (verify-only).
      *
      * @param sqExecutable the path to the sq executable (e.g., "sq" or "/usr/local/bin/sq")
-     * @param sequoiaHome the directory to use as SEQUOIA_HOME for key/cert storage
-     * @throws IllegalArgumentException if sqExecutable or sequoiaHome is null, or if
-     *         sqExecutable is empty
+     * @param sequoiaHome the directory to use as SEQUOIA_HOME, or {@code null} to let sq
+     *        use its own defaults
+     * @throws IllegalArgumentException if sqExecutable is null or empty
      */
     public SqRunner(String sqExecutable, Path sequoiaHome) {
         this(sqExecutable, sequoiaHome, null);
@@ -119,10 +109,10 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
      * and the SPI {@link #sign(Path, Path)} method uses this fingerprint.
      *
      * @param sqExecutable the path to the sq executable
-     * @param sequoiaHome the directory to use as SEQUOIA_HOME for key/cert storage
+     * @param sequoiaHome the directory to use as SEQUOIA_HOME, or {@code null} to let sq
+     *        use its own defaults
      * @param signingFingerprint the fingerprint to sign with, or {@code null} for verify-only
-     * @throws IllegalArgumentException if sqExecutable or sequoiaHome is null, or if
-     *         sqExecutable is empty
+     * @throws IllegalArgumentException if sqExecutable is null or empty
      */
     public SqRunner(String sqExecutable, Path sequoiaHome, String signingFingerprint) {
         this(sqExecutable, sequoiaHome, signingFingerprint, null);
@@ -137,23 +127,20 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
      * {@code defaultSignerFingerprint} is used for {@link #signingInfo()} display.
      *
      * @param sqExecutable the path to the sq executable
-     * @param sequoiaHome the directory to use as SEQUOIA_HOME for key/cert storage
+     * @param sequoiaHome the directory to use as SEQUOIA_HOME, or {@code null} to let sq
+     *        use its own defaults (or the existing SEQUOIA_HOME from the environment)
      * @param signingFingerprint the explicit fingerprint to sign with, or {@code null}
      * @param defaultSignerFingerprint the fingerprint resolved from sq's {@code sign.signer-self}
      *        config, or {@code null}
-     * @throws IllegalArgumentException if sqExecutable or sequoiaHome is null, or if
-     *         sqExecutable is empty
+     * @throws IllegalArgumentException if sqExecutable is null or empty
      */
     SqRunner(String sqExecutable, Path sequoiaHome, String signingFingerprint,
             String defaultSignerFingerprint) {
         if (sqExecutable == null || sqExecutable.isEmpty()) {
             throw new IllegalArgumentException("sqExecutable cannot be null or empty");
         }
-        if (sequoiaHome == null) {
-            throw new IllegalArgumentException("sequoiaHome cannot be null");
-        }
         this.sqExecutable = sqExecutable;
-        this.sequoiaHome = sequoiaHome;
+        this.sqEnv = envFor(sequoiaHome);
         this.signingFingerprint = signingFingerprint;
         this.defaultSignerFingerprint = signingFingerprint == null ? defaultSignerFingerprint : null;
         this.format = new OpenPgpSignatureFormat();
@@ -394,7 +381,8 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
             }
         }
         // Fallback: scan cert-d for a cert containing this fingerprint
-        return scanCertStore(fingerprint);
+        Path certD = certDDir();
+        return certD != null ? scanCertStore(fingerprint, certD) : null;
     }
 
     /**
@@ -408,21 +396,24 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
         if (fingerprint == null || fingerprint.isEmpty()) {
             return null;
         }
+        Path certD = certDDir();
+        if (certD == null) {
+            return null;
+        }
         // Try the cert-d path derived from the fingerprint (works for primary keys)
         String lower = fingerprint.toLowerCase();
         if (lower.length() >= 3) {
-            Path direct = certDDir().resolve(lower.substring(0, 2)).resolve(lower.substring(2));
+            Path direct = certD.resolve(lower.substring(0, 2)).resolve(lower.substring(2));
             if (Files.isRegularFile(direct)) {
                 return direct;
             }
         }
         // Scan for subkey match
-        CertInfo info = scanCertStore(fingerprint);
+        CertInfo info = scanCertStore(fingerprint, certD);
         return info != null ? info.certFile() : null;
     }
 
-    private CertInfo scanCertStore(String fingerprint) {
-        Path certD = certDDir();
+    private CertInfo scanCertStore(String fingerprint, Path certD) {
         if (!Files.isDirectory(certD)) {
             return null;
         }
@@ -448,8 +439,67 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
         return null;
     }
 
+    // Racy lazy init — safe because re-computation is benign and certDDir is written before the flag
     private Path certDDir() {
-        return sequoiaHome.resolve("data").resolve("pgp.cert.d");
+        if (!certDDirResolved) {
+            certDDir = queryCertDDir(sqExecutable, sqEnv);
+            certDDirResolved = true;
+        }
+        return certDDir;
+    }
+
+    // Parses "certificate store\n   - /path/to/cert-d" from `sq config inspect paths` (sq 1.4.0-pqc.1)
+    private static final Pattern CERT_STORE_PATH_PATTERN = Pattern.compile(
+            "certificate store\\s*\\R\\s*-\\s*(.+)", Pattern.MULTILINE);
+
+    /**
+     * Queries the actual certificate store path by running
+     * {@code sq config inspect paths} and parsing the "certificate store" entry.
+     * <p>
+     * This avoids hardcoding the cert-d location, which varies depending on
+     * whether {@code SEQUOIA_HOME} is set and which XDG directories are in effect.
+     *
+     * @param sqExecutable the path to the sq executable
+     * @param env environment variables for the sq process (typically from {@link #envFor}),
+     *        or {@code null} to inherit the current environment
+     * @return the certificate store directory, or {@code null} if sq is unavailable
+     *         or the path cannot be determined
+     */
+    static Path queryCertDDir(String sqExecutable, Map<String, String> env) {
+        try {
+            CliTool.Result result = CliTool.run(env,
+                    sqExecutable, "config", "inspect", "paths");
+            if (result.exitCode() == 0) {
+                return parseCertStorePath(result.stdout());
+            }
+        } catch (UncheckedIOException ignored) {
+            // sq not available
+        }
+        return null;
+    }
+
+    /**
+     * Parses the certificate store path from {@code sq config inspect paths} output.
+     * <p>
+     * Looks for a "certificate store" section followed by a line starting with
+     * {@code " - "} and extracts the path. Returns {@code null} if the section
+     * is absent or the path is empty.
+     *
+     * @param output the stdout from {@code sq config inspect paths}
+     * @return the parsed path, or {@code null}
+     */
+    static Path parseCertStorePath(String output) {
+        if (output == null) {
+            return null;
+        }
+        Matcher m = CERT_STORE_PATH_PATTERN.matcher(output);
+        if (m.find()) {
+            String path = m.group(1).trim();
+            if (!path.isEmpty()) {
+                return Path.of(path);
+            }
+        }
+        return null;
     }
 
     static CertInfo parseCertInfo(String output, Path certFile) {
@@ -526,14 +576,13 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
      * it looks like a valid hex fingerprint (40 or 64 characters).
      *
      * @param sqExecutable the path to the sq executable
-     * @param sequoiaHome the SEQUOIA_HOME directory
+     * @param env the environment to pass to the sq process, or {@code null}
      * @return the default signer fingerprint in uppercase, or {@code null} if not configured
      */
-    static String querySignerSelf(String sqExecutable, Path sequoiaHome) {
+    static String querySignerSelf(String sqExecutable, Map<String, String> env) {
         try {
             String[] command = { sqExecutable, "config", "get", "sign.signer-self.0" };
-            CliTool.Result result = CliTool.run(
-                    Map.of(SEQUOIA_HOME, sequoiaHome.toString()), command);
+            CliTool.Result result = CliTool.run(env, command);
             if (result.exitCode() != 0) {
                 return null;
             }
@@ -757,20 +806,21 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     }
 
     /**
-     * Runs an sq command with the SEQUOIA_HOME environment variable set.
-     * <p>
-     * This is a specialized version of CliTool.run() that sets the SEQUOIA_HOME
-     * environment variable to isolate key storage and configuration.
+     * Builds the environment map for sq commands from an optional Sequoia home directory.
      *
-     *
-     * @param args the sq command arguments (without the executable name)
-     * @return the result of the command execution
-     * @throws UncheckedIOException if an I/O error occurs during execution
-     * @throws RuntimeException if the process is interrupted or times out
+     * @param sequoiaHome the directory to use as {@code SEQUOIA_HOME}, or {@code null}
+     *        to inherit the current environment (letting sq use its own defaults)
+     * @return a single-entry map setting {@code SEQUOIA_HOME}, or {@code null}
      */
+    static Map<String, String> envFor(Path sequoiaHome) {
+        return sequoiaHome != null
+                ? Map.of(SEQUOIA_HOME, sequoiaHome.toString())
+                : null;
+    }
+
     private CliTool.Result runSq(String... args) {
         String[] command = buildCommand(args);
-        return CliTool.run(Map.of(SEQUOIA_HOME, sequoiaHome.toString()), command);
+        return CliTool.run(sqEnv, command);
     }
 
     private String formatCommand(String... args) {
