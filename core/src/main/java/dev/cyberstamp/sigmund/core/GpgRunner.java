@@ -390,10 +390,28 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
         return List.of(parseColonsSigningInfo(result.stdout()));
     }
 
+    /**
+     * Returns the path to the GPG configuration file ({@code gpg.conf})
+     * in the effective GPG home directory.
+     *
+     * @return the path to {@code gpg.conf}
+     */
     private Path gpgConfPath() {
         return gpgHome.resolve("gpg.conf");
     }
 
+    /**
+     * Parses the {@code default-key} directive from a {@code gpg.conf} file.
+     * <p>
+     * Scans the file line by line, skipping comments and blank lines.
+     * If multiple {@code default-key} directives are present, the last one wins
+     * (matching GPG's own behavior). Values are stripped of quotes, {@code 0x}
+     * prefix, and {@code !} exact-subkey marker via {@link #stripKeyDecorations(String)}.
+     *
+     * @param gpgConfPath the path to the {@code gpg.conf} file
+     * @return the default key identifier, or {@code null} if the file does not exist,
+     *         is unreadable, or contains no {@code default-key} directive
+     */
     static String parseDefaultKey(Path gpgConfPath) {
         if (gpgConfPath == null || !Files.isRegularFile(gpgConfPath)) {
             return null;
@@ -419,6 +437,15 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
         }
     }
 
+    /**
+     * Strips syntactic decorations from a GPG key identifier.
+     * <p>
+     * Removes surrounding double quotes, leading {@code 0x}/{@code 0X} hex prefix,
+     * and trailing {@code !} (exact-subkey marker), then trims whitespace.
+     *
+     * @param value the raw key identifier from {@code gpg.conf}
+     * @return the cleaned key identifier
+     */
     private static String stripKeyDecorations(String value) {
         if (value.startsWith("\"") && value.endsWith("\"") && value.length() > 1) {
             value = value.substring(1, value.length() - 1);

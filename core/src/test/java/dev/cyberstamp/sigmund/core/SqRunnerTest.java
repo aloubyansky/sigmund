@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -90,6 +91,101 @@ class SqRunnerTest {
     @Test
     void parseCertInfoNoMatchingFields() {
         assertNull(SqRunner.parseCertInfo("some random output\n", null));
+    }
+
+    @Nested
+    class ParseSignerSelfOutputTests {
+
+        @Test
+        void validV6Fingerprint() {
+            String output = "sign.signer-self.0 = \"ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890\"\n";
+            assertEquals("ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890",
+                    SqRunner.parseSignerSelfOutput(output));
+        }
+
+        @Test
+        void validV4Fingerprint() {
+            String output = "sign.signer-self.0 = \"41A2197725BD63EB00D071D46A7F5DB1C68BDB81\"\n";
+            assertEquals("41A2197725BD63EB00D071D46A7F5DB1C68BDB81",
+                    SqRunner.parseSignerSelfOutput(output));
+        }
+
+        @Test
+        void lowercaseFingerprintNormalized() {
+            String output = "sign.signer-self.0 = \"abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890\"\n";
+            assertEquals("ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890",
+                    SqRunner.parseSignerSelfOutput(output));
+        }
+
+        @Test
+        void placeholderTextRejected() {
+            String output = "sign.signer-self.0 = \"fingerprint of your key\"\n";
+            assertNull(SqRunner.parseSignerSelfOutput(output));
+        }
+
+        @Test
+        void emptyValueRejected() {
+            String output = "sign.signer-self.0 = \"\"\n";
+            assertNull(SqRunner.parseSignerSelfOutput(output));
+        }
+
+        @Test
+        void nullInput() {
+            assertNull(SqRunner.parseSignerSelfOutput(null));
+        }
+
+        @Test
+        void emptyInput() {
+            assertNull(SqRunner.parseSignerSelfOutput(""));
+        }
+
+        @Test
+        void noEqualsSign() {
+            assertNull(SqRunner.parseSignerSelfOutput("some random output"));
+        }
+
+        @Test
+        void tooShortHexRejected() {
+            String output = "sign.signer-self.0 = \"ABCDEF1234\"\n";
+            assertNull(SqRunner.parseSignerSelfOutput(output));
+        }
+
+        @Test
+        void nonHexRejected() {
+            String output = "sign.signer-self.0 = \"GHIJKL1234567890ABCDEF1234567890ABCDEF1234\"\n";
+            assertNull(SqRunner.parseSignerSelfOutput(output));
+        }
+    }
+
+    @Nested
+    class SignerSelfCanSignTests {
+
+        @TempDir
+        Path tempDir;
+
+        @Test
+        void canSignWithDefaultSignerFingerprint() {
+            String fp = "ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890";
+            SqRunner sq = new SqRunner("sq", tempDir, null, fp);
+            assertTrue(sq.canSign());
+        }
+
+        @Test
+        void cannotSignWithNullDefaultSigner() {
+            SqRunner sq = new SqRunner("sq", tempDir, null, null);
+            assertFalse(sq.canSign());
+        }
+
+        @Test
+        void explicitFingerprintTakesPrecedence() {
+            String explicit = "1111111111111111111111111111111111111111111111111111111111111111";
+            String defaultFp = "2222222222222222222222222222222222222222222222222222222222222222";
+            SqRunner sq = new SqRunner("sq", tempDir, explicit, defaultFp);
+            assertTrue(sq.canSign());
+            List<SigningInfo> info = sq.signingInfo();
+            assertEquals(1, info.size());
+            assertEquals(explicit, info.get(0).fingerprint());
+        }
     }
 
     @Nested

@@ -24,7 +24,11 @@ final class SqToolFactory implements SignatureToolFactory {
         if (fingerprint == null && credential instanceof FingerprintCredential fp) {
             fingerprint = fp.fingerprint();
         }
-        return new SqRunner(executable, home, fingerprint);
+        if (fingerprint != null) {
+            return new SqRunner(executable, home, fingerprint);
+        }
+        String defaultSigner = SqRunner.querySignerSelf(executable, home);
+        return new SqRunner(executable, home, null, defaultSigner);
     }
 
     @Override

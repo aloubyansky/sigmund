@@ -2,10 +2,12 @@ package dev.cyberstamp.sigmund.core;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ToolFactoryTest {
 
@@ -59,6 +61,9 @@ class ToolFactoryTest {
     @Nested
     class SqFactory {
 
+        @TempDir
+        Path tempDir;
+
         private final SqToolFactory factory = new SqToolFactory();
 
         @Test
@@ -75,7 +80,7 @@ class ToolFactoryTest {
 
         @Test
         void createVerifyOnlyDefaultHome() {
-            SignatureTool tool = factory.createVerifyOnly(Map.of());
+            SignatureTool tool = factory.createVerifyOnly(Map.of("home", tempDir.toString()));
             assertEquals("sq", tool.name());
             assertFalse(tool.canSign());
         }
@@ -89,6 +94,7 @@ class ToolFactoryTest {
         @Test
         void createWithFingerprintSetting() {
             SignatureTool tool = factory.create(null, Map.of(
+                    "home", tempDir.toString(),
                     "signing-fingerprint", "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"));
             assertTrue(tool.canSign());
         }
@@ -97,13 +103,13 @@ class ToolFactoryTest {
         void createWithCredentialFallback() {
             var cred = new FingerprintCredential(Credential.TYPE_OPENPGP_V6,
                     "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
-            SignatureTool tool = factory.create(cred, Map.of());
+            SignatureTool tool = factory.create(cred, Map.of("home", tempDir.toString()));
             assertTrue(tool.canSign());
         }
 
         @Test
         void createNoFingerprintNoCredential() {
-            SignatureTool tool = factory.create(null, Map.of());
+            SignatureTool tool = factory.create(null, Map.of("home", tempDir.toString()));
             assertFalse(tool.canSign());
         }
 
