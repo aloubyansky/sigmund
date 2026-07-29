@@ -8,8 +8,8 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import picocli.CommandLine;
 
-@CommandLine.Command(name = "signing-info", description = "Display effective signing configuration and signer identities", mixinStandardHelpOptions = true)
-public class SigningInfoCommand implements Callable<Integer> {
+@CommandLine.Command(name = "signer-info", description = "Display signing tool and identity information", mixinStandardHelpOptions = true)
+public class SignerInfoCommand implements Callable<Integer> {
 
     @CommandLine.Mixin
     private SqHomeMixin sqHomeMixin;

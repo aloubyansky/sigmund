@@ -88,7 +88,7 @@ mvn sigmund:verify
 Sign your Maven artifacts with GPG, Bouncy Castle, or both. First, check which signing keys are configured:
 
 ```bash
-mvn sigmund:signing-info
+mvn sigmund:signer-info
 ```
 
 ```

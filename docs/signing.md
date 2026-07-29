@@ -57,18 +57,18 @@ Existing tools (GPG, Maven Central) see only the first block and work as before.
 
 ## Checking the Signing Setup
 
-Use `signing-info` to display the effective signing configuration — which tools are active, what keys they will use, and which credential types they produce — without signing anything.
+Use `signer-info` to display the effective signing configuration — which tools are active, what keys they will use, and which credential types they produce — without signing anything.
 
 **CLI:**
 
 ```bash
-sigmund signing-info
+sigmund signer-info
 ```
 
 **Maven:**
 
 ```bash
-mvn sigmund:signing-info
+mvn sigmund:signer-info
 ```
 
 Example output:
@@ -403,10 +403,10 @@ signing:
 
 The `default-profile` setting determines which profile is used when no profile is explicitly specified. If omitted, all available credential types are used.
 
-Use `sigmund:signing-info` (Maven) or `sigmund signing-info` (CLI) to see which tools and keys are active for a given profile:
+Use `sigmund:signer-info` (Maven) or `sigmund signer-info` (CLI) to see which tools and keys are active for a given profile:
 
 ```bash
-mvn sigmund:signing-info -Dsigmund.profile=hybrid
+mvn sigmund:signer-info -Dsigmund.profile=hybrid
 ```
 
 ## Signing Pipeline
