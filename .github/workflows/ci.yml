@@ -52,12 +52,14 @@ jobs:
 
       - name: Install sq
         run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
           if sq version 2>/dev/null | grep -q "$SQ_VERSION"; then
             echo "sq $SQ_VERSION already cached"
           else
             cargo install "sequoia-sq@$SQ_VERSION" --features "$SQ_CARGO_FEATURES" --no-default-features --force
           fi
           sq version
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Set up GPG test key
         run: |
