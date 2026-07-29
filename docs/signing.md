@@ -332,23 +332,34 @@ Use this fingerprint with the 'sign' command.
 
 ### Signing with PQC
 
-Configure the PQC key fingerprint in `sigmund.yaml`:
+If you have a single key in your Sequoia store (or have set `sign.signer-self` in sq's config), no configuration is needed — Sigmund uses it automatically:
+
+```bash
+mvn sigmund:sign
+```
+
+```bash
+sigmund sign --file artifact.jar
+```
+
+**Key resolution order:**
+
+1. `signing-fingerprint` in `sigmund.yaml` (explicit override)
+2. `sign.signer-self` in sq's config (`~/.config/sequoia/sq/config.toml`)
+
+To set sq's default signer:
+
+```bash
+sq config set sign.signer-self "YOUR_FINGERPRINT"
+```
+
+To override the default, set `signing-fingerprint` in `sigmund.yaml`:
 
 ```yaml
 signing:
   tools:
     sq:
       signing-fingerprint: "D62AAB339E45E5EA2FD036872B01D46A517A2991..."
-```
-
-Then sign with the CLI or Maven plugin:
-
-```bash
-sigmund sign --file artifact.jar
-```
-
-```bash
-mvn sigmund:sign
 ```
 
 This produces a hybrid `.asc` file containing both a classic signature (from GPG or BC) and a PQC signature (from sq).

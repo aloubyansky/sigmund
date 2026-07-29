@@ -65,6 +65,7 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     private static final Set<String> SUPPORTED_CREDENTIAL_TYPES = Set.of(Credential.TYPE_OPENPGP_V4,
             Credential.TYPE_OPENPGP_V6);
     private static final Pattern FINGERPRINT_PATTERN = Pattern.compile("(?i)(?:fingerprint:?\\s*)?([0-9A-F]{64})");
+    private static final Pattern SIGNER_SELF_PATTERN = Pattern.compile("(?i)[0-9A-F]{40,64}");
     private static final Pattern INSPECT_ALGO_PATTERN = Pattern.compile("Public-key algo:\\s+(.+)");
     private static final Pattern INSPECT_USERID_PATTERN = Pattern.compile("UserID:\\s+(.+)");
     private static final String SEQUOIA_HOME = "SEQUOIA_HOME";
@@ -72,6 +73,7 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     private final String sqExecutable;
     private final Path sequoiaHome;
     private final String signingFingerprint;
+    private final String defaultSignerFingerprint;
     private final OpenPgpSignatureFormat format;
     private volatile String detectedAlgorithm;
 
@@ -123,6 +125,27 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
      *         sqExecutable is empty
      */
     public SqRunner(String sqExecutable, Path sequoiaHome, String signingFingerprint) {
+        this(sqExecutable, sequoiaHome, signingFingerprint, null);
+    }
+
+    /**
+     * Constructs an SqRunner with an explicit signing fingerprint or a default signer.
+     * <p>
+     * When {@code signingFingerprint} is non-null, signing uses {@code --signer <fingerprint>}.
+     * When {@code signingFingerprint} is null but {@code defaultSignerFingerprint} is non-null,
+     * signing uses {@code --signer-self} (sq's configured default signer) and
+     * {@code defaultSignerFingerprint} is used for {@link #signingInfo()} display.
+     *
+     * @param sqExecutable the path to the sq executable
+     * @param sequoiaHome the directory to use as SEQUOIA_HOME for key/cert storage
+     * @param signingFingerprint the explicit fingerprint to sign with, or {@code null}
+     * @param defaultSignerFingerprint the fingerprint resolved from sq's {@code sign.signer-self}
+     *        config, or {@code null}
+     * @throws IllegalArgumentException if sqExecutable or sequoiaHome is null, or if
+     *         sqExecutable is empty
+     */
+    SqRunner(String sqExecutable, Path sequoiaHome, String signingFingerprint,
+            String defaultSignerFingerprint) {
         if (sqExecutable == null || sqExecutable.isEmpty()) {
             throw new IllegalArgumentException("sqExecutable cannot be null or empty");
         }
@@ -132,6 +155,7 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
         this.sqExecutable = sqExecutable;
         this.sequoiaHome = sequoiaHome;
         this.signingFingerprint = signingFingerprint;
+        this.defaultSignerFingerprint = signingFingerprint == null ? defaultSignerFingerprint : null;
         this.format = new OpenPgpSignatureFormat();
     }
 
@@ -490,7 +514,53 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
 
     @Override
     public boolean canSign() {
-        return signingFingerprint != null && !signingFingerprint.isEmpty();
+        return (signingFingerprint != null && !signingFingerprint.isEmpty())
+                || (defaultSignerFingerprint != null && !defaultSignerFingerprint.isEmpty());
+    }
+
+    /**
+     * Queries sq's configured default signer fingerprint ({@code sign.signer-self.0}).
+     * <p>
+     * Runs {@code sq config get sign.signer-self.0} and parses the output format
+     * {@code sign.signer-self.0 = "FINGERPRINT"}. Returns the fingerprint only if
+     * it looks like a valid hex fingerprint (40 or 64 characters).
+     *
+     * @param sqExecutable the path to the sq executable
+     * @param sequoiaHome the SEQUOIA_HOME directory
+     * @return the default signer fingerprint in uppercase, or {@code null} if not configured
+     */
+    static String querySignerSelf(String sqExecutable, Path sequoiaHome) {
+        try {
+            String[] command = { sqExecutable, "config", "get", "sign.signer-self.0" };
+            CliTool.Result result = CliTool.run(
+                    Map.of(SEQUOIA_HOME, sequoiaHome.toString()), command);
+            if (result.exitCode() != 0) {
+                return null;
+            }
+            return parseSignerSelfOutput(result.stdout());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    static String parseSignerSelfOutput(String output) {
+        if (output == null || output.isEmpty()) {
+            return null;
+        }
+        String line = output.lines().findFirst().orElse("").trim();
+        int eq = line.indexOf('=');
+        if (eq < 0) {
+            return null;
+        }
+        String value = line.substring(eq + 1).trim();
+        if (value.startsWith("\"") && value.endsWith("\"") && value.length() > 1) {
+            value = value.substring(1, value.length() - 1);
+        }
+        value = value.trim();
+        if (value.isEmpty() || !SIGNER_SELF_PATTERN.matcher(value).matches()) {
+            return null;
+        }
+        return value.toUpperCase();
     }
 
     @Override
@@ -498,17 +568,18 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
         if (!canSign()) {
             return List.of();
         }
+        String effectiveFingerprint = signingFingerprint != null ? signingFingerprint : defaultSignerFingerprint;
         try {
-            CertInfo info = inspectCert(signingFingerprint);
+            CertInfo info = inspectCert(effectiveFingerprint);
             if (info == null) {
-                return List.of(new SigningInfo("sq", signingFingerprint,
+                return List.of(new SigningInfo("sq", effectiveFingerprint,
                         null, null, Set.copyOf(SUPPORTED_CREDENTIAL_TYPES)));
             }
-            return List.of(new SigningInfo("sq", signingFingerprint,
+            return List.of(new SigningInfo("sq", effectiveFingerprint,
                     info.algorithm(), info.userId(),
                     Set.copyOf(SUPPORTED_CREDENTIAL_TYPES)));
         } catch (RuntimeException e) {
-            return List.of(new SigningInfo("sq", signingFingerprint,
+            return List.of(new SigningInfo("sq", effectiveFingerprint,
                     null, null, Set.copyOf(SUPPORTED_CREDENTIAL_TYPES)));
         }
     }
@@ -546,7 +617,11 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
         if (!canSign()) {
             throw new IllegalStateException("No signing fingerprint configured");
         }
-        sign(artifactFile, outputSig, signingFingerprint);
+        if (signingFingerprint != null) {
+            sign(artifactFile, outputSig, signingFingerprint);
+        } else {
+            signWithSignerSelf(artifactFile, outputSig);
+        }
         if (detectedAlgorithm == null) {
             try {
                 String armored = java.nio.file.Files.readString(outputSig);
@@ -558,6 +633,22 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
             }
         }
         return new SignResult(detectedAlgorithm);
+    }
+
+    private void signWithSignerSelf(Path artifactFile, Path outputSig) {
+        String[] args = {
+                "sign",
+                "--signer-self",
+                "--signature-file", outputSig.toString(),
+                artifactFile.toString()
+        };
+
+        CliTool.Result result = runSq(args);
+        if (result.exitCode() != 0) {
+            throw new RuntimeException("'" + formatCommand(args)
+                    + "' failed with exit code " + result.exitCode()
+                    + (result.stderr().isEmpty() ? "" : ": " + result.stderr().trim()));
+        }
     }
 
     /**
