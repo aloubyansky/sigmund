@@ -20,9 +20,11 @@ The Sigmund CLI provides command-line tools for key management, artifact signing
 - [Configuration File](#configuration-file)
 - [CLI vs Maven Plugin](#cli-vs-maven-plugin)
 
-## Building the CLI
+## Getting the CLI
 
-Build the Sigmund CLI from source:
+Download `sigmund.jar` from the [latest GitHub release](https://github.com/aloubyansky/sigmund/releases).
+
+Alternatively, build from source:
 
 ```bash
 mvn clean install -DskipTests
