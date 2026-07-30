@@ -35,22 +35,23 @@ jobs:
             cargo rustc gcc clang libsqlite3-dev libssl-dev \
             pkg-config nettle-dev capnproto
 
-      - name: Detect OS release
-        run: echo "OS_RELEASE=$(lsb_release -rs)" >> "$GITHUB_ENV"
-
-      - name: Cache sq binary
+      - name: Cache sq build artifacts
         uses: actions/cache@v6
         with:
-          path: ~/.cargo/bin/sq
-          key: sq-${{ env.SQ_VERSION }}-${{ env.SQ_CARGO_FEATURES }}-ubuntu-${{ env.OS_RELEASE }}
+          path: |
+            ~/.cargo/registry
+            ~/sq-build
+          key: sq-build-${{ env.SQ_VERSION }}-${{ env.SQ_CARGO_FEATURES }}-${{ runner.os }}
 
-      - name: Install sq
+      - name: Build and install sq
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           if sq version 2>/dev/null | grep -q "$SQ_VERSION"; then
-            echo "sq $SQ_VERSION already cached"
+            echo "sq $SQ_VERSION already installed"
           else
-            cargo install "sequoia-sq@$SQ_VERSION" --features "$SQ_CARGO_FEATURES" --no-default-features --force
+            CARGO_TARGET_DIR=~/sq-build \
+              cargo install "sequoia-sq@$SQ_VERSION" \
+                --features "$SQ_CARGO_FEATURES" --no-default-features --force
           fi
           sq version
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
