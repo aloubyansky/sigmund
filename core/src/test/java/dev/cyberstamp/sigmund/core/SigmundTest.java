@@ -460,6 +460,129 @@ class SigmundTest {
         }
     }
 
+    @Nested
+    class ExclusiveSignerEnforcement {
+
+        @Test
+        void exclusiveSignerRemovesOtherSigningTools() {
+            var bc = mockTool("bc", true, true, Set.of("openpgp4"));
+            var gpg = mockTool("gpg", true, true, Set.of("openpgp4"));
+            var builder = Sigmund.builder().toolsConfig(noAutoInit());
+            builder.addTool(bc);
+            builder.addTool(gpg);
+
+            builder.enforceExclusiveSigners(List.of(exclusiveFactory("bc")));
+
+            var sigmund = builder.build();
+            var signers = sigmund.tools().stream()
+                    .filter(SignatureTool::canSign).toList();
+            assertEquals(1, signers.size());
+            assertEquals("bc", signers.get(0).name());
+        }
+
+        @Test
+        void exclusiveSignerKeepsVerifyOnlyTools() {
+            var bc = mockTool("bc", true, true, Set.of("openpgp4"));
+            var gpgVerifyOnly = mockTool("gpg", true, false, Set.of("openpgp4"));
+            var builder = Sigmund.builder().toolsConfig(noAutoInit());
+            builder.addTool(bc);
+            builder.addTool(gpgVerifyOnly);
+
+            builder.enforceExclusiveSigners(List.of(exclusiveFactory("bc")));
+
+            var sigmund = builder.build();
+            assertEquals(2, sigmund.tools().size());
+            assertNotNull(sigmund.tool("gpg"));
+            assertFalse(sigmund.tool("gpg").canSign());
+        }
+
+        @Test
+        void noOpWhenSigningToolsExplicitlyConfigured() {
+            var bc = mockTool("bc", true, true, Set.of("openpgp4"));
+            var gpg = mockTool("gpg", true, true, Set.of("openpgp4"));
+            var config = new SigmundConfig(1, Map.of(), Map.of(), null,
+                    new SigningConfig(null,
+                            Map.of("gpg", new ToolConfig(null, Map.of())),
+                            Map.of(), null),
+                    ToolsConfig.DEFAULT);
+            var builder = Sigmund.builder().config(config).toolsConfig(noAutoInit());
+            builder.addTool(bc);
+            builder.addTool(gpg);
+
+            builder.enforceExclusiveSigners(List.of(exclusiveFactory("bc")));
+
+            var sigmund = builder.build();
+            var signers = sigmund.tools().stream()
+                    .filter(SignatureTool::canSign).toList();
+            assertEquals(2, signers.size());
+        }
+
+        @Test
+        void clearsSigningConfigAfterEnforcement() throws IOException {
+            var bc = mockTool("bc", true, true, Set.of("openpgp4"));
+            var gpg = mockTool("gpg", true, true, Set.of("openpgp4"));
+            var config = new SigmundConfig(1, Map.of(), Map.of(), null,
+                    new SigningConfig(null, Map.of(), Map.of(), null),
+                    ToolsConfig.DEFAULT);
+            var builder = Sigmund.builder().config(config).toolsConfig(noAutoInit());
+            builder.addTool(bc);
+            builder.addTool(gpg);
+
+            builder.enforceExclusiveSigners(List.of(exclusiveFactory("bc")));
+
+            var sigmund = builder.build();
+            Signer signer = sigmund.signer();
+            Path artifact = createTempFile("exclusive.jar");
+            SigningOutput output = signer.sign(artifact, tempDir);
+            assertEquals(1, output.files().size());
+            assertEquals("bc", output.files().get(0).toolName());
+        }
+
+        @Test
+        void multipleExclusiveSignersThrows() {
+            var builder = Sigmund.builder().toolsConfig(noAutoInit());
+            builder.addTool(mockTool("bc", true, true, Set.of("openpgp4")));
+            builder.addTool(mockTool("sq", true, true, Set.of("openpgp6")));
+
+            var factories = List.<SignatureToolFactory> of(
+                    exclusiveFactory("bc"), exclusiveFactory("sq"));
+            var ex = assertThrows(SigmundException.class,
+                    () -> builder.enforceExclusiveSigners(factories));
+            assertTrue(ex.getMessage().contains("Multiple"));
+        }
+
+        private SignatureToolFactory exclusiveFactory(String name) {
+            var tool = mockTool(name, true, true, Set.of("openpgp4"));
+            return new SignatureToolFactory() {
+                @Override
+                public String toolName() {
+                    return name;
+                }
+
+                @Override
+                public Set<String> supportedCredentialTypes() {
+                    return Set.of("openpgp4");
+                }
+
+                @Override
+                public SignatureTool create(Credential credential,
+                        Map<String, String> settings) {
+                    return tool;
+                }
+
+                @Override
+                public SignatureTool createVerifyOnly(Map<String, String> settings) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public boolean isDefaultExclusiveSigner() {
+                    return true;
+                }
+            };
+        }
+    }
+
     // --- Helpers ---
 
     private static ToolsConfig noAutoInit() {

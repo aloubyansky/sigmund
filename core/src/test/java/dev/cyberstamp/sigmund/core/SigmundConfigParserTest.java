@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 class SigmundConfigParserTest {
 
     private SigmundConfig parse(String yaml) {
-        return SigmundConfigParser.parse(new StringReader(yaml));
+        return SigmundConfigParser.parse("<test>", new StringReader(yaml));
     }
 
     @Nested
@@ -129,7 +129,7 @@ class SigmundConfigParserTest {
                     trust:
                       apache-stack: alice
                     """;
-            SigmundConfig config = SigmundConfigParser.parse(new StringReader(yaml));
+            SigmundConfig config = SigmundConfigParser.parse("<test>", new StringReader(yaml));
             TrustPolicy policy = config.trustPolicy();
             // "apache-stack" should be expanded into its two patterns
             assertFalse(policy.expectedSigners(

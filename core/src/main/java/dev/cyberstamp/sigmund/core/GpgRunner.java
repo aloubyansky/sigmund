@@ -127,6 +127,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
     private final Path gpgHome;
     private final OpenPgpSignatureFormat format;
     private volatile String detectedAlgorithm;
+    private final boolean signingCapable;
     private final boolean resolveSigners;
     private final boolean importToKeyring;
     private final List<String> keyservers;
@@ -190,12 +191,19 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
     public GpgRunner(String gpgExecutable, String keyName, String home,
             String passphrase,
             boolean resolveSigners, boolean importToKeyring, List<String> keyservers) {
+        this(gpgExecutable, keyName, home, passphrase, true, resolveSigners, importToKeyring, keyservers);
+    }
+
+    GpgRunner(String gpgExecutable, String keyName, String home,
+            String passphrase, boolean signingCapable,
+            boolean resolveSigners, boolean importToKeyring, List<String> keyservers) {
         if (gpgExecutable == null || gpgExecutable.isEmpty()) {
             throw new IllegalArgumentException("gpgExecutable cannot be null or empty");
         }
         this.gpgExecutable = gpgExecutable;
         this.keyName = keyName;
         this.passphrase = passphrase;
+        this.signingCapable = signingCapable;
         this.env = home != null ? Map.of("GNUPGHOME", home) : null;
         this.gpgHome = home != null ? Path.of(home) : Path.of(System.getProperty("user.home"), ".gnupg");
         this.format = new OpenPgpSignatureFormat();
@@ -372,7 +380,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
      */
     @Override
     public boolean canSign() {
-        return true;
+        return signingCapable;
     }
 
     @Override

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 /**
  * Factory for constructing {@link BcRunner} instances from configuration.
@@ -39,16 +40,29 @@ final class BcToolFactory implements SignatureToolFactory {
      * preserving the {@code char[]}-based passphrase lifecycle. Called by
      * {@link Sigmund.Builder} when a {@link PassphraseProvider} was set
      * via {@link Sigmund.Builder#bcPassphraseProvider}.
+     *
+     * <h4>Signing key priority</h4>
+     * <ol>
+     * <li>{@code SIGMUND_BC_SIGNING_KEY} env var (or custom {@code signing-key-env})</li>
+     * <li>{@code tsk-file} setting</li>
+     * <li>{@code signing-fingerprint} setting (or credential fingerprint)</li>
+     * </ol>
+     * <p>
+     * The env var takes precedence so that CI environments can override
+     * file-based configuration without modifying {@code sigmund.yaml}.
      */
     SignatureTool create(Credential credential, Map<String, String> settings,
             PassphraseProvider explicitProvider) {
         BcKeyStore keyStore = buildKeyStore(settings);
-        String fingerprint = settings.get("signing-fingerprint");
-        if (fingerprint == null && credential instanceof FingerprintCredential fp) {
-            fingerprint = fp.fingerprint();
+        byte[] tskBytes = resolveSigningKeyBytes(settings);
+        Path tskFile = tskBytes == null ? resolveOptionalPath(settings, "tsk-file") : null;
+        String fingerprint = null;
+        if (tskBytes == null && tskFile == null) {
+            fingerprint = settings.get("signing-fingerprint");
+            if (fingerprint == null && credential instanceof FingerprintCredential fp) {
+                fingerprint = fp.fingerprint();
+            }
         }
-        Path tskFile = resolveOptionalPath(settings, "tsk-file");
-        byte[] tskBytes = tskFile == null ? resolveSigningKeyBytes(settings) : null;
         PassphraseProvider provider = explicitProvider != null
                 ? explicitProvider
                 : resolvePassphraseProvider(settings);
@@ -122,16 +136,66 @@ final class BcToolFactory implements SignatureToolFactory {
         return value != null ? Path.of(value) : null;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Returns {@code true} when the default {@code SIGMUND_BC_SIGNING_KEY} env var
+     * is set and non-empty — indicating an ephemeral signing key was injected
+     * from the environment, typically a CI secret. When no signing tools are
+     * configured in {@code sigmund.yaml}, the builder uses this to make BC the
+     * sole signer, preventing other tools (GPG, sq) from co-signing with
+     * unintended default keys.
+     * <p>
+     * A custom env var name configured via {@code signing-key-env} in
+     * {@code sigmund.yaml} is not checked here, because that configuration
+     * implies BC is already listed as an explicit signing tool — this method
+     * is not consulted when signing tools are explicitly configured.
+     */
+    @Override
+    public boolean isDefaultExclusiveSigner() {
+        String value = System.getenv(DEFAULT_SIGNING_KEY_ENV);
+        return value != null && !value.isEmpty();
+    }
+
+    /**
+     * Resolves signing key bytes from the environment, using {@link System#getenv}.
+     *
+     * @see #resolveSigningKeyBytes(Map, Function)
+     */
     private static byte[] resolveSigningKeyBytes(Map<String, String> settings) {
+        return resolveSigningKeyBytes(settings, System::getenv);
+    }
+
+    /**
+     * Resolves the raw signing key bytes from an environment variable.
+     * <p>
+     * Resolution order:
+     * <ol>
+     * <li>If {@code signing-key-env} is present in settings, use that as the env var name.</li>
+     * <li>Otherwise, use the default {@code SIGMUND_BC_SIGNING_KEY}.</li>
+     * </ol>
+     * <p>
+     * If the resolved env var is set and non-empty, its value is returned as UTF-8 bytes.
+     * If a custom env var name was configured but the variable is not set (or empty),
+     * a {@link SigmundException} is thrown — the user explicitly asked for it. If the
+     * default env var is simply absent, {@code null} is returned (no error).
+     *
+     * @param settings tool-specific settings from the config
+     * @param envLookup function mapping env var name to value (or {@code null})
+     * @return the key bytes, or {@code null} if the default env var is not set
+     * @throws SigmundException if a custom {@code signing-key-env} was configured
+     *         but the environment variable is not set or empty
+     */
+    static byte[] resolveSigningKeyBytes(Map<String, String> settings,
+            Function<String, String> envLookup) {
         String configuredEnv = settings.get("signing-key-env");
         String envVar = configuredEnv != null ? configuredEnv : DEFAULT_SIGNING_KEY_ENV;
-        String envValue = System.getenv(envVar);
+        String envValue = envLookup.apply(envVar);
         if (envValue != null && !envValue.isEmpty()) {
             return envValue.getBytes(StandardCharsets.UTF_8);
         }
         if (configuredEnv != null) {
-            throw new SigmundException(
-                    "Environment variable " + configuredEnv + " is not set");
+            throw new SigmundException("Environment variable " + configuredEnv + " is not set");
         }
         return null;
     }

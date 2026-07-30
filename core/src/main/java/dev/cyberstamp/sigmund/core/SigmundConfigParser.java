@@ -41,25 +41,27 @@ class SigmundConfigParser {
      */
     static SigmundConfig parse(Path file) {
         try (Reader reader = Files.newBufferedReader(file)) {
-            return parse(reader);
+            return parse(file.toString(), reader);
         } catch (IOException e) {
-            throw new PolicyConfigException("Failed to read config file: " + file, e);
+            throw new PolicyConfigException("Failed to read config file: " + file + ": " + e.getMessage(), e);
         }
     }
 
     /**
      * Parses a sigmund.yaml from a reader.
      *
+     * @param source a human-readable description of the source (e.g., file path)
      * @param reader the YAML source
      * @return the parsed configuration
      * @throws PolicyConfigException if the content is invalid
      */
-    static SigmundConfig parse(Reader reader) {
+    static SigmundConfig parse(String source, Reader reader) {
         try {
             JsonNode root = YAML.readTree(reader);
             return parseRoot(root);
         } catch (IOException e) {
-            throw new PolicyConfigException("Failed to parse config", e);
+            throw new PolicyConfigException(
+                    "Failed to parse config " + source + ": " + e.getMessage(), e);
         }
     }
 

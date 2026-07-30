@@ -454,8 +454,7 @@ public class Sigmund {
             return addTool(createFromFactory(toolName, true, settings));
         }
 
-        private SignatureTool createFromFactory(String toolName, boolean signing,
-                Map<String, String> settings) {
+        private SignatureTool createFromFactory(String toolName, boolean signing, Map<String, String> settings) {
             for (SignatureToolFactory factory : FACTORIES) {
                 if (factory.toolName().equals(toolName)) {
                     if (signing && factory instanceof BcToolFactory bcFactory
@@ -484,14 +483,21 @@ public class Sigmund {
         /**
          * Builds the {@link Sigmund} instance.
          * <p>
-         * Initializes tools from registered factories based on {@link ToolsConfig}.
-         * Explicit {@link #addTool} calls take precedence — already-added tools are skipped.
+         * First initializes tools from registered factories based on {@link ToolsConfig}
+         * (explicit {@link #addTool} calls take precedence — already-added tools are
+         * skipped), then enforces exclusive signer constraints (see
+         * {@link SignatureToolFactory#isDefaultExclusiveSigner()}). When no signing
+         * tools are explicitly configured and a factory claims exclusivity, all
+         * other signing-capable tools are removed and the exclusive tool becomes
+         * the sole signer. Verify-only tools are kept.
          *
          * @return the configured Sigmund instance
-         * @throws SigmundException if no tools are available
+         * @throws SigmundException if no tools are available, or if multiple tools
+         *         claim exclusive signing
          */
         public Sigmund build() {
             initializeTools();
+            enforceExclusiveSigners();
 
             Map<String, List<SignatureTool>> toolsByFormat = new LinkedHashMap<>(2);
             for (SignatureTool tool : tools) {
@@ -514,6 +520,77 @@ public class Sigmund {
 
             return new Sigmund(List.copyOf(tools), List.copyOf(formats),
                     List.copyOf(providers), signingConfig, toolsConfig);
+        }
+
+        /**
+         * Polls registered factories for default exclusive signer claims when no
+         * signing tools are explicitly configured in {@code sigmund.yaml}.
+         * <p>
+         * This method is a no-op when {@link SigningConfig#tools()} is non-empty —
+         * the user has explicitly chosen their signing tools, so factory-level
+         * exclusivity does not apply. In that case, the env var still participates
+         * as a key provider through {@link BcToolFactory}'s key priority, but does
+         * not alter the tool selection.
+         * <p>
+         * When no signing tools are configured and exactly one factory's
+         * {@link SignatureToolFactory#isDefaultExclusiveSigner()} returns {@code true}:
+         * <ul>
+         * <li>All other signing-capable tools are removed. Verify-only tools
+         * are kept for signature verification.</li>
+         * <li>If the exclusive tool is not yet present as a signing-capable
+         * tool, any verify-only instance is replaced with a signing-capable
+         * one.</li>
+         * <li>The {@link SigningConfig} is cleared so that residual config-file
+         * tool restrictions do not filter out the exclusive tool.</li>
+         * </ul>
+         *
+         * @throws SigmundException if multiple factories claim default exclusive signing
+         */
+        private void enforceExclusiveSigners() {
+            enforceExclusiveSigners(FACTORIES);
+        }
+
+        /**
+         * Polls the given factories for default exclusive signer claims when no
+         * signing tools are explicitly configured in {@code sigmund.yaml}.
+         * <p>
+         * Package-private overload that accepts a factory list, allowing tests
+         * to inject mock factories that claim exclusivity without requiring the
+         * {@code SIGMUND_BC_SIGNING_KEY} environment variable to be set.
+         *
+         * @param factories the factories to poll for
+         *        {@link SignatureToolFactory#isDefaultExclusiveSigner()} claims
+         * @throws SigmundException if multiple factories claim default exclusive signing
+         * @see #enforceExclusiveSigners()
+         */
+        void enforceExclusiveSigners(List<SignatureToolFactory> factories) {
+            if (signingConfig != null && !signingConfig.tools().isEmpty()) {
+                return;
+            }
+            SignatureToolFactory exclusive = null;
+            for (SignatureToolFactory factory : factories) {
+                if (factory.isDefaultExclusiveSigner()) {
+                    if (exclusive != null) {
+                        throw new SigmundException(
+                                "Multiple signing tools claim exclusive signing: "
+                                        + exclusive.toolName() + ", " + factory.toolName());
+                    }
+                    exclusive = factory;
+                }
+            }
+            if (exclusive == null) {
+                return;
+            }
+            String name = exclusive.toolName();
+            tools.removeIf(t -> t.canSign() && !name.equals(t.name()));
+            SignatureTool existing = findByName(name);
+            if (existing == null || !existing.canSign()) {
+                if (existing != null) {
+                    tools.remove(existing);
+                }
+                addSigningTool(name, toolsConfig.tools().getOrDefault(name, Map.of()));
+            }
+            signingConfig = null;
         }
 
         private static final List<SignatureToolFactory> FACTORIES = List.of(
