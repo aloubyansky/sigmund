@@ -118,16 +118,29 @@ class SigmundConfigParser {
         return new SignerIdentity(id, id, List.of(new EmailCredential(email)));
     }
 
+    /**
+     * Parses an object-form signer definition.
+     * <p>
+     * Supports three forms:
+     * <ul>
+     * <li><b>Single-key signer</b> — credentials (pgp4, pgp6, email, oidc) at the top level</li>
+     * <li><b>Organization with members</b> — a {@code members} array where each element
+     * carries its own credentials, all aggregated into one signer identity</li>
+     * <li><b>Mixed</b> — top-level credentials and {@code members} combined</li>
+     * </ul>
+     * At least one credential must be present across the top level and all members.
+     *
+     * @param id the signer identifier from the YAML key
+     * @param node the YAML object node for this signer
+     * @return the parsed signer identity with all collected credentials
+     * @throws PolicyConfigException if no credentials are found or the members node is invalid
+     */
     private static SignerIdentity parseObjectSigner(String id, JsonNode node) {
         String displayName = textField(node, "name");
         List<Credential> credentials = new ArrayList<>();
 
-        addFingerprintCredential(credentials, node, Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V4);
-        addFingerprintCredential(credentials, node, "pgp4", Credential.TYPE_OPENPGP_V4);
-        addFingerprintCredential(credentials, node, Credential.TYPE_OPENPGP_V6, Credential.TYPE_OPENPGP_V6);
-        addFingerprintCredential(credentials, node, "pgp6", Credential.TYPE_OPENPGP_V6);
-        addEmailCredential(credentials, node);
-        addOidcCredential(credentials, node);
+        addCredentialsFromNode(credentials, node);
+        addMemberCredentials(credentials, id, node);
 
         if (credentials.isEmpty()) {
             throw new PolicyConfigException(
@@ -135,6 +148,57 @@ class SigmundConfigParser {
         }
 
         return new SignerIdentity(id, displayName != null ? displayName : id, credentials);
+    }
+
+    /**
+     * Extracts all credential fields (pgp4, pgp6, email, oidc) from a single YAML node
+     * and appends them to the given list.
+     *
+     * @param credentials the list to append extracted credentials to
+     * @param node the YAML node containing credential fields
+     */
+    private static void addCredentialsFromNode(List<Credential> credentials, JsonNode node) {
+        addFingerprintCredential(credentials, node, Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V4);
+        addFingerprintCredential(credentials, node, "pgp4", Credential.TYPE_OPENPGP_V4);
+        addFingerprintCredential(credentials, node, Credential.TYPE_OPENPGP_V6, Credential.TYPE_OPENPGP_V6);
+        addFingerprintCredential(credentials, node, "pgp6", Credential.TYPE_OPENPGP_V6);
+        addEmailCredential(credentials, node);
+        addOidcCredential(credentials, node);
+    }
+
+    /**
+     * Parses the {@code members} array of a signer definition, extracting credentials
+     * from each member element and appending them to the given list.
+     * <p>
+     * Nested {@code members} inside a member element are rejected to prevent
+     * silent misconfiguration.
+     *
+     * @param credentials the list to append member credentials to
+     * @param signerId the signer identifier, used for error messages
+     * @param node the signer YAML node that may contain a {@code members} array
+     * @throws PolicyConfigException if {@code members} is present but not an array,
+     *         or if a member element contains a nested {@code members} key
+     */
+    private static void addMemberCredentials(List<Credential> credentials, String signerId, JsonNode node) {
+        JsonNode membersNode = node.get("members");
+        if (membersNode == null || membersNode.isNull()) {
+            return;
+        }
+        if (!membersNode.isArray()) {
+            throw new PolicyConfigException(
+                    "Signer '" + signerId + "': 'members' must be an array");
+        }
+        for (JsonNode member : membersNode) {
+            if (!member.isObject()) {
+                throw new PolicyConfigException(
+                        "Signer '" + signerId + "': each member must be an object");
+            }
+            if (member.has("members")) {
+                throw new PolicyConfigException(
+                        "Signer '" + signerId + "': nested 'members' are not allowed");
+            }
+            addCredentialsFromNode(credentials, member);
+        }
     }
 
     private static void addFingerprintCredential(List<Credential> creds, JsonNode node,

@@ -54,11 +54,11 @@ These options are available for all commands:
 
 | Option | Description |
 |--------|-------------|
-| `--config <path>` | Path to `sigmund.yaml` configuration file (default: looks in current directory and parent directories) |
+| `--config <path>` | Path to `sigmund.yaml` configuration file (default: looks in current directory and parent directories). Available on all commands except `export-cert`. |
 | `--help` | Display help information for the command |
 | `--version` | Display Sigmund version |
 
-All commands read configuration from `sigmund.yaml` in the current directory or its parents unless `--config` specifies a different location. Command-line options override configuration file values.
+All commands (except `export-cert`) read configuration from `sigmund.yaml` in the current directory or its parents unless `--config` specifies a different location. Command-line options override configuration file values.
 
 ## Commands
 
@@ -75,10 +75,10 @@ sigmund keygen --userid <USER_ID> [options]
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--userid` | Yes | — | User ID in canonical form (e.g., `"Alice <alice@example.com>"`) |
-| `--tool` | No | `sq` | Backend: `sq` (PQC/hybrid support) or `bc` (classic OpenPGP) |
+| `--tool` | Yes | — | Backend: `sq` (PQC/hybrid support) or `bc` (classic OpenPGP) |
 | `--cipher-suite` | No | `mldsa87-ed448` (sq)<br/>`ed25519` (bc) | Cipher suite for the key |
 | `--passphrase-env` | No | `SIGMUND_BC_PASSPHRASE` | Environment variable containing the BC key passphrase (bc keygen only) |
-| `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory (sq only) |
+| `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory (overrides `SEQUOIA_HOME`) (sq only) |
 
 **Bouncy Castle cipher suites:** `ed25519`, `ed448`, `rsa4096`, `nistp256`, `nistp384`, `nistp521`
 
@@ -89,7 +89,7 @@ sigmund keygen --userid <USER_ID> [options]
 Generate a PQC key with the default ML-DSA-87 + Ed448 hybrid cipher suite:
 
 ```bash
-sigmund keygen --userid "Alice <alice@example.com>"
+sigmund keygen --tool sq --userid "Alice <alice@example.com>"
 ```
 
 Generate a classic Ed25519 key using Bouncy Castle:
@@ -122,7 +122,7 @@ sigmund signer-info [options]
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--profile` | No | default profile | Signing profile to display |
-| `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
+| `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory (overrides `SEQUOIA_HOME`) |
 
 **Examples:**
 
@@ -156,7 +156,7 @@ sigmund sign --file <FILE> [options]
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--file` | Yes | — | Artifact file to sign |
-| `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
+| `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory (overrides `SEQUOIA_HOME`) |
 | `--output` | No | `<file>.asc` | Output signature file path |
 
 **Example:**
@@ -185,7 +185,7 @@ sigmund verify-signature --file <FILE> --signature <ASC> [options]
 |--------|----------|---------|-------------|
 | `--file` | Yes | — | Artifact file to verify |
 | `--signature` | Yes | — | Signature `.asc` file |
-| `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
+| `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory (overrides `SEQUOIA_HOME`) |
 | `--lenient` | No | `false` | Pass if at least one signature is valid and none failed |
 
 **Verification modes:**
@@ -241,7 +241,7 @@ sigmund export-cert --fingerprint <FP> [options]
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--fingerprint` | Yes | — | PQC key fingerprint to export |
-| `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
+| `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory (overrides `SEQUOIA_HOME`) |
 | `--output`, `-o` | No | stdout | Output file path |
 
 **Example:**
