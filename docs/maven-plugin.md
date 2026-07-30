@@ -115,10 +115,12 @@ Verifies that all project dependencies are signed by trusted signers as defined 
 | `sigmund.trustConfig` | No | `${project.basedir}/sigmund.yaml` | Path to the trust configuration file |
 | `sigmund.onUntrusted` | No | — | Policy for untrusted artifacts: `fail` or `warn`. Overrides config file setting. |
 | `sigmund.verifyAllSignatures` | No | — | When `true`, unverified signatures on trusted artifacts are reported. Overrides config file setting. |
-| `sigmund.resolveSigners` | No | `false` | Fetch unknown GPG keys from keyservers. Overrides config file setting. |
+| `sigmund.resolveSigners` | No | `true` | Fetch unknown GPG keys from keyservers. Overrides config file setting. |
 | `sigmund.keyservers` | No | `hkps://keys.openpgp.org` | Comma-separated keyserver list. Used when `resolveSigners` is enabled. |
 | `sigmund.verifyPomFiles` | No | `false` | Also verify signatures on POM files for each dependency |
 | `sigmund.sqHome` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
+| `sigmund.gpgHome` | No | — | GnuPG home directory, overrides GPG and BC home paths |
+| `sigmund.importToKeyring` | No | — | Persist fetched keys to keyrings. Overrides config file setting. |
 | `sigmund.includeTestDependencies` | No | `false` | Include test-scoped dependencies |
 | `sigmund.skip` | No | `false` | Skip verification |
 
@@ -188,9 +190,12 @@ Dependencies are grouped by signer, sorted alphabetically. Unsigned artifacts an
 
 | Property | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `sigmund.resolveSigners` | No | `false` | Fetch unknown GPG keys from keyservers to resolve signer identities |
+| `sigmund.trustConfig` | No | `${project.basedir}/sigmund.yaml` | Path to the trust configuration file |
+| `sigmund.resolveSigners` | No | `true` | Fetch unknown GPG keys from keyservers to resolve signer identities |
 | `sigmund.keyservers` | No | `hkps://keys.openpgp.org` | Comma-separated list of keyservers for fetching GPG keys |
 | `sigmund.sqHome` | No | `~/.local/share/sequoia` | Sequoia keystore directory for PQC cert lookup |
+| `sigmund.gpgHome` | No | — | GnuPG home directory, overrides GPG and BC home paths |
+| `sigmund.importToKeyring` | No | — | Persist fetched keys to keyrings. Overrides config file setting. |
 | `sigmund.includeTestDependencies` | No | `false` | Include test-scoped dependencies |
 | `sigmund.generateTrustConfig` | No | — | Generate a `sigmund.yaml`. Set to `true` to write to the project root, or provide a file path. Fails if the file already exists unless `sigmund.overwrite=true`. |
 | `sigmund.overwrite` | No | `false` | Allow overwriting an existing generated trust config file |
@@ -252,10 +257,10 @@ Maven properties (`-Dsigmund.*`) override `sigmund.yaml` values, which override 
 
 **Properties that override config file settings:**
 
-- `sigmund.onUntrusted` overrides `settings.on-untrusted` in `sigmund.yaml`
-- `sigmund.verifyAllSignatures` overrides `settings.verify-all-signatures` in `sigmund.yaml`
-- `sigmund.resolveSigners` overrides `settings.resolve-signers` in `sigmund.yaml`
-- `sigmund.keyservers` overrides `settings.keyservers` in `sigmund.yaml`
+- `sigmund.onUntrusted` overrides `policy.on-untrusted` in `sigmund.yaml`
+- `sigmund.verifyAllSignatures` overrides `policy.require-all-evidence-match` in `sigmund.yaml`
+- `sigmund.resolveSigners` overrides `discovery.resolve-signers` in `sigmund.yaml`
+- `sigmund.keyservers` overrides `discovery.keyservers` in `sigmund.yaml`
 
 **Example:**
 

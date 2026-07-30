@@ -351,38 +351,11 @@ PQC algorithm IDs (RFC 9980):
 ## Project Structure
 
 ```
-core/                   Core signing and verification library
-  ├── Sigmund.java      Central facade, tool registry, session creation
-  ├── Signer.java       Producer use case — signing artifacts
-  ├── TrustVerifier.java Consumer use case — identity-based trust assessment
-  ├── SignatureTool.java SPI for signing/verification backends
-  ├── SignatureFormat.java Format detection, parsing, combining
-  ├── BcRunner.java     Pure-Java OpenPGP via Bouncy Castle
-  ├── BcKeyStore.java   Multi-source key lookup (GnuPG, cert-d, BC private)
-  ├── SqRunner.java     Sequoia sq wrapper for PQC
-  ├── GpgRunner.java    GnuPG wrapper for compatibility
-  ├── SignatureEvidenceAdapter.java Bridge from Layer 2 to Layer 1
-  └── Algorithms.java   IANA OpenPGP algorithm registry mappings
-
-cli/                    CLI tools (picocli)
-  ├── keygen           Generate OpenPGP keys
-  ├── sign             Sign artifacts
-  ├── verify-signature Verify signatures (cryptographic only)
-  └── verify-trust     Verify signatures with trust policy
-
-maven-plugin/           Maven plugin
-  ├── sign             Sign artifacts during build
-  ├── verify           Verify dependencies against trust policy
-  └── dependency-signers Report transitive dependency signers
+core/           Core signing and verification library (pure Java, no CLI dependencies)
+cli/            Command-line interface (picocli)
+maven-plugin/   Maven plugin for build integration
 ```
 
-The architecture follows a clear separation of concerns:
-
-- **Facade** (`Sigmund`) — tool registry, session creation, factory methods
-- **Use cases** (`Signer`, `TrustVerifier`) — orchestrate tools to accomplish signing and trust verification
-- **SPI** (`SignatureTool`, `SignatureFormat`) — extension points for new backends and formats
-- **Implementations** (`BcRunner`, `SqRunner`, `GpgRunner`) — concrete tool wrappers
-- **Bridge** (`SignatureEvidenceAdapter`) — adapts signature verification to evidence collection
-- **Model** (`VerifyResult`, `EvidenceResult`, `Credential`) — domain objects
-
-This design keeps the facade and use cases format-agnostic and tool-agnostic. Adding support for a new signature format (e.g., Sigstore) requires implementing `SignatureFormat` and `SignatureTool`, with no changes to the facade.
+- **`core`** contains the `Sigmund` facade, the three tool backends (BC, sq, gpg), the identity verification layer, and configuration parsing.
+- **`cli`** provides standalone commands for key generation, signing, verification, and certificate export.
+- **`maven-plugin`** integrates signing and trust verification into the Maven build lifecycle.

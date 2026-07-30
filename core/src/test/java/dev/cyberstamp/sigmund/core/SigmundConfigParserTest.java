@@ -112,6 +112,105 @@ class SigmundConfigParserTest {
             assertTrue(alice.credentials().stream()
                     .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("alice@example.com")));
         }
+
+        @Test
+        void organizationWithMembers() {
+            var config = parse("""
+                    signers:
+                      apache:
+                        name: "Apache Software Foundation"
+                        members:
+                          - openpgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+                            email: "dev@maven.apache.org"
+                          - openpgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
+                    """);
+            var apache = config.signers().get("apache");
+            assertEquals("Apache Software Foundation", apache.displayName());
+            assertEquals(3, apache.credentials().size());
+
+            var fps = apache.credentials().stream()
+                    .filter(c -> c instanceof FingerprintCredential)
+                    .map(c -> ((FingerprintCredential) c).fingerprint())
+                    .toList();
+            assertEquals(2, fps.size());
+            assertTrue(fps.contains("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"));
+            assertTrue(fps.contains("BBE7232D7991050B54C8EA0ADC08637CA615D22C"));
+
+            assertTrue(apache.credentials().stream()
+                    .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("dev@maven.apache.org")));
+        }
+
+        @Test
+        void membersWithMultipleCredentialTypes() {
+            var config = parse("""
+                    signers:
+                      team:
+                        name: "Release Team"
+                        members:
+                          - openpgp4: "AAAA1111AAAA1111"
+                            openpgp6: "BBBB2222BBBB2222"
+                            email: "alice@example.com"
+                    """);
+            var team = config.signers().get("team");
+            assertEquals(3, team.credentials().size());
+
+            var types = team.credentials().stream().map(Credential::type).toList();
+            assertTrue(types.contains("openpgp4"));
+            assertTrue(types.contains("openpgp6"));
+            assertTrue(types.contains("email"));
+        }
+
+        @Test
+        void topLevelCredentialsCombinedWithMembers() {
+            var config = parse("""
+                    signers:
+                      org:
+                        name: "My Org"
+                        email: "org@example.com"
+                        members:
+                          - openpgp4: "CCCC3333CCCC3333"
+                    """);
+            var org = config.signers().get("org");
+            assertEquals(2, org.credentials().size());
+            assertTrue(org.credentials().stream()
+                    .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("org@example.com")));
+            assertTrue(org.credentials().stream()
+                    .anyMatch(c -> c instanceof FingerprintCredential fc
+                            && fc.fingerprint().equals("CCCC3333CCCC3333")));
+        }
+
+        @Test
+        void emptyMembersWithNoTopLevelCredentialsThrows() {
+            assertThrows(PolicyConfigException.class, () -> parse("""
+                    signers:
+                      empty-org:
+                        name: "Empty Org"
+                        members: []
+                    """));
+        }
+
+        @Test
+        void nestedMembersThrows() {
+            assertThrows(PolicyConfigException.class, () -> parse("""
+                    signers:
+                      bad-org:
+                        name: "Bad Org"
+                        members:
+                          - openpgp4: "AAAA1111AAAA1111"
+                            members:
+                              - openpgp4: "BBBB2222BBBB2222"
+                    """));
+        }
+
+        @Test
+        void membersNotArrayThrows() {
+            assertThrows(PolicyConfigException.class, () -> parse("""
+                    signers:
+                      bad-org:
+                        name: "Bad Org"
+                        members: "not-an-array"
+                    """));
+        }
     }
 
     @Nested
@@ -175,6 +274,33 @@ class SigmundConfigParserTest {
                     trust:
                       "org.example:*": [nonexistent]
                     """));
+        }
+
+        @Test
+        void memberCredentialMatchesTrust() {
+            var config = parse("""
+                    signers:
+                      apache:
+                        name: "Apache Software Foundation"
+                        members:
+                          - openpgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+                          - openpgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
+                    trust:
+                      "org.apache.*": apache
+                    """);
+            var expected = config.trustPolicy().expectedSigners(
+                    artifact("org.apache.maven.plugins", "maven-compiler-plugin", "3.13.0"));
+            assertEquals(1, expected.size());
+            assertEquals("apache", expected.get(0).id());
+
+            var creds = expected.get(0).credentials();
+            assertEquals(2, creds.size());
+            assertTrue(creds.stream()
+                    .anyMatch(c -> c instanceof FingerprintCredential fc
+                            && fc.fingerprint().equals("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12")));
+            assertTrue(creds.stream()
+                    .anyMatch(c -> c instanceof FingerprintCredential fc
+                            && fc.fingerprint().equals("BBE7232D7991050B54C8EA0ADC08637CA615D22C")));
         }
 
         @Test

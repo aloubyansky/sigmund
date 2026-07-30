@@ -10,6 +10,7 @@ Sigmund uses a `sigmund.yaml` file for configuration. This reference documents e
   - [version](#version)
   - [signers](#signers)
   - [signing](#signing)
+  - [artifacts](#artifacts)
   - [trust](#trust)
   - [unsigned](#unsigned)
   - [policy](#policy)
@@ -258,6 +259,33 @@ signing:
 #### Per-Tool Settings
 
 See [Tool Settings Tables](#tool-settings-tables) below.
+
+### `artifacts`
+
+**Type:** Map of group name → array of artifact patterns  
+**Default:** `{}` (empty)
+
+Defines named groups of artifact patterns that can be referenced by name in the `trust` and `unsigned` sections. This avoids repeating the same long list of patterns when multiple signers or policies share the same set of artifacts.
+
+```yaml
+artifacts:
+  apache-stack:
+    - "org.apache.maven.*"
+    - "org.apache.commons.*"
+    - "org.apache.httpcomponents.*"
+  internal-libs:
+    - "com.internal.platform.*"
+    - "com.internal.shared.*"
+
+trust:
+  apache-stack: apache          # Expands to all three org.apache.* patterns
+  internal-libs: release-team
+
+unsigned:
+  - internal-libs               # Expands to both com.internal.* patterns
+```
+
+When a key in `trust` or an entry in `unsigned` matches a group name, it is expanded into the group's patterns. If no group matches, the key is treated as a literal artifact pattern.
 
 ### `trust`
 
