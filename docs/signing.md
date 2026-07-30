@@ -31,14 +31,14 @@ This guide covers artifact signing with Sigmund's three OpenPGP backends: GPG (s
 >     <plugin>
 >       <groupId>dev.cyberstamp.sigmund</groupId>
 >       <artifactId>sigmund-maven-plugin</artifactId>
->       <version>0.0.1-SNAPSHOT</version>
+>       <version>0.0.1</version>
 >     </plugin>
 >   </plugins>
 > </pluginManagement>
 > ```
 >
 > Alternatively, replace `sigmund` with the full plugin coordinates, e.g.:
-> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1-SNAPSHOT:sign`
+> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1:sign`
 
 ## Overview
 

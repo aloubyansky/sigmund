@@ -41,14 +41,14 @@ This guide covers identity-based trust verification for Maven dependencies using
 >     <plugin>
 >       <groupId>dev.cyberstamp.sigmund</groupId>
 >       <artifactId>sigmund-maven-plugin</artifactId>
->       <version>0.0.1-SNAPSHOT</version>
+>       <version>0.0.1</version>
 >     </plugin>
 >   </plugins>
 > </pluginManagement>
 > ```
 >
 > Alternatively, replace `sigmund` with the full plugin coordinates, e.g.:
-> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1-SNAPSHOT:verify`
+> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1:verify`
 
 ## Concept
 
@@ -491,7 +491,7 @@ Or configure it in your `pom.xml` to run automatically during the `validate` pha
     <plugin>
       <groupId>dev.cyberstamp</groupId>
       <artifactId>sigmund-maven-plugin</artifactId>
-      <version>${sigmund.version}</version>
+      <version>0.0.1</version>
       <executions>
         <execution>
           <goals>

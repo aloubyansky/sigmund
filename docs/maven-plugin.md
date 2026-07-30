@@ -25,14 +25,14 @@ The Sigmund Maven plugin provides goals for signing artifacts and verifying depe
 >     <plugin>
 >       <groupId>dev.cyberstamp.sigmund</groupId>
 >       <artifactId>sigmund-maven-plugin</artifactId>
->       <version>0.0.1-SNAPSHOT</version>
+>       <version>0.0.1</version>
 >     </plugin>
 >   </plugins>
 > </pluginManagement>
 > ```
 >
 > Alternatively, replace `sigmund` with the full plugin coordinates, e.g.:
-> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1-SNAPSHOT:sign`
+> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1:sign`
 
 ## Plugin Coordinates
 
@@ -40,7 +40,7 @@ The Sigmund Maven plugin provides goals for signing artifacts and verifying depe
 <plugin>
   <groupId>dev.cyberstamp.sigmund</groupId>
   <artifactId>sigmund-maven-plugin</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.0.1</version>
   <executions>
     <execution>
       <goals>
@@ -171,7 +171,7 @@ Verifies a single signed artifact without requiring a project. This is a standal
 **Example:**
 
 ```bash
-mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1-SNAPSHOT:verify-signature \
+mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1:verify-signature \
   -Dfile=artifact.jar \
   -Dsignature=artifact.jar.asc
 ```
