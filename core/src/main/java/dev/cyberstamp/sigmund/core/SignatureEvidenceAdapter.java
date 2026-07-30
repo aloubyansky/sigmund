@@ -12,7 +12,7 @@ import java.util.List;
  * parses the file once and routes each {@link VerificationUnit} to the right tool via
  * {@link SignatureTool#canVerify(VerificationUnit)}.
  *
- * <h3>Verification flow</h3>
+ * <h2>Verification flow</h2>
  * <ol>
  * <li>{@link SignatureFormat#canHandle(Path)} → detection</li>
  * <li>{@link SignatureFormat#parse(Path)} → {@link VerificationUnit}s</li>
@@ -24,7 +24,7 @@ import java.util.List;
  * <li>Wrap into {@link EvidenceResult}</li>
  * </ol>
  *
- * <h3>Key fetching</h3>
+ * <h2>Key fetching</h2>
  * <p>
  * Each tool owns its key fetching configuration (keyservers, persistence mode,
  * circuit breaker). The adapter simply asks the verifying tool to fetch a missing

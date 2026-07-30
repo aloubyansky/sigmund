@@ -12,7 +12,7 @@ import java.util.Map;
  * registry of known identities — referenced by both {@link TrustPolicy}
  * (via trust mappings) and {@link SigningConfig} (via signer name).
  *
- * <h3>Usage</h3>
+ * <h2>Usage</h2>
  *
  * <pre>{@code
  * SigmundConfig config = SigmundConfig.parse(Path.of("sigmund.yaml"));

@@ -11,25 +11,25 @@ import java.util.Set;
  * OIDC provider references) are provided when the tool is created. {@link #sign(Path, Path)}
  * takes no credential argument; the tool embodies its context.
  *
- * <h3>Construction-time configuration</h3>
+ * <h2>Construction-time configuration</h2>
  * <p>
  * {@link #canSign()} returns {@code true} only if signing credentials were provided at
  * construction. A verify-only tool instance has {@code canSign() → false}.
  *
- * <h3>Verification routing</h3>
+ * <h2>Verification routing</h2>
  * <p>
  * {@link #canVerify(VerificationUnit)} lets each tool declare what it can handle within
  * its format. For OpenPGP, GPG handles {@code packetVersion <= 4} and Sequoia handles
  * {@code packetVersion >= 5}. This keeps all routing decisions out of the facade.
  *
- * <h3>Credential extraction and trust boundary</h3>
+ * <h2>Credential extraction and trust boundary</h2>
  * <p>
  * {@link #extractCredentials(VerifyResult)} converts a verification result into proven
  * {@link Credential}s. The credential type is determined by the packet version that was
  * cryptographically verified, not by which tool performed the verification. A signature
  * cannot "claim" a credential type it wasn't verified through.
  *
- * <h3>Concurrency</h3>
+ * <h2>Concurrency</h2>
  * <p>
  * Implementations must be safe for concurrent use. Since tools are configured at
  * construction and carry no mutable state after that, the Java side is naturally

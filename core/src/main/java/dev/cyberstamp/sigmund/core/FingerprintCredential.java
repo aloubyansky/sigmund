@@ -9,7 +9,7 @@ package dev.cyberstamp.sigmund.core;
  * RFC 9580 and handles v6 keys. The algorithm (e.g., RSA vs ML-DSA-87+Ed448) is a property
  * of the key itself, determined at key generation time.
  *
- * <h3>Matching semantics</h3>
+ * <h2>Matching semantics</h2>
  * <p>
  * Fingerprint matching is <strong>case-insensitive</strong> and supports <strong>suffix matching</strong>:
  * the shorter fingerprint must be a suffix of the longer one, and both must be at least

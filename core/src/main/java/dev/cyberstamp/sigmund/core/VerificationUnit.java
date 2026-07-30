@@ -9,7 +9,7 @@ package dev.cyberstamp.sigmund.core;
  * adding a format requires adding a new {@code permits} entry and
  * implementation in core.
  *
- * <h3>Extensibility boundary</h3>
+ * <h2>Extensibility boundary</h2>
  * <p>
  * New <em>tools</em> within an existing format can be plugged in via
  * {@code Sigmund.builder().addTool()}. New <em>formats</em> require a core release

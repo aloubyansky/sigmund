@@ -15,7 +15,7 @@ import java.util.Map;
  * Signs an artifact with all configured tools, groups results by
  * {@link SignatureFormat}, and combines compatible formats into single files.
  *
- * <h3>Sign flow</h3>
+ * <h2>Sign flow</h2>
  * <ol>
  * <li>Call {@code sign()} on each tool → {@link SignResult} with algorithm metadata</li>
  * <li>Group results by {@link SignatureFormat}</li>

@@ -13,7 +13,7 @@ import java.util.List;
  * OPA, a database, or hardcoded configuration. The default implementation is parsed from
  * {@code sigmund.yaml}.
  *
- * <h3>Separation of concerns</h3>
+ * <h2>Separation of concerns</h2>
  * <p>
  * {@code TrustPolicy} is purely about trust decisions — who to trust and how strict to be.
  * Operational concerns like key fetching and keyserver configuration live in

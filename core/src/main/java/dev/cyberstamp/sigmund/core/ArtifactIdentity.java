@@ -11,8 +11,9 @@ package dev.cyberstamp.sigmund.core;
  * mapping directly to these fields: {@code namespace}, {@code namespace:name},
  * or {@code namespace:name:version}.
  *
- * <h3>Ecosystem mapping</h3>
+ * <h2>Ecosystem mapping</h2>
  * <table>
+ * <caption>Ecosystem mapping of artifact identity fields</caption>
  * <tr>
  * <th>Field</th>
  * <th>Maven</th>

@@ -7,7 +7,7 @@ package dev.cyberstamp.sigmund.core;
  * signing backend (X.509, AWS Signer, Notation) requires only a new credential type string
  * and a new {@code Credential} implementation, with no schema changes.
  *
- * <h3>Matching semantics</h3>
+ * <h2>Matching semantics</h2>
  * <p>
  * {@link #matches(Credential)} performs <strong>same-type matching only</strong>. A
  * {@link FingerprintCredential} never matches an {@link EmailCredential}, even if both
@@ -18,7 +18,7 @@ package dev.cyberstamp.sigmund.core;
  * so a signer configured with only an {@code email} credential matches via the
  * {@code EmailCredential} in the proven set — no cross-type matching is needed.
  *
- * <h3>Built-in credential types</h3>
+ * <h2>Built-in credential types</h2>
  * <ul>
  * <li>{@code "openpgp4"}, {@code "openpgp6"} — {@link FingerprintCredential},
  * named by key version (not tool or algorithm)</li>
@@ -33,9 +33,13 @@ package dev.cyberstamp.sigmund.core;
  */
 public interface Credential {
 
+    /** OpenPGP v4 fingerprint credential type. */
     String TYPE_OPENPGP_V4 = "openpgp4";
+    /** OpenPGP v6 fingerprint credential type. */
     String TYPE_OPENPGP_V6 = "openpgp6";
+    /** Email address credential type. */
     String TYPE_EMAIL = "email";
+    /** OIDC (issuer + subject) credential type. */
     String TYPE_OIDC = "oidc";
 
     /**

@@ -10,7 +10,7 @@ import java.util.List;
  * Answers "is this artifact from someone I trust?" by combining evidence verification
  * with trust policy matching.
  *
- * <h3>Assessment flow</h3>
+ * <h2>Assessment flow</h2>
  * <ol>
  * <li><strong>Resolve policy</strong> — look up expected signers. Empty list → NOT_CONFIGURED.</li>
  * <li><strong>Check unsigned</strong> — if unsigned-ok and no evidence → TRUSTED.</li>
@@ -19,7 +19,7 @@ import java.util.List;
  * <li><strong>Apply policy</strong> — produce verdict based on matches and policy settings.</li>
  * </ol>
  *
- * <h3>Usage</h3>
+ * <h2>Usage</h2>
  *
  * <pre>{@code
  * TrustVerifier verifier = sigmund.verifier(trustPolicy);

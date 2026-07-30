@@ -11,7 +11,7 @@ import java.util.List;
  * the Layer 2 {@code SignatureTool} interface, which works with parsed
  * {@code VerificationUnit}s.
  *
- * <h3>Implementations</h3>
+ * <h2>Implementations</h2>
  * <ul>
  * <li><strong>Signature evidence</strong> — a {@code SignatureEvidenceAdapter} bridges
  * a {@code SignatureFormat} and its associated {@code SignatureTool}s into an

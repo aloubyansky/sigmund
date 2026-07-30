@@ -11,6 +11,11 @@ package dev.cyberstamp.sigmund.core;
  */
 public final class UnverifiedResult extends VerifyResult {
 
+    /**
+     * Creates an unverified result with the given verdict.
+     *
+     * @param verdict the verification outcome (must not be {@link Verdict#PASS})
+     */
     public UnverifiedResult(Verdict verdict) {
         super(verdict, null, null);
         if (verdict == Verdict.PASS) {

@@ -34,6 +34,8 @@ public interface KeyImporter {
      * A tool returns {@code false} when fetching is structurally impossible —
      * e.g., {@code resolveSigners} is disabled, or the tool requires
      * {@code importToKeyring=true} but it is {@code false}.
+     *
+     * @return {@code true} if key fetching is available
      */
     boolean canFetchKeys();
 }

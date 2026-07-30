@@ -10,7 +10,7 @@ package dev.cyberstamp.sigmund.core;
  * For simple email-based matching where the issuer doesn't matter, use
  * {@link EmailCredential} instead.
  *
- * <h3>Matching semantics</h3>
+ * <h2>Matching semantics</h2>
  * <p>
  * Both {@code issuer} and {@code subject} must match exactly (case-sensitive).
  * A Sigstore verification produces <em>both</em> an {@code OidcCredential} and,

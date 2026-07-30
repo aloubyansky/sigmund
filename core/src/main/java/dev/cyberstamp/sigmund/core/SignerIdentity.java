@@ -11,7 +11,7 @@ import java.util.List;
  * identity matching checks for overlap between the signer's credential bag and the
  * proven credentials from evidence verification.
  *
- * <h3>Example</h3>
+ * <h2>Example</h2>
  *
  * <pre>{@code
  * var alice = new SignerIdentity("alice", "Alice", List.of(
