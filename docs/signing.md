@@ -314,12 +314,18 @@ cargo install sequoia-sq@1.4.0 --features crypto-openssl --no-default-features
 
 ### Generating a PQC Key
 
+Generate a PQC key using `sq`:
+
 ```bash
-sigmund keygen --userid "Your Name <you@example.com>"
-# Uses default cipher suite: mldsa87-ed448
+sq key generate \
+  --userid "Your Name <you@example.com>" \
+  --cipher-suite mldsa87-ed448 \
+  --profile rfc9580 \
+  --own-key \
+  --without-password
 ```
 
-The default cipher suite `mldsa87-ed448` is a hybrid composite of ML-DSA-87 (post-quantum) and Ed448 (classical). This provides quantum resistance while maintaining classical security.
+The default cipher suite `mldsa87-ed448` is a hybrid composite of ML-DSA-87 (post-quantum) and Ed448 (classical). This provides quantum resistance while maintaining classical security. See `sq key generate --help` for the full set of options.
 
 Output:
 
