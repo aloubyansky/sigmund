@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -161,6 +162,28 @@ class GpgRunnerTest {
         assertEquals("41A2197725BD63EB00D071D46A7F5DB1C68BDB81", info.fingerprint());
         assertEquals("RSA", info.algorithm());
         assertNull(info.userId());
+    }
+
+    // --- canSign ---
+
+    @Test
+    void signingCapableRunnerCanSign() {
+        var runner = new GpgRunner("gpg", null, null,
+                null, true, false, false, List.of());
+        assertTrue(runner.canSign());
+    }
+
+    @Test
+    void verifyOnlyRunnerCannotSign() {
+        var runner = new GpgRunner("gpg", null, null,
+                null, false, false, false, List.of());
+        assertFalse(runner.canSign());
+    }
+
+    @Test
+    void defaultConstructorCanSign() {
+        var runner = new GpgRunner();
+        assertTrue(runner.canSign());
     }
 
     // --- parseDefaultKey ---

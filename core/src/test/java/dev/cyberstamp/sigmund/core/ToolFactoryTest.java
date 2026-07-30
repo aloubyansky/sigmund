@@ -30,6 +30,7 @@ class ToolFactoryTest {
         void createVerifyOnlyDefaultExecutable() {
             SignatureTool tool = factory.createVerifyOnly(Map.of());
             assertEquals("gpg", tool.name());
+            assertFalse(tool.canSign());
         }
 
         @Test

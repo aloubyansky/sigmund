@@ -37,7 +37,7 @@ final class GpgToolFactory implements SignatureToolFactory {
         boolean importToKeyring = "true".equals(settings.get("import-to-keyring"));
         List<String> keyservers = ToolsConfig.parseKeyserversSetting(settings.get("keyservers"));
         return new GpgRunner(executable, null, settings.get("home"),
-                null, resolveSigners, importToKeyring, keyservers);
+                null, false, resolveSigners, importToKeyring, keyservers);
     }
 
     private static String resolvePassphrase(Map<String, String> settings) {

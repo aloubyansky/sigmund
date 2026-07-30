@@ -234,6 +234,8 @@ mvn sigmund:sign
 
 Sigmund checks `SIGMUND_BC_SIGNING_KEY` by default. The key is parsed in memory and never written to disk. No `sigmund.yaml` configuration is needed for this to work.
 
+> **Important:** When `SIGMUND_BC_SIGNING_KEY` is set and no signing tools are configured in `sigmund.yaml`, BC claims **exclusive signing** — all other signing tools (GPG, sq) are automatically removed. This prevents CI runners with a pre-installed GPG and a default key from accidentally co-signing artifacts. When `sigmund.yaml` does configure signing tools, the env var acts only as a key provider for BC — it does not override the configured tool selection.
+
 To use a different env var name, set `signing-key-env` in `sigmund.yaml`:
 
 ```yaml
