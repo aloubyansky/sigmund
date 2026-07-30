@@ -563,6 +563,13 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
         return List.of();
     }
 
+    /**
+     * Extracts the email address from an OpenPGP user ID string
+     * in the format {@code "Name <email>"}.
+     *
+     * @param uid the user ID string, may be {@code null}
+     * @return the extracted email, or {@code null} if not found
+     */
     public static String extractEmail(String uid) {
         if (uid == null) {
             return null;

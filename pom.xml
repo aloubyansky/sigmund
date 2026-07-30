@@ -18,12 +18,12 @@
         <connection>scm:git:git://github.com/cyberstamp/sigmund.git</connection>
         <developerConnection>scm:git:ssh://github.com/cyberstamp/sigmund.git</developerConnection>
         <url>https://github.com/cyberstamp/sigmund</url>
-      <tag>HEAD</tag>
-  </scm>
+        <tag>HEAD</tag>
+    </scm>
     <developers>
         <developer>
-            <name>Alexey Loubyansky</name>
-            <email>olubyans@redhat.com</email>
+            <name>Sigmund Community</name>
+            <email>sigmund@cyberstamp.dev</email>
         </developer>
     </developers>
 

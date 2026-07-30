@@ -14,13 +14,13 @@ import java.util.List;
  * format-agnostic — they work with {@link VerificationUnit}s parsed from files,
  * not with raw file content.
  *
- * <h3>Format vs tool distinction</h3>
+ * <h2>Format vs tool distinction</h2>
  * <p>
  * A format owns file structure (parsing, detection, combining). A {@link SignatureTool}
  * owns cryptographic operations (signing, verification). Multiple tools can share the
  * same format — for example, GPG and Sequoia both use {@link OpenPgpSignatureFormat}.
  *
- * <h3>Content-based detection</h3>
+ * <h2>Content-based detection</h2>
  * <p>
  * {@link #canHandle(Path)} reads the file to detect the format by content, not just
  * by file extension. This handles cases where file extensions are missing or incorrect.
@@ -30,6 +30,7 @@ import java.util.List;
  */
 public interface SignatureFormat {
 
+    /** Format identifier for OpenPGP signatures. */
     String FORMAT_OPENPGP = "openpgp";
 
     /**

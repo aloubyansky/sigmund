@@ -10,7 +10,7 @@ import java.util.Map;
  * concerns, not trust decisions. A trust policy backed by OPA or a database does
  * not need to know about keyservers or tool-specific settings.
  *
- * <h3>Key fetching behavior</h3>
+ * <h2>Key fetching behavior</h2>
  * <p>
  * When {@link #resolveSigners()} is {@code true} (the default), tools attempt to
  * fetch missing keys from keyservers to resolve signer identities (names and emails).

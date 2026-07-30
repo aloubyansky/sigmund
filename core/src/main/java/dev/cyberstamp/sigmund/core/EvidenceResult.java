@@ -21,6 +21,7 @@ import java.util.List;
  */
 public record EvidenceResult(VerifyResult verifyResult, List<Credential> provenCredentials, String provider) {
 
+    /** Validates arguments and defensively copies the credential list. */
     public EvidenceResult {
         if (verifyResult == null) {
             throw new IllegalArgumentException("verifyResult must not be null");

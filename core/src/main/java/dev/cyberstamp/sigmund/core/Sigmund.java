@@ -10,7 +10,7 @@ import java.util.Map;
 /**
  * The central facade for Sigmund — tool registry, signature verification, and session creation.
  *
- * <h3>Usage from config file</h3>
+ * <h2>Usage from config file</h2>
  *
  * <pre>{@code
  * SigmundConfig config = SigmundConfig.parse(Path.of("sigmund.yaml"));
@@ -29,7 +29,7 @@ import java.util.Map;
  * TrustResult result = verifier.assess(artifact, artifactFile, evidenceFiles);
  * }</pre>
  *
- * <h3>Programmatic construction</h3>
+ * <h2>Programmatic construction</h2>
  *
  * <pre>{@code
  * Sigmund sigmund = Sigmund.builder()
@@ -38,7 +38,7 @@ import java.util.Map;
  *         .build();
  * }</pre>
  *
- * <h3>Verify-only</h3>
+ * <h2>Verify-only</h2>
  *
  * <pre>{@code
  * Sigmund sigmund = Sigmund.builder().build();

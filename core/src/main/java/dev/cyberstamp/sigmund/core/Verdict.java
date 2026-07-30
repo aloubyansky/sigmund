@@ -54,6 +54,9 @@ public enum Verdict {
      * Returns {@code true} if this verdict should take precedence over another
      * when multiple tools produce different results for the same signature.
      * Ranking from highest to lowest: PASS, FAIL, NO_KEY, SKIPPED.
+     *
+     * @param other the verdict to compare against
+     * @return {@code true} if this verdict has higher precedence
      */
     public boolean outranks(Verdict other) {
         return rank() > other.rank();
