@@ -18,6 +18,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import org.bouncycastle.gpg.keybox.KeyBlob;
+import org.bouncycastle.gpg.keybox.PublicKeyRingBlob;
+import org.bouncycastle.gpg.keybox.bc.BcKeyBox;
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPPublicKeyRing;
@@ -33,7 +36,7 @@ import org.bouncycastle.openpgp.operator.bc.BcKeyFingerprintCalculator;
  * <p>
  * Key sources are searched in order:
  * <ol>
- * <li>GnuPG pubring ({@code pubring.gpg}) — read-only</li>
+ * <li>GnuPG pubring ({@code pubring.kbx} or legacy {@code pubring.gpg}) — read-only</li>
  * <li>Shared cert-d directory — read/write for certs</li>
  * <li>BC-owned private key store — read/write for TSKs</li>
  * </ol>
@@ -65,7 +68,11 @@ class BcKeyStore {
      * @return the matching public key ring, or {@code null} if not found
      */
     PGPPublicKeyRing findPublicKey(String fingerprint) {
-        PGPPublicKeyRing key = findInGnupgPubring(fingerprint);
+        PGPPublicKeyRing key = findInEphemeral(fingerprint);
+        if (key != null) {
+            return key;
+        }
+        key = findInGnupgPubring(fingerprint);
         if (key != null) {
             return key;
         }
@@ -73,11 +80,7 @@ class BcKeyStore {
         if (key != null) {
             return key;
         }
-        key = findInBcPrivate(fingerprint);
-        if (key != null) {
-            return key;
-        }
-        return findInEphemeral(fingerprint);
+        return findInBcPrivate(fingerprint);
     }
 
     /**
@@ -169,17 +172,186 @@ class BcKeyStore {
     }
 
     /**
-     * Searches GnuPG's pubring.gpg for a key matching the fingerprint.
+     * Checks whether any User ID on the primary key contains the given email.
+     */
+    private boolean uidContainsEmail(PGPPublicKeyRing ring, String lowerEmail) {
+        Iterator<String> uids = ring.getPublicKey().getUserIDs();
+        while (uids.hasNext()) {
+            if (uids.next().toLowerCase().contains(lowerEmail)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Searches the GnuPG pubring for a key whose User ID contains the given email.
+     * Tries {@code pubring.kbx} first, then falls back to legacy {@code pubring.gpg}.
+     */
+    private PGPPublicKeyRing findByEmailInPubring(String lowerEmail) {
+        if (gnupgHome == null)
+            return null;
+        Path pubringKbx = gnupgHome.resolve("pubring.kbx");
+        if (Files.isRegularFile(pubringKbx)) {
+            PGPPublicKeyRing result = findByEmailInKeyBox(pubringKbx, lowerEmail);
+            if (result != null) {
+                return result;
+            }
+        }
+        Path pubringGpg = gnupgHome.resolve("pubring.gpg");
+        if (!Files.isRegularFile(pubringGpg))
+            return null;
+        try (InputStream in = new BufferedInputStream(Files.newInputStream(pubringGpg));
+                InputStream decoded = PGPUtil.getDecoderStream(in)) {
+            PGPPublicKeyRingCollection collection = new BcPGPPublicKeyRingCollection(decoded);
+            for (PGPPublicKeyRing ring : collection) {
+                if (uidContainsEmail(ring, lowerEmail))
+                    return ring;
+            }
+        } catch (IOException | PGPException e) {
+            // pubring not readable
+        }
+        return null;
+    }
+
+    /**
+     * Scans the cert-d directory for a cert whose User ID contains the given email.
+     */
+    private PGPPublicKeyRing findByEmailInCertD(String lowerEmail) {
+        if (certDHome == null || !Files.isDirectory(certDHome))
+            return null;
+        try (DirectoryStream<Path> dirs = Files.newDirectoryStream(certDHome, Files::isDirectory)) {
+            for (Path dir : dirs) {
+                try (DirectoryStream<Path> files = Files.newDirectoryStream(dir, Files::isRegularFile)) {
+                    for (Path file : files) {
+                        PGPPublicKeyRing ring = readPublicKeyRing(file);
+                        if (ring != null && uidContainsEmail(ring, lowerEmail))
+                            return ring;
+                    }
+                }
+            }
+        } catch (IOException e) {
+            // cert-d not accessible
+        }
+        return null;
+    }
+
+    /**
+     * Searches the GnuPG pubring for a key matching the given fingerprint.
+     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
+     *
+     * @param fingerprint the hex fingerprint to search for
+     * @return the matching key ring, or {@code null} if not found
+     */
+    PGPPublicKeyRing findInGnupg(String fingerprint) {
+        return findInGnupgPubring(fingerprint);
+    }
+
+    /**
+     * Searches the GnuPG pubring for a key whose User ID contains the given email.
+     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
+     *
+     * @param email the email to search for (case-insensitive)
+     * @return the matching key ring, or {@code null} if not found
+     */
+    PGPPublicKeyRing findInGnupgByEmail(String email) {
+        if (email == null || email.isEmpty())
+            return null;
+        return findByEmailInPubring(email.toLowerCase());
+    }
+
+    /**
+     * Searches the cert-d directory for a cert matching the given fingerprint.
+     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
+     *
+     * @param fingerprint the hex fingerprint to search for
+     * @return the matching key ring, or {@code null} if not found
+     */
+    PGPPublicKeyRing findInCertDStore(String fingerprint) {
+        return findInCertD(fingerprint);
+    }
+
+    /**
+     * Searches the cert-d directory for a cert whose User ID contains the given email.
+     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
+     *
+     * @param email the email to search for (case-insensitive)
+     * @return the matching key ring, or {@code null} if not found
+     */
+    PGPPublicKeyRing findInCertDByEmail(String email) {
+        if (email == null || email.isEmpty())
+            return null;
+        return findByEmailInCertD(email.toLowerCase());
+    }
+
+    /**
+     * Searches the in-memory ephemeral cache for a key matching the given fingerprint.
+     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
+     *
+     * @param fingerprint the hex fingerprint to search for
+     * @return the matching key ring, or {@code null} if not found
+     */
+    PGPPublicKeyRing findInEphemeralStore(String fingerprint) {
+        return findInEphemeral(fingerprint);
+    }
+
+    /**
+     * Searches the in-memory ephemeral cache for a key whose User ID contains
+     * the given email.
+     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
+     *
+     * @param email the email to search for (case-insensitive)
+     * @return the matching key ring, or {@code null} if not found
+     */
+    PGPPublicKeyRing findInEphemeralByEmail(String email) {
+        if (email == null || email.isEmpty())
+            return null;
+        String lower = email.toLowerCase();
+        for (PGPPublicKeyRing ring : ephemeralKeys.values()) {
+            if (uidContainsEmail(ring, lower))
+                return ring;
+        }
+        return null;
+    }
+
+    /**
+     * Returns {@code true} if a GnuPG pubring file ({@code pubring.kbx} or
+     * legacy {@code pubring.gpg}) exists.
+     */
+    boolean hasGnupgPubring() {
+        return gnupgHome != null
+                && (Files.isRegularFile(gnupgHome.resolve("pubring.kbx"))
+                        || Files.isRegularFile(gnupgHome.resolve("pubring.gpg")));
+    }
+
+    /**
+     * Returns {@code true} if the cert-d home directory exists.
+     */
+    boolean hasCertD() {
+        return certDHome != null && Files.isDirectory(certDHome);
+    }
+
+    /**
+     * Searches the GnuPG pubring for a key matching the fingerprint.
+     * Tries {@code pubring.kbx} (modern GnuPG 2.1+) first, then falls back
+     * to the legacy {@code pubring.gpg}.
      */
     private PGPPublicKeyRing findInGnupgPubring(String fingerprint) {
         if (gnupgHome == null) {
             return null;
         }
-        Path pubringGpg = gnupgHome.resolve("pubring.gpg");
-        if (!Files.isRegularFile(pubringGpg)) {
-            return null;
+        Path pubringKbx = gnupgHome.resolve("pubring.kbx");
+        if (Files.isRegularFile(pubringKbx)) {
+            PGPPublicKeyRing result = findInKeyBox(pubringKbx, fingerprint);
+            if (result != null) {
+                return result;
+            }
         }
-        return findInKeyRingCollection(pubringGpg, fingerprint);
+        Path pubringGpg = gnupgHome.resolve("pubring.gpg");
+        if (Files.isRegularFile(pubringGpg)) {
+            return findInKeyRingCollection(pubringGpg, fingerprint);
+        }
+        return null;
     }
 
     /**
@@ -196,6 +368,47 @@ class BcKeyStore {
             }
         } catch (IOException | PGPException e) {
             // pubring not readable — skip
+        }
+        return null;
+    }
+
+    /**
+     * Searches a GnuPG keybox ({@code .kbx}) file for a key matching the fingerprint.
+     */
+    private PGPPublicKeyRing findInKeyBox(Path kbxFile, String fingerprint) {
+        try (InputStream in = new BufferedInputStream(Files.newInputStream(kbxFile))) {
+            BcKeyBox keyBox = new BcKeyBox(in);
+            for (KeyBlob blob : keyBox.getKeyBlobs()) {
+                if (blob instanceof PublicKeyRingBlob pkrBlob) {
+                    PGPPublicKeyRing ring = pkrBlob.getPGPPublicKeyRing();
+                    if (ring != null && matchesFingerprint(ring, fingerprint)) {
+                        return ring;
+                    }
+                }
+            }
+        } catch (IOException e) {
+            // kbx not readable — skip
+        }
+        return null;
+    }
+
+    /**
+     * Searches a GnuPG keybox ({@code .kbx}) file for a key whose User ID
+     * contains the given email.
+     */
+    private PGPPublicKeyRing findByEmailInKeyBox(Path kbxFile, String lowerEmail) {
+        try (InputStream in = new BufferedInputStream(Files.newInputStream(kbxFile))) {
+            BcKeyBox keyBox = new BcKeyBox(in);
+            for (KeyBlob blob : keyBox.getKeyBlobs()) {
+                if (blob instanceof PublicKeyRingBlob pkrBlob) {
+                    PGPPublicKeyRing ring = pkrBlob.getPGPPublicKeyRing();
+                    if (ring != null && uidContainsEmail(ring, lowerEmail)) {
+                        return ring;
+                    }
+                }
+            }
+        } catch (IOException e) {
+            // kbx not readable — skip
         }
         return null;
     }

@@ -78,7 +78,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             return;
         }
 
-        SigmundConfig config = loadSigmundConfig();
+        SigmundConfig config = loadConfig();
         ToolsConfig toolsConfig = resolveToolsConfig(
                 config != null ? config.toolsConfig() : ToolsConfig.DEFAULT);
         SignatureInspector inspector = buildInspector(toolsConfig);

@@ -1,35 +1,25 @@
 package dev.cyberstamp.sigmund.plugin;
 
-import dev.cyberstamp.sigmund.core.ConfigLoader;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SigmundException;
 import dev.cyberstamp.sigmund.core.Signer;
 import dev.cyberstamp.sigmund.core.ToolConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
-import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
-import org.apache.maven.plugins.annotations.Parameter;
 
 /**
  * Base class for signing-related goals, providing shared parameters and
  * signer creation logic.
  */
-abstract class AbstractSigningMojo extends AbstractMojo {
-
-    @Parameter(property = "sigmund.sqHome")
-    protected File sqHome;
-
-    @Parameter(property = "sigmund.skip", defaultValue = "false")
-    protected boolean skip;
+abstract class AbstractSigningMojo extends AbstractSigmundMojo {
 
     protected Sigmund buildSigningSigmund() throws MojoExecutionException {
         try {
-            SigmundConfig config = ConfigLoader.load(null);
+            SigmundConfig config = loadConfig();
             Sigmund.Builder builder = Sigmund.builder().config(config);
 
             Map<String, ToolConfig> configuredTools = config.signingConfig().tools();

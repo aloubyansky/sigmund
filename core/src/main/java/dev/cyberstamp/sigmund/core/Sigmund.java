@@ -287,6 +287,33 @@ public class Sigmund {
         return null;
     }
 
+    /**
+     * Inspects a signer identity across available tools and their configured sources.
+     *
+     * @param credential the identity to look up
+     * @param toolName optional tool name to restrict inspection to a single tool;
+     *        null to use all capable tools
+     * @return the aggregated inspection report
+     */
+    public SignerInspectionReport inspectSigner(Credential credential, String toolName) {
+        List<SignerSourceResult> allResults = new ArrayList<>();
+
+        if (toolName != null) {
+            SignerInspection inspector = findTool(SignerInspection.class, toolName);
+            if (inspector != null && inspector.canInspect(credential)) {
+                allResults.addAll(inspector.inspect(credential));
+            }
+        } else {
+            for (SignatureTool tool : tools) {
+                if (tool instanceof SignerInspection si && si.canInspect(credential)) {
+                    allResults.addAll(si.inspect(credential));
+                }
+            }
+        }
+
+        return new SignerInspectionReport(credential, allResults);
+    }
+
     private FileSignatureReport verifySingleFile(Path artifactFile, Path signatureFile) {
         SignatureFormat format = findFormat(signatureFile);
         if (format == null) {

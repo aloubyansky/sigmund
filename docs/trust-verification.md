@@ -355,8 +355,8 @@ These properties override settings from `sigmund.yaml`:
 | `sigmund.trustConfig` | `${project.basedir}/sigmund.yaml` | Path to the trust configuration file |
 | `sigmund.onUntrusted` | (from config) | Override policy: `fail` or `warn` |
 | `sigmund.verifyAllSignatures` | (from config) | Override `require-all-evidence-match` |
-| `sigmund.resolveSigners` | `false` | Fetch unknown GPG keys from keyservers |
-| `sigmund.keyservers` | `hkps://keys.openpgp.org` | Comma-separated keyserver list |
+| `sigmund.resolveSigners` | `true` | Fetch unknown GPG keys from keyservers |
+| `sigmund.keyservers` | `hkps://keys.openpgp.org` | Comma-separated keyserver list (also accepts singular `sigmund.keyserver`) |
 | `sigmund.verifyPomFiles` | `false` | Also verify signatures on POM files |
 | `sigmund.includeTestDependencies` | `false` | Include test-scoped dependencies |
 | `sigmund.skip` | `false` | Skip verification |

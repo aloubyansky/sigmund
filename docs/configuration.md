@@ -436,7 +436,7 @@ Used in both `signing.tools.bc` and `discovery.tools.bc` sections.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `gnupg-home` | `~/.gnupg` | GnuPG home directory for reading `pubring.gpg` |
+| `gnupg-home` | `~/.gnupg` | GnuPG home directory for reading `pubring.kbx` (or legacy `pubring.gpg`) |
 | `cert-d-home` | `~/.local/share/openpgp-cert-d` | Shared OpenPGP cert-d directory for public certificates |
 | `bc-private-home` | `<cert-d-home>/bc-private` | BC private key store directory |
 | `signing-fingerprint` | (none) | Fingerprint of the key to sign with (40 or 64 hex chars) |

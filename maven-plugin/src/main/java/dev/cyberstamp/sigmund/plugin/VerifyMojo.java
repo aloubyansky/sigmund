@@ -53,7 +53,7 @@ public class VerifyMojo extends AbstractDependencyMojo {
             return;
         }
 
-        SigmundConfig config = loadConfig();
+        SigmundConfig config = loadAndValidateConfig();
         TrustPolicy trustPolicy = applyPolicyOverrides(config.trustPolicy());
         ToolsConfig toolsConfig = resolveToolsConfig(config.toolsConfig());
 
@@ -189,12 +189,8 @@ public class VerifyMojo extends AbstractDependencyMojo {
         return null;
     }
 
-    /**
-     * Loads and validates the config file, failing with a clear message
-     * if not found.
-     */
-    private SigmundConfig loadConfig() throws MojoExecutionException {
-        SigmundConfig config = loadSigmundConfig();
+    private SigmundConfig loadAndValidateConfig() throws MojoExecutionException {
+        SigmundConfig config = super.loadConfig();
         if (config == null) {
             if (trustConfigFile == null) {
                 throw new MojoExecutionException(
