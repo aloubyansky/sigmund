@@ -100,7 +100,7 @@ Key flags determine which key in the ring is used for each operation. Sigmund's 
 
 BC manages keys across three sources, searched in order:
 
-1. **GnuPG pubring** (`~/.gnupg/pubring.gpg`) — read-only. BC can read public keys from GnuPG's keyring for verification.
+1. **GnuPG pubring** (`~/.gnupg/pubring.kbx` or legacy `pubring.gpg`) — read-only. BC can read public keys from GnuPG's keyring for verification. The modern keybox format (`pubring.kbx`, GnuPG 2.1+) is tried first.
 
 2. **Shared cert-d** (`~/.local/share/openpgp-cert-d/`) — read/write for public certificates. Uses the standard OpenPGP cert-d two-level directory layout (fingerprint `ABCDEF...` is stored at `AB/CDEF...`). Public certificates written here are visible to `sq` and other tools that support cert-d.
 
@@ -146,7 +146,7 @@ Private key files in `bc-private/` are created with owner-only (600) file permis
 
 **BC → sq interop** works for v6 keys because both support RFC 9580 (OpenPGP v6). BC-generated public certs are written to the shared cert-d so `sq` can see them.
 
-**BC → gpg interop** works only for v4 keys. BC can read GPG's `pubring.gpg` for verification. BC v6 keys cannot be imported into GPG because GPG follows LibrePGP and does not support v6.
+**BC → gpg interop** works only for v4 keys. BC can read GPG's `pubring.kbx` (or legacy `pubring.gpg`) for verification. BC v6 keys cannot be imported into GPG because GPG follows LibrePGP and does not support v6.
 
 **sq → BC interop** works for v6 classic algorithm signatures (Ed25519, Ed448, RSA). PQC signatures (algorithm IDs 30-36) cannot be parsed by BC yet (Phase 2).
 

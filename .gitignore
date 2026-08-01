@@ -32,3 +32,4 @@ docker/distroless/bazel-*
 quarkus.log
 replay_*.log
 .superpowers/
+.claude

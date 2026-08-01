@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -583,6 +584,63 @@ class SigmundTest {
         }
     }
 
+    @Nested
+    class SignerInspectionOrchestration {
+
+        @Test
+        void inspectSignerUsesCapableTool() {
+            var tool = mockInspectionTool("bc", true);
+            var sigmund = Sigmund.builder().addTool(tool).build();
+
+            var report = sigmund.inspectSigner(
+                    new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                    null);
+
+            assertNotNull(report);
+            assertFalse(report.results().isEmpty());
+            assertTrue(report.results().stream().anyMatch(SignerSourceResult::found));
+        }
+
+        @Test
+        void inspectSignerFiltersToolByName() {
+            var bc = mockInspectionTool("bc", true);
+            var gpg = mockInspectionTool("gpg", false);
+            var sigmund = Sigmund.builder().addTool(bc).addTool(gpg).build();
+
+            var report = sigmund.inspectSigner(
+                    new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                    "gpg");
+
+            assertNotNull(report);
+            assertTrue(report.results().stream().noneMatch(SignerSourceResult::found));
+        }
+
+        @Test
+        void inspectSignerReturnsEmptyWhenNoCapableTool() {
+            var tool = mockTool("bc", true, false, Set.of("openpgp4"));
+            var sigmund = Sigmund.builder().addTool(tool).build();
+
+            var report = sigmund.inspectSigner(
+                    new FingerprintCredential("openpgp4", "AABB"), null);
+
+            assertNotNull(report);
+            assertTrue(report.results().isEmpty());
+        }
+
+        @Test
+        void inspectSignerCollectsFromAllCapableTools() {
+            var bc = mockInspectionTool("bc", true);
+            var sq = mockInspectionTool("sq", true);
+            var sigmund = Sigmund.builder().addTool(bc).addTool(sq).build();
+
+            var report = sigmund.inspectSigner(
+                    new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                    null);
+
+            assertEquals(2, report.results().size());
+        }
+    }
+
     // --- Helpers ---
 
     private static ToolsConfig noAutoInit() {
@@ -735,6 +793,83 @@ class SigmundTest {
                 return units;
             }
         };
+    }
+
+    private static SignatureTool mockInspectionTool(String name, boolean found) {
+        return new MockInspectionTool(name, found);
+    }
+
+    private static class MockInspectionTool implements SignatureTool, SignerInspection {
+        private final String name;
+        private final boolean found;
+
+        MockInspectionTool(String name, boolean found) {
+            this.name = name;
+            this.found = found;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return true;
+        }
+
+        @Override
+        public boolean canSign() {
+            return false;
+        }
+
+        @Override
+        public SignatureFormat signatureFormat() {
+            return mockFormat("openpgp", ".asc", true, List.of());
+        }
+
+        @Override
+        public Set<String> supportedCredentialTypes() {
+            return Set.of("openpgp4");
+        }
+
+        @Override
+        public boolean canVerify(VerificationUnit u) {
+            return false;
+        }
+
+        @Override
+        public SignResult sign(Path a, Path o) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public VerifyResult verify(Path a, VerificationUnit u) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<Credential> extractCredentials(VerifyResult r) {
+            return List.of();
+        }
+
+        @Override
+        public boolean canInspect(Credential credential) {
+            return credential instanceof FingerprintCredential;
+        }
+
+        @Override
+        public List<SignerSourceResult> inspect(Credential credential) {
+            if (!found) {
+                return List.of(new SignerSourceResult("local", "mock", false, null));
+            }
+            var info = new SignerInspectionResult(
+                    "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD",
+                    4, "EdDSA", 256,
+                    Instant.now(), null,
+                    List.of("Mock User <mock@test.com>"), List.of());
+            return List.of(new SignerSourceResult("local", "mock", true, info));
+        }
     }
 
     private static class MockKeyGeneratorTool implements SignatureTool, KeyGenerator {

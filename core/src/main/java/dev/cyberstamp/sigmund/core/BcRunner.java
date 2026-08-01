@@ -17,9 +17,12 @@ import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import org.bouncycastle.bcpg.AEADAlgorithmTags;
@@ -28,6 +31,7 @@ import org.bouncycastle.bcpg.HashAlgorithmTags;
 import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
 import org.bouncycastle.bcpg.S2K;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
+import org.bouncycastle.bcpg.sig.KeyFlags;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPKeyPair;
@@ -41,6 +45,7 @@ import org.bouncycastle.openpgp.PGPSignature;
 import org.bouncycastle.openpgp.PGPSignatureGenerator;
 import org.bouncycastle.openpgp.PGPSignatureList;
 import org.bouncycastle.openpgp.PGPSignatureSubpacketGenerator;
+import org.bouncycastle.openpgp.PGPSignatureSubpacketVector;
 import org.bouncycastle.openpgp.PGPUtil;
 import org.bouncycastle.openpgp.api.OpenPGPKey;
 import org.bouncycastle.openpgp.api.bc.BcOpenPGPApi;
@@ -67,7 +72,15 @@ import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyEncryptorBuilder;
  * @see BcKeyStore
  */
 public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
-        CertExporter, SignerIdentityResolver {
+        CertExporter, SignerIdentityResolver, SignerInspection {
+
+    private static final String NAME = "bc";
+
+    private static final String SOURCE_LOCAL = "local";
+    private static final String SOURCE_HKP = "hkp";
+    private static final String SOURCE_GNUPG_PUBRING = "GnuPG pubring";
+    private static final String SOURCE_CERT_D = "cert-d store";
+    private static final String SOURCE_EPHEMERAL = "ephemeral cache";
 
     private static final Set<String> SUPPORTED_CREDENTIAL_TYPES = Set.of(
             Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6);
@@ -145,7 +158,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
 
     @Override
     public String name() {
-        return "bc";
+        return NAME;
     }
 
     /**
@@ -185,12 +198,12 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
             Set<String> types = version >= 6
                     ? Set.of(Credential.TYPE_OPENPGP_V6)
                     : Set.of(Credential.TYPE_OPENPGP_V4);
-            return List.of(new SigningInfo("bc", fp, algo, userId, types));
+            return List.of(new SigningInfo(NAME, fp, algo, userId, types));
         } catch (IOException | PGPException e) {
             String fp = signingFingerprint != null ? signingFingerprint
                     : (tskFile != null ? tskFile.getFileName().toString()
                             : (tskBytes != null ? "(env var key)" : null));
-            return List.of(new SigningInfo("bc", fp, null, null, SUPPORTED_CREDENTIAL_TYPES));
+            return List.of(new SigningInfo(NAME, fp, null, null, SUPPORTED_CREDENTIAL_TYPES));
         }
     }
 
@@ -328,26 +341,34 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
         if (!fetchCache.shouldAttemptKey(keyId)) {
             return false;
         }
-        if (keyStore.findPublicKey(keyId) != null) {
+        PGPPublicKeyRing existing = keyStore.findPublicKey(keyId);
+        if (existing != null && hasUserIds(existing)) {
             return true;
         }
+        boolean fetched = false;
         for (String keyserver : keyservers) {
             if (!fetchCache.shouldAttempt(keyserver, keyId)) {
                 continue;
             }
-            if (fetchAndStore(keyId, keyserver)) {
-                return true;
+            PGPPublicKeyRing ring = fetchFromHkpAndStore(keyId, keyserver);
+            if (ring != null) {
+                fetched = true;
+                if (hasUserIds(ring)) {
+                    return true;
+                }
             }
         }
-        fetchCache.recordKeyNotFound(keyId);
-        return false;
+        if (!fetched) {
+            fetchCache.recordKeyNotFound(keyId);
+        }
+        return fetched;
     }
 
-    private boolean fetchAndStore(String keyId, String keyserver) {
+    PGPPublicKeyRing fetchFromHkpAndStore(String keyId, String keyserver) {
         try {
             PGPPublicKeyRing keyRing = fetchKeyFromHkp(keyId, keyserver);
             if (keyRing == null) {
-                return false;
+                return null;
             }
             if (importToKeyring) {
                 keyStore.storeCert(keyRing);
@@ -355,10 +376,14 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
                 keyStore.cacheEphemeral(keyRing);
             }
             fetchCache.recordSuccess(keyserver, keyId);
-            return true;
+            return keyRing;
         } catch (Exception e) {
-            return false;
+            return null;
         }
+    }
+
+    private static boolean hasUserIds(PGPPublicKeyRing ring) {
+        return ring.getPublicKey().getUserIDs().hasNext();
     }
 
     /**
@@ -385,6 +410,155 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
     @Override
     public String lookupKeyUserId(String keyId) {
         return keyStore.findPrimaryUserId(keyId);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * Supports {@link FingerprintCredential} and {@link EmailCredential}.
+     */
+    @Override
+    public boolean canInspect(Credential credential) {
+        return credential instanceof FingerprintCredential
+                || credential instanceof EmailCredential;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * Queries local stores (GnuPG pubring, cert-d, ephemeral cache) and, for
+     * fingerprint credentials, each configured HKP keyserver independently.
+     * Each source produces a separate {@link SignerSourceResult} with full key
+     * metadata when found.
+     */
+    @Override
+    public List<SignerSourceResult> inspect(Credential credential) {
+        List<SignerSourceResult> results = new ArrayList<>(3 + keyservers.size());
+
+        inspectLocalStores(credential, results);
+
+        if (credential instanceof FingerprintCredential fc && httpClient != null) {
+            String keyId = fc.fingerprint();
+            for (String keyserver : keyservers) {
+                PGPPublicKeyRing keyRing = fetchKeyFromHkp(keyId, keyserver);
+                if (keyRing != null) {
+                    results.add(new SignerSourceResult(SOURCE_HKP, keyserver, true,
+                            extractKeyInfo(keyRing)));
+                } else {
+                    results.add(new SignerSourceResult(SOURCE_HKP, keyserver, false, null));
+                }
+            }
+        }
+
+        return results;
+    }
+
+    private void inspectLocalStores(Credential credential, List<SignerSourceResult> results) {
+        if (keyStore.hasGnupgPubring()) {
+            PGPPublicKeyRing key = null;
+            if (credential instanceof FingerprintCredential fc) {
+                key = keyStore.findInGnupg(fc.fingerprint());
+            } else if (credential instanceof EmailCredential ec) {
+                key = keyStore.findInGnupgByEmail(ec.email());
+            }
+            results.add(key != null
+                    ? new SignerSourceResult(SOURCE_LOCAL, SOURCE_GNUPG_PUBRING, true, extractKeyInfo(key))
+                    : new SignerSourceResult(SOURCE_LOCAL, SOURCE_GNUPG_PUBRING, false, null));
+        }
+
+        if (keyStore.hasCertD()) {
+            PGPPublicKeyRing key = null;
+            if (credential instanceof FingerprintCredential fc) {
+                key = keyStore.findInCertDStore(fc.fingerprint());
+            } else if (credential instanceof EmailCredential ec) {
+                key = keyStore.findInCertDByEmail(ec.email());
+            }
+            results.add(key != null
+                    ? new SignerSourceResult(SOURCE_LOCAL, SOURCE_CERT_D, true, extractKeyInfo(key))
+                    : new SignerSourceResult(SOURCE_LOCAL, SOURCE_CERT_D, false, null));
+        }
+
+        PGPPublicKeyRing ephemeral = null;
+        if (credential instanceof FingerprintCredential fc) {
+            ephemeral = keyStore.findInEphemeralStore(fc.fingerprint());
+        } else if (credential instanceof EmailCredential ec) {
+            ephemeral = keyStore.findInEphemeralByEmail(ec.email());
+        }
+        if (ephemeral != null) {
+            results.add(new SignerSourceResult(SOURCE_LOCAL, SOURCE_EPHEMERAL, true,
+                    extractKeyInfo(ephemeral)));
+        }
+    }
+
+    private SignerInspectionResult extractKeyInfo(PGPPublicKeyRing keyRing) {
+        PGPPublicKey primaryKey = keyRing.getPublicKey();
+        String fingerprint = BcKeyStore.bytesToHex(primaryKey.getFingerprint());
+        int version = primaryKey.getVersion();
+        String algorithm = resolveAlgorithm(primaryKey.getAlgorithm());
+        int bitStrength = primaryKey.getBitStrength();
+        Instant creationDate = primaryKey.getCreationTime().toInstant();
+
+        Instant expirationDate = null;
+        long validSeconds = primaryKey.getValidSeconds();
+        if (validSeconds > 0) {
+            expirationDate = creationDate.plusSeconds(validSeconds);
+        }
+
+        List<String> userIds;
+        Iterator<String> uidIt = primaryKey.getUserIDs();
+        if (uidIt.hasNext()) {
+            userIds = new ArrayList<>();
+            do {
+                userIds.add(uidIt.next());
+            } while (uidIt.hasNext());
+        } else {
+            userIds = List.of();
+        }
+
+        List<SubkeyInfo> subkeys;
+        Iterator<PGPPublicKey> keyIt = keyRing.getPublicKeys();
+        keyIt.next(); // skip primary
+        if (keyIt.hasNext()) {
+            subkeys = new ArrayList<>();
+            do {
+                PGPPublicKey subkey = keyIt.next();
+                String subFp = BcKeyStore.bytesToHex(subkey.getFingerprint());
+                String subAlgo = resolveAlgorithm(subkey.getAlgorithm());
+                Set<String> caps = extractKeyCapabilities(subkey);
+                subkeys.add(new SubkeyInfo(subFp, subAlgo, subkey.getBitStrength(), caps));
+            } while (keyIt.hasNext());
+        } else {
+            subkeys = List.of();
+        }
+
+        return new SignerInspectionResult(fingerprint, version, algorithm, bitStrength,
+                creationDate, expirationDate, userIds, subkeys);
+    }
+
+    private Set<String> extractKeyCapabilities(PGPPublicKey key) {
+        Iterator<PGPSignature> sigs = key.getSignatures();
+        while (sigs.hasNext()) {
+            PGPSignature sig = sigs.next();
+            PGPSignatureSubpacketVector hashed = sig.getHashedSubPackets();
+            if (hashed == null)
+                continue;
+            int flags = hashed.getKeyFlags();
+            if (flags == 0)
+                continue;
+            Set<String> caps = new LinkedHashSet<>(4);
+            if ((flags & KeyFlags.CERTIFY_OTHER) != 0)
+                caps.add("certify");
+            if ((flags & KeyFlags.SIGN_DATA) != 0)
+                caps.add("sign");
+            if ((flags & KeyFlags.ENCRYPT_COMMS) != 0 || (flags & KeyFlags.ENCRYPT_STORAGE) != 0)
+                caps.add("encrypt");
+            if ((flags & KeyFlags.AUTHENTICATION) != 0)
+                caps.add("authenticate");
+            return caps;
+        }
+        return Set.of();
     }
 
     // --- Verification internals ---
@@ -813,8 +987,16 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      * Builds the HKP lookup URL for the given keyserver and key ID.
      */
     private String buildHkpUrl(String keyserver, String keyId) {
-        String base = keyserver.replaceFirst("^hkps://", "https://")
-                .replaceFirst("^hkp://", "http://");
+        String base;
+        if (keyserver.startsWith("hkps://")) {
+            base = "https://" + keyserver.substring(7);
+        } else if (keyserver.startsWith("hkp://")) {
+            base = "http://" + keyserver.substring(6);
+        } else if (keyserver.startsWith("https://") || keyserver.startsWith("http://")) {
+            base = keyserver;
+        } else {
+            base = "https://" + keyserver;
+        }
         if (!base.endsWith("/")) {
             base += "/";
         }

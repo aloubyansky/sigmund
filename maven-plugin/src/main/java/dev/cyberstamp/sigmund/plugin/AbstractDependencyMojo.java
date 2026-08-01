@@ -1,17 +1,13 @@
 package dev.cyberstamp.sigmund.plugin;
 
-import dev.cyberstamp.sigmund.core.PolicyConfigException;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import javax.inject.Inject;
 import org.apache.maven.artifact.Artifact;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
@@ -29,7 +25,7 @@ import org.eclipse.aether.resolution.DependencyResolutionException;
 /**
  * Base class for Mojos that iterate over project dependencies and inspect their signatures.
  */
-abstract class AbstractDependencyMojo extends AbstractMojo {
+abstract class AbstractDependencyMojo extends AbstractSigmundMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
     protected MavenProject project;
@@ -52,20 +48,11 @@ abstract class AbstractDependencyMojo extends AbstractMojo {
     @Parameter(property = "sigmund.keyservers")
     protected String keyservers;
 
-    @Parameter(property = "sigmund.sqHome")
-    protected File sqHome;
-
-    @Parameter(property = "sigmund.gpgHome")
-    protected File gpgHome;
-
     @Parameter(property = "sigmund.includeTestDependencies", defaultValue = "false")
     protected boolean includeTestDependencies;
 
     @Parameter(property = "sigmund.importToKeyring")
     protected Boolean importToKeyring;
-
-    @Parameter(property = "sigmund.skip", defaultValue = "false")
-    protected boolean skip;
 
     List<ArtifactCoords> resolveDependencies() throws MojoExecutionException {
         CollectRequest collectRequest = new CollectRequest();
@@ -132,67 +119,20 @@ abstract class AbstractDependencyMojo extends AbstractMojo {
         return new Dependency(artifact, dep.getScope(), "true".equals(dep.getOptional()), exclusions);
     }
 
-    /**
-     * Loads and parses the configuration file. Returns {@code null} if the
-     * file does not exist.
-     */
-    protected SigmundConfig loadSigmundConfig() throws MojoExecutionException {
+    @Override
+    protected SigmundConfig loadConfig() throws MojoExecutionException {
         if (trustConfigFile == null || !trustConfigFile.exists()) {
             return null;
         }
         try {
             return SigmundConfig.parse(trustConfigFile.toPath());
-        } catch (PolicyConfigException e) {
+        } catch (Exception e) {
             throw new MojoExecutionException("Failed to parse config: " + trustConfigFile, e);
         }
     }
 
-    /**
-     * Merges the Mojo parameters with the tools configuration from the config file.
-     */
     protected ToolsConfig resolveToolsConfig(ToolsConfig fileConfig) {
-        boolean effectiveResolve = resolveSigners != null
-                ? resolveSigners
-                : fileConfig.resolveSigners();
-        List<String> effectiveKeyservers = keyservers != null
-                ? SignatureInspector.parseKeyservers(keyservers)
-                : fileConfig.keyservers();
-        if (effectiveResolve && effectiveKeyservers.isEmpty()) {
-            effectiveKeyservers = List.of(ToolsConfig.DEFAULT_KEYSERVER);
-        }
-        boolean effectiveImport = importToKeyring != null
-                ? importToKeyring
-                : fileConfig.importToKeyring();
-        Map<String, Map<String, String>> mergedTools = new HashMap<>(fileConfig.tools());
-        for (var override : toolOverrides().entrySet()) {
-            mergedTools.merge(override.getKey(), override.getValue(), (existing, incoming) -> {
-                var merged = new HashMap<>(existing);
-                merged.putAll(incoming);
-                return Map.copyOf(merged);
-            });
-        }
-        return new ToolsConfig(
-                effectiveResolve, effectiveImport,
-                effectiveKeyservers, mergedTools, fileConfig.toolPriority());
-    }
-
-    protected Sigmund buildSigmund(ToolsConfig toolsConfig) throws MojoExecutionException {
-        return Sigmund.builder()
-                .toolsConfig(toolsConfig)
-                .build();
-    }
-
-    protected Map<String, Map<String, String>> toolOverrides() {
-        var overrides = new HashMap<>(SequoiaHomeResolver.toolOverrides(sqHome));
-        if (gpgHome != null) {
-            String gpgHomePath = gpgHome.toPath().toString();
-            overrides.put("gpg", Map.of("home", gpgHomePath));
-            overrides.put("bc", Map.of(
-                    "gnupg-home", gpgHomePath,
-                    "cert-d-home", gpgHomePath + "/cert-d",
-                    "bc-private-home", gpgHomePath + "/bc-private"));
-        }
-        return overrides;
+        return resolveToolsConfig(fileConfig, resolveSigners, keyservers, importToKeyring);
     }
 
     protected SignatureInspector buildInspector(ToolsConfig toolsConfig)
