@@ -19,7 +19,7 @@ This guide covers how to verify artifact signatures using Sigmund. Signature ver
   - [How Routing Works](#how-routing-works)
   - [Tool Capabilities](#tool-capabilities)
   - [Verdicts](#verdicts)
-- [Tool Priority Configuration](#tool-priority-configuration)
+- [Toolchain Configuration](#toolchain-configuration)
   - [Example: Prefer Sequoia](#example-prefer-sequoia)
   - [Example: GPG Only](#example-gpg-only)
 - [Key Discovery](#key-discovery)
@@ -199,21 +199,21 @@ Each verification tool returns one of these verdicts:
 - **`NO_KEY`** — signing key not found in any keyring
 - **`SKIPPED`** — tool cannot handle this signature (wrong version, unsupported algorithm, or tool unavailable)
 
-## Tool Priority Configuration
+## Toolchain Configuration
 
 You can configure which tools are used and their order in `sigmund.yaml`:
 
 ```yaml
 discovery:
-  tool-priority: [bc, sq, gpg]
+  toolchain: [bc, sq, gpg]
 ```
 
-The default priority is `[bc, sq, gpg]`:
+The default toolchain is `[bc, sq, gpg]`:
 - BC attempts verification first (zero external dependencies)
 - Sequoia is tried if BC cannot verify
 - GPG is tried last
 
-**Important:** When `tool-priority` is set, only the listed tools are used. Omitted tools are excluded entirely. When `tool-priority` is not set, all available tools are initialized in the default order.
+**Important:** When `toolchain` is set, only the listed tools are used. Omitted tools are excluded entirely. When `toolchain` is not set, all available tools are initialized in the default order.
 
 ### Example: Prefer Sequoia
 
@@ -221,7 +221,7 @@ To prioritize Sequoia for PQC verification:
 
 ```yaml
 discovery:
-  tool-priority: [sq, bc, gpg]
+  toolchain: [sq, bc, gpg]
 ```
 
 ### Example: GPG Only
@@ -230,7 +230,7 @@ To use only GPG:
 
 ```yaml
 discovery:
-  tool-priority: [gpg]
+  toolchain: [gpg]
 ```
 
 ## Key Discovery
@@ -290,7 +290,7 @@ Keys remain available for future verifications.
 
 **keys.openpgp.org** may serve keys without user IDs attached (for privacy). BC can use these keys for verification, but GPG cannot import them. If you rely on GPG and encounter import failures, consider:
 
-1. Using BC as the primary tool (`tool-priority: [bc, ...]`)
+1. Using BC as the primary tool (`toolchain: [bc, ...]`)
 2. Manually importing the key with `gpg --recv-keys <FINGERPRINT>` from a different keyserver
 3. Setting `import-to-keyring: true` and ensuring BC handles the import
 
@@ -363,11 +363,11 @@ The signing key is not in any keyring. Solutions:
 
 This is expected when verifying hybrid signatures. GPG processes the v4 classical signature and ignores the v6 PQC signature it doesn't understand. The verification succeeds because the classical signature is valid.
 
-To verify the PQC signature, ensure Sequoia is installed and appears in the tool priority list:
+To verify the PQC signature, ensure Sequoia is installed and appears in the toolchain:
 
 ```yaml
 discovery:
-  tool-priority: [bc, sq, gpg]
+  toolchain: [bc, sq, gpg]
 ```
 
 ### "Bad signature"

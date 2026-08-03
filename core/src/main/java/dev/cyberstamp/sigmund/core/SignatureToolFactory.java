@@ -4,17 +4,19 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Internal factory for constructing {@link SignatureTool} instances from configuration.
+ * Factory for constructing {@link SignatureTool} instances from configuration.
  * <p>
  * The builder uses factories to avoid hardcoding construction logic for each tool.
  * Each built-in tool has a corresponding factory that knows how to extract credentials
  * and settings from the config.
  * <p>
- * This is an internal implementation detail, not a public SPI. Third-party tools
- * use {@code Sigmund.builder().addTool()} directly. If a {@code ServiceLoader}-based
- * extension point is needed later, this interface is the natural candidate.
+ * This is a public SPI for tool extensions. Third-party tools can implement this
+ * interface and register via {@link java.util.ServiceLoader}. The builder discovers
+ * factories at build time and initializes tools based on configuration.
+ *
+ * @see Sigmund.Builder#build()
  */
-interface SignatureToolFactory {
+public interface SignatureToolFactory {
 
     /**
      * Returns the tool name this factory builds.
@@ -32,12 +34,19 @@ interface SignatureToolFactory {
 
     /**
      * Creates a signing-capable tool for the given credential.
+     * <p>
+     * The default implementation throws {@link UnsupportedOperationException}.
+     * Factories that support signing must override this method.
      *
      * @param credential the signing credential
      * @param settings tool-specific settings from the config
      * @return the configured tool, or {@code null} if the key/credential is not available
+     * @throws UnsupportedOperationException if signing is not supported
      */
-    SignatureTool create(Credential credential, Map<String, String> settings);
+    default SignatureTool createSigning(Credential credential, Map<String, String> settings) {
+        throw new UnsupportedOperationException(
+                toolName() + " factory does not support signing");
+    }
 
     /**
      * Creates a verify-only tool (no signing credentials).

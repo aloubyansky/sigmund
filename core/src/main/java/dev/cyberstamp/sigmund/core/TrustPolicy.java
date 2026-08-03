@@ -45,14 +45,20 @@ public interface TrustPolicy {
     boolean isUnsignedAllowed(ArtifactIdentity artifact);
 
     /**
-     * Returns whether all evidence must match an expected signer.
-     * <p>
-     * When {@code true}, every piece of evidence must match an expected signer —
-     * no unmatched evidence is allowed. When {@code false}, at least one match is sufficient.
+     * Returns the policy for evaluating listed evidence.
      *
-     * @return {@code true} if all evidence must match
+     * @return the listed evidence policy
+     * @see ListedEvidencePolicy
      */
-    boolean requireAllEvidenceMatch();
+    ListedEvidencePolicy listedEvidence();
+
+    /**
+     * Returns the policy for handling unlisted evidence.
+     *
+     * @return the unlisted evidence policy
+     * @see UnlistedEvidencePolicy
+     */
+    UnlistedEvidencePolicy unlistedEvidence();
 
     /**
      * Returns the policy for handling untrusted or unconfigured artifacts.

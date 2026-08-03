@@ -2,16 +2,15 @@ package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundException;
+import dev.cyberstamp.sigmund.core.SignedFile;
 import dev.cyberstamp.sigmund.core.Signer;
 import dev.cyberstamp.sigmund.core.SigningInfo;
 import dev.cyberstamp.sigmund.core.SigningOutput;
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import javax.inject.Inject;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -24,10 +23,12 @@ import org.apache.maven.project.MavenProjectHelper;
 /**
  * Signs all project artifacts using the tool chain configured in {@code sigmund.yaml}.
  * <p>
- * Bound to the VERIFY phase. Creates detached {@code .asc} signature files for the
- * main artifact, POM, and all attached artifacts. Signing tools and their priority
- * are determined by the {@code signing.tools} section of {@code sigmund.yaml};
- * Mojo parameters act as overrides.
+ * Bound to the VERIFY phase. Creates detached signature files for the main artifact,
+ * POM, and all attached artifacts. The signature format and extension are determined
+ * by the signing tools (e.g., {@code .asc} for OpenPGP, {@code .sigstore.json} for
+ * Sigstore). Signing tools and their priority are determined by the
+ * {@code signing.tools} section of {@code sigmund.yaml}; Mojo parameters act as
+ * overrides.
  *
  * @see Sigmund
  * @see Signer
@@ -47,19 +48,26 @@ public class SignMojo extends AbstractSigningMojo {
             getLog().info("Skipping signing");
             return;
         }
-        Signer signer = createSigner();
-        for (SigningInfo info : signer.signingInfo()) {
-            getLog().info(info.display());
+        try (Sigmund sigmund = buildSigningSigmund()) {
+            Signer signer = sigmund.signer();
+            for (SigningInfo info : signer.signingInfo()) {
+                getLog().info(info.display());
+            }
+            List<FileToSign> filesToSign = collectFilesToSign();
+
+            getLog().info("Signing " + filesToSign.size() + " artifact(s)...");
+
+            for (FileToSign fileToSign : filesToSign) {
+                signAndAttach(fileToSign, signer);
+            }
+
+            getLog().info("Signing completed successfully");
+        } catch (Exception e) {
+            if (e instanceof MojoExecutionException mee) {
+                throw mee;
+            }
+            throw new MojoExecutionException("Signing failed", e);
         }
-        List<FileToSign> filesToSign = collectFilesToSign();
-
-        getLog().info("Signing " + filesToSign.size() + " artifact(s)...");
-
-        for (FileToSign fileToSign : filesToSign) {
-            signAndAttach(fileToSign, signer);
-        }
-
-        getLog().info("Signing completed successfully");
     }
 
     private List<FileToSign> collectFilesToSign() {
@@ -67,7 +75,7 @@ public class SignMojo extends AbstractSigningMojo {
 
         Artifact mainArtifact = project.getArtifact();
         File mainFile = mainArtifact.getFile();
-        if (mainFile != null && mainFile.exists() && !mainFile.getName().endsWith(".asc")) {
+        if (mainFile != null && mainFile.exists() && !isSignatureFile(mainFile.getName())) {
             String extension = getExtension(mainFile);
             files.add(new FileToSign(mainFile, extension, null));
             getLog().debug("Added main artifact: " + mainFile.getName());
@@ -81,7 +89,7 @@ public class SignMojo extends AbstractSigningMojo {
 
         for (Artifact artifact : project.getAttachedArtifacts()) {
             File file = artifact.getFile();
-            if (file != null && file.exists() && !file.getName().endsWith(".asc")) {
+            if (file != null && file.exists() && !isSignatureFile(file.getName())) {
                 String extension = getExtension(file);
                 String classifier = getClassifier(artifact);
                 files.add(new FileToSign(file, extension, classifier));
@@ -97,35 +105,23 @@ public class SignMojo extends AbstractSigningMojo {
             throws MojoExecutionException {
         File file = fileToSign.file;
         Path artifactPath = file.toPath();
-        Path signaturePath = Path.of(file.getAbsolutePath() + ".asc");
 
         getLog().info("Signing: " + file.getName());
 
         try {
             SigningOutput output = signer.sign(artifactPath, artifactPath.getParent());
-            if (!output.files().isEmpty()) {
-                Path produced = output.files().get(0).path();
-                if (!produced.equals(signaturePath)) {
-                    Files.move(produced, signaturePath, StandardCopyOption.REPLACE_EXISTING);
-                }
+            for (SignedFile sf : output.files()) {
+                String attachExtension = fileToSign.extension + sf.fileExtension();
+                projectHelper.attachArtifact(project, attachExtension,
+                        fileToSign.classifier, sf.path().toFile());
+                getLog().debug("Attached signature: " + sf.path().getFileName()
+                        + (fileToSign.classifier != null
+                                ? " (classifier=" + fileToSign.classifier + ")"
+                                : ""));
             }
-            attachSignature(fileToSign, signaturePath.toFile());
-        } catch (IOException | SigmundException e) {
+        } catch (SigmundException e) {
             throw new MojoExecutionException("Failed to sign " + file.getName(), e);
         }
-    }
-
-    private void attachSignature(FileToSign fileToSign, File signatureFile) {
-        String classifier = fileToSign.classifier;
-        String extension = fileToSign.extension + ".asc";
-
-        projectHelper.attachArtifact(project, extension, classifier, signatureFile);
-
-        String name = signatureFile.getName();
-        if (classifier != null && !classifier.isEmpty()) {
-            name += " (classifier=" + classifier + ")";
-        }
-        getLog().debug("Attached signature: " + name);
     }
 
     private String getClassifier(Artifact artifact) {
@@ -137,6 +133,28 @@ public class SignMojo extends AbstractSigningMojo {
         String name = file.getName();
         int lastDot = name.lastIndexOf('.');
         return (lastDot >= 0) ? name.substring(lastDot + 1) : name;
+    }
+
+    /**
+     * Known signature file extensions used to exclude already-signed files
+     * from the signing pass.
+     */
+    private static final Set<String> KNOWN_SIGNATURE_EXTENSIONS = Set.of(
+            ".asc", ".sigstore.json");
+
+    /**
+     * Checks whether the given file name has a known signature extension.
+     *
+     * @param fileName the file name to check
+     * @return {@code true} if the name ends with a known signature extension
+     */
+    private static boolean isSignatureFile(String fileName) {
+        for (String ext : KNOWN_SIGNATURE_EXTENSIONS) {
+            if (fileName.endsWith(ext)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static class FileToSign {

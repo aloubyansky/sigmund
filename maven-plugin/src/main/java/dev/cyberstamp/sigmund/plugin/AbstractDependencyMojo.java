@@ -1,5 +1,6 @@
 package dev.cyberstamp.sigmund.plugin;
 
+import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
@@ -131,13 +132,27 @@ abstract class AbstractDependencyMojo extends AbstractSigmundMojo {
         }
     }
 
-    protected ToolsConfig resolveToolsConfig(ToolsConfig fileConfig) {
-        return resolveToolsConfig(fileConfig, resolveSigners, keyservers, importToKeyring);
+    /**
+     * Resolves the discovery config using field-level overrides from the mojo parameters.
+     *
+     * @param fileConfig the base discovery configuration from the config file
+     * @return the resolved discovery configuration
+     */
+    protected DiscoveryConfig resolveDiscoveryConfig(DiscoveryConfig fileConfig) {
+        return resolveDiscoveryConfig(fileConfig, resolveSigners, keyservers, importToKeyring);
     }
 
-    protected SignatureInspector buildInspector(ToolsConfig toolsConfig)
+    /**
+     * Builds a {@link SignatureInspector} with the given discovery and tools configurations.
+     *
+     * @param discoveryConfig the resolved discovery configuration
+     * @param toolsConfig the resolved tools configuration
+     * @return the configured signature inspector
+     * @throws MojoExecutionException if construction fails
+     */
+    protected SignatureInspector buildInspector(DiscoveryConfig discoveryConfig, ToolsConfig toolsConfig)
             throws MojoExecutionException {
-        Sigmund sigmund = buildSigmund(toolsConfig);
+        Sigmund sigmund = buildSigmund(discoveryConfig, toolsConfig);
         return SignatureInspector.builder()
                 .log(getLog())
                 .sigmund(sigmund)

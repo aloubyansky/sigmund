@@ -1,8 +1,10 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.ConfigLoader;
+import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
+import dev.cyberstamp.sigmund.core.ToolConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
 import java.io.File;
 import java.util.HashMap;
@@ -73,22 +75,20 @@ abstract class AbstractSigmundMojo extends AbstractMojo {
     }
 
     /**
-     * Merges file-based {@link ToolsConfig} with Maven property overrides.
+     * Merges file-based {@link DiscoveryConfig} with Maven property overrides.
      *
      * <p>
      * Each parameter, when non-null, takes precedence over the file configuration.
      * If signer resolution is enabled but no keyservers are configured, the
-     * {@link ToolsConfig#DEFAULT_KEYSERVER default keyserver} is used. Tool
-     * overrides from {@link #toolOverrides()} are merged into the file config's
-     * per-tool settings.
+     * {@link DiscoveryConfig#DEFAULT_KEYSERVER default keyserver} is used.
      *
-     * @param fileConfig base configuration from the config file
+     * @param fileConfig base discovery configuration from the config file
      * @param resolveSigners override for signer resolution, or {@code null} to use file config
      * @param keyservers comma-separated keyserver list override, or {@code null} to use file config
      * @param importToKeyring override for key import behavior, or {@code null} to use file config
-     * @return the resolved tools configuration
+     * @return the resolved discovery configuration
      */
-    protected ToolsConfig resolveToolsConfig(ToolsConfig fileConfig,
+    protected DiscoveryConfig resolveDiscoveryConfig(DiscoveryConfig fileConfig,
             Boolean resolveSigners, String keyservers, Boolean importToKeyring) {
         if (keyservers == null) {
             keyservers = System.getProperty("sigmund.keyserver");
@@ -100,33 +100,63 @@ abstract class AbstractSigmundMojo extends AbstractMojo {
                 ? resolveSigners
                 : (keyservers != null || fileConfig.resolveSigners());
         if (effectiveResolve && effectiveKeyservers.isEmpty()) {
-            effectiveKeyservers = List.of(ToolsConfig.DEFAULT_KEYSERVER);
+            effectiveKeyservers = List.of(DiscoveryConfig.DEFAULT_KEYSERVER);
         }
         boolean effectiveImport = importToKeyring != null
                 ? importToKeyring
                 : fileConfig.importToKeyring();
-        Map<String, Map<String, String>> mergedTools = new HashMap<>(fileConfig.tools());
-        for (var override : toolOverrides().entrySet()) {
-            mergedTools.merge(override.getKey(), override.getValue(), (existing, incoming) -> {
-                var merged = new HashMap<>(existing);
-                merged.putAll(incoming);
-                return Map.copyOf(merged);
-            });
-        }
-        return new ToolsConfig(
+        return new DiscoveryConfig(
                 effectiveResolve, effectiveImport,
-                effectiveKeyservers, mergedTools, fileConfig.toolPriority());
+                effectiveKeyservers, fileConfig.toolchain());
     }
 
     /**
-     * Builds a {@link Sigmund} instance with the given tools configuration.
+     * Merges tool overrides from Maven properties into a {@link ToolsConfig}.
+     * <p>
+     * For each tool override, if the tool already has a configuration in the
+     * base config, the override settings are merged on top. Otherwise, a new
+     * entry is created.
      *
+     * @param baseConfig the base tool configuration from the config file
+     * @return the merged tool configuration
+     */
+    protected ToolsConfig mergeToolOverrides(ToolsConfig baseConfig) {
+        Map<String, Map<String, String>> overrides = toolOverrides();
+        if (overrides.isEmpty()) {
+            return baseConfig;
+        }
+        Map<String, ToolConfig> merged = new HashMap<>();
+        for (String toolName : baseConfig.toolNames()) {
+            var tc = baseConfig.get(toolName);
+            if (tc != null) {
+                merged.put(toolName, tc);
+            }
+        }
+        for (var override : overrides.entrySet()) {
+            String toolName = override.getKey();
+            Map<String, String> overrideSettings = override.getValue();
+            var existing = merged.get(toolName);
+            if (existing != null) {
+                var mergedSettings = new HashMap<>(existing.settings());
+                mergedSettings.putAll(overrideSettings);
+                merged.put(toolName, new ToolConfig(existing.credentials(), mergedSettings));
+            } else {
+                merged.put(toolName, new ToolConfig(null, overrideSettings));
+            }
+        }
+        return new ToolsConfig(merged);
+    }
+
+    /**
+     * Builds a {@link Sigmund} instance with the given discovery and tools configurations.
+     *
+     * @param discoveryConfig the resolved discovery configuration
      * @param toolsConfig the resolved tools configuration
      * @return a configured Sigmund instance
-     * @throws MojoExecutionException if Sigmund construction fails
      */
-    protected Sigmund buildSigmund(ToolsConfig toolsConfig) throws MojoExecutionException {
+    protected Sigmund buildSigmund(DiscoveryConfig discoveryConfig, ToolsConfig toolsConfig) {
         return Sigmund.builder()
+                .discoveryConfig(discoveryConfig)
                 .toolsConfig(toolsConfig)
                 .build();
     }

@@ -39,10 +39,10 @@ println "Generated PQC key: ${fingerprint}"
 def sigmundYaml = new File(basedir, "sigmund.yaml")
 sigmundYaml.text = """\
 signing:
-  tools:
-    gpg: {}
-    sq:
-      signing-fingerprint: "${fingerprint}"
+  toolchain: [gpg, sq]
+tools:
+  sq:
+    signing-fingerprint: "${fingerprint}"
 """
 
 def props = new File(basedir, "test.properties")

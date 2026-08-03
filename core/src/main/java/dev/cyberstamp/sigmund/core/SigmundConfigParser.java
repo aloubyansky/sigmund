@@ -67,30 +67,33 @@ class SigmundConfigParser {
 
     private static SigmundConfig parseRoot(JsonNode root) {
         int version = root.has("version") ? root.get("version").asInt(1) : 1;
-        Map<String, SignerIdentity> signers = parseSigners(root.get("signers"));
+        SignersConfig signers = parseSigners(root.get("signers"));
         SigningConfig signingConfig = parseSigningConfig(root.get("signing"));
-        ToolsConfig toolsConfig = parseToolsConfig(root.get("discovery"));
+        ToolsConfig toolsConfig = parseToolsRegistry(root.get("tools"));
+        DiscoveryConfig discoveryConfig = parseDiscoveryConfig(root.get("discovery"));
 
-        Map<String, List<String>> artifactGroups = parseArtifactGroups(root.get("artifacts"));
+        ArtifactsConfig artifacts = parseArtifactGroups(root.get("artifacts"));
         Map<String, List<String>> rawTrust = parseTrustSection(root.get("trust"));
-        Map<String, List<String>> expandedTrust = expandArtifactGroups(rawTrust, artifactGroups);
+        Map<String, List<String>> expandedTrust = artifacts.expandTrustMappings(rawTrust);
         List<String> rawUnsigned = parseStringList(root.get("unsigned"));
-        List<String> expandedUnsigned = expandUnsignedGroups(rawUnsigned, artifactGroups);
-        boolean requireAll = boolField(root, "policy", "require-all-evidence-match", true);
+        List<String> expandedUnsigned = artifacts.expandPatterns(rawUnsigned);
+        ListedEvidencePolicy listedEvidence = parseListedEvidencePolicy(root);
+        UnlistedEvidencePolicy unlistedEvidence = parseUnlistedEvidencePolicy(root);
         UntrustedPolicy untrustedPolicy = parseUntrustedPolicy(root);
 
-        Map<String, List<SignerIdentity>> trustMappings = DefaultTrustPolicy.resolveTrustMappings(expandedTrust, signers);
+        Map<String, List<SignerIdentity>> trustMappings = resolveTrustMappings(expandedTrust, signers);
         TrustPolicy trustPolicy = new DefaultTrustPolicy(
-                trustMappings, expandedUnsigned, requireAll, untrustedPolicy);
+                trustMappings, expandedUnsigned, listedEvidence, unlistedEvidence, untrustedPolicy);
 
-        return new SigmundConfig(version, signers, artifactGroups, trustPolicy, signingConfig, toolsConfig);
+        return new SigmundConfig(version, signers, artifacts, trustPolicy,
+                signingConfig, toolsConfig, discoveryConfig);
     }
 
     // --- Signers ---
 
-    private static Map<String, SignerIdentity> parseSigners(JsonNode node) {
+    private static SignersConfig parseSigners(JsonNode node) {
         if (node == null || node.isNull()) {
-            return Map.of();
+            return SignersConfig.EMPTY;
         }
         Map<String, SignerIdentity> result = new LinkedHashMap<>();
         Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
@@ -98,7 +101,7 @@ class SigmundConfigParser {
             Map.Entry<String, JsonNode> entry = fields.next();
             result.put(entry.getKey(), parseSigner(entry.getKey(), entry.getValue()));
         }
-        return result;
+        return new SignersConfig(result);
     }
 
     private static SignerIdentity parseSigner(String id, JsonNode node) {
@@ -237,15 +240,30 @@ class SigmundConfigParser {
             return SigningConfig.DEFAULT;
         }
         String signer = textField(node, "signer");
-        Map<String, ToolConfig> tools = parseToolConfigs(node.get("tools"));
+        List<String> toolchain = parseStringList(node.get("toolchain"));
         Map<String, List<String>> profiles = parseProfiles(node.get("profiles"));
         String defaultProfile = textField(node, "default-profile");
-        return new SigningConfig(signer, tools, profiles, defaultProfile);
+        return new SigningConfig(signer, toolchain, profiles, defaultProfile);
     }
 
-    private static Map<String, ToolConfig> parseToolConfigs(JsonNode node) {
+    private static Map<String, List<String>> parseProfiles(JsonNode node) {
+        return parseStringListMap(node);
+    }
+
+    // --- Top-level Tools Registry ---
+
+    /**
+     * Parses the top-level {@code tools} section into a {@link ToolsConfig} registry.
+     * <p>
+     * Each tool entry maps a tool name to a {@link ToolConfig} containing optional
+     * credentials and tool-specific settings.
+     *
+     * @param node the {@code tools} YAML node, or {@code null}
+     * @return the parsed tool registry, or {@link ToolsConfig#EMPTY} if absent
+     */
+    private static ToolsConfig parseToolsRegistry(JsonNode node) {
         if (node == null || node.isNull()) {
-            return Map.of();
+            return ToolsConfig.EMPTY;
         }
         Map<String, ToolConfig> result = new LinkedHashMap<>();
         Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
@@ -253,7 +271,7 @@ class SigmundConfigParser {
             Map.Entry<String, JsonNode> entry = fields.next();
             result.put(entry.getKey(), parseToolConfig(entry.getValue()));
         }
-        return result;
+        return new ToolsConfig(result);
     }
 
     private static ToolConfig parseToolConfig(JsonNode node) {
@@ -275,10 +293,6 @@ class SigmundConfigParser {
             }
         }
         return new ToolConfig(credentials, settings);
-    }
-
-    private static Map<String, List<String>> parseProfiles(JsonNode node) {
-        return parseStringListMap(node);
     }
 
     // --- Trust ---
@@ -326,10 +340,76 @@ class SigmundConfigParser {
         throw new PolicyConfigException("Invalid on-untrusted value: '" + value + "' (must be 'fail' or 'warn')");
     }
 
+    private static ListedEvidencePolicy parseListedEvidencePolicy(JsonNode root) {
+        JsonNode policy = root.get("policy");
+        if (policy == null || policy.isNull()) {
+            return ListedEvidencePolicy.ALL;
+        }
+        String value = textField(policy, "listed-evidence");
+        if (value == null || "all".equalsIgnoreCase(value)) {
+            return ListedEvidencePolicy.ALL;
+        }
+        if ("any".equalsIgnoreCase(value)) {
+            return ListedEvidencePolicy.ANY;
+        }
+        throw new PolicyConfigException("Invalid listed-evidence value: '" + value + "' (must be 'all' or 'any')");
+    }
+
+    private static UnlistedEvidencePolicy parseUnlistedEvidencePolicy(JsonNode root) {
+        JsonNode policy = root.get("policy");
+        if (policy == null || policy.isNull()) {
+            return UnlistedEvidencePolicy.IGNORE;
+        }
+        String value = textField(policy, "unlisted-evidence");
+        if (value == null || "ignore".equalsIgnoreCase(value)) {
+            return UnlistedEvidencePolicy.IGNORE;
+        }
+        if ("warn".equalsIgnoreCase(value)) {
+            return UnlistedEvidencePolicy.WARN;
+        }
+        if ("require".equalsIgnoreCase(value)) {
+            return UnlistedEvidencePolicy.REQUIRE;
+        }
+        throw new PolicyConfigException(
+                "Invalid unlisted-evidence value: '" + value + "' (must be 'ignore', 'warn', or 'require')");
+    }
+
+    // --- Trust Mapping Resolution ---
+
+    /**
+     * Resolves signer references in trust mappings to actual {@link SignerIdentity}
+     * instances using the given {@link SignersConfig} registry.
+     *
+     * @param rawTrust expanded trust mappings with signer name references
+     * @param signers the signer registry for resolving references
+     * @return resolved trust mappings with signer identities
+     * @throws PolicyConfigException if a referenced signer is not defined
+     */
+    private static Map<String, List<SignerIdentity>> resolveTrustMappings(
+            Map<String, List<String>> rawTrust,
+            SignersConfig signers) {
+        var result = new LinkedHashMap<String, List<SignerIdentity>>(rawTrust.size());
+        for (var entry : rawTrust.entrySet()) {
+            List<String> signerRefs = entry.getValue();
+            List<SignerIdentity> resolved = new ArrayList<>(signerRefs.size());
+            for (String ref : signerRefs) {
+                try {
+                    resolved.add(signers.resolve(ref));
+                } catch (PolicyConfigException e) {
+                    throw new PolicyConfigException(
+                            "Trust entry '" + entry.getKey() + "' references undefined signer '" + ref + "'");
+                }
+            }
+            result.put(entry.getKey(), List.copyOf(resolved));
+        }
+        return result;
+    }
+
     // --- Artifact Groups ---
 
-    private static Map<String, List<String>> parseArtifactGroups(JsonNode node) {
-        return parseStringListMap(node);
+    private static ArtifactsConfig parseArtifactGroups(JsonNode node) {
+        Map<String, List<String>> groups = parseStringListMap(node);
+        return new ArtifactsConfig(groups);
     }
 
     private static Map<String, List<String>> parseStringListMap(JsonNode node) {
@@ -345,77 +425,27 @@ class SigmundConfigParser {
         return result;
     }
 
-    private static Map<String, List<String>> expandArtifactGroups(
-            Map<String, List<String>> rawTrust,
-            Map<String, List<String>> artifactGroups) {
-        if (artifactGroups.isEmpty()) {
-            return rawTrust;
-        }
-        Map<String, List<String>> expanded = new LinkedHashMap<>();
-        for (var entry : rawTrust.entrySet()) {
-            List<String> patterns = artifactGroups.getOrDefault(entry.getKey(), List.of(entry.getKey()));
-            for (String pattern : patterns) {
-                expanded.merge(pattern, entry.getValue(), (existing, incoming) -> {
-                    var merged = new ArrayList<>(existing);
-                    for (String ref : incoming) {
-                        if (!merged.contains(ref)) {
-                            merged.add(ref);
-                        }
-                    }
-                    return Collections.unmodifiableList(merged);
-                });
-            }
-        }
-        return expanded;
-    }
-
-    private static List<String> expandUnsignedGroups(
-            List<String> rawUnsigned,
-            Map<String, List<String>> artifactGroups) {
-        if (artifactGroups.isEmpty()) {
-            return rawUnsigned;
-        }
-        List<String> expanded = new ArrayList<>();
-        for (String entry : rawUnsigned) {
-            expanded.addAll(artifactGroups.getOrDefault(entry, List.of(entry)));
-        }
-        return expanded;
-    }
-
     // --- Discovery ---
 
-    private static ToolsConfig parseToolsConfig(JsonNode node) {
+    /**
+     * Parses the {@code discovery} section into a {@link DiscoveryConfig}.
+     * <p>
+     * Contains operational concerns: key fetching behavior, keyserver URLs,
+     * and the verification toolchain priority.
+     *
+     * @param node the {@code discovery} YAML node, or {@code null}
+     * @return the parsed discovery configuration
+     */
+    private static DiscoveryConfig parseDiscoveryConfig(JsonNode node) {
         if (node == null || node.isNull()) {
-            return ToolsConfig.DEFAULT;
+            return DiscoveryConfig.DEFAULT;
         }
-        boolean resolveSigners = node.has("resolve-signers")
-                ? boolOrDefault(node, "resolve-signers", true)
-                : boolOrDefault(node, "fetch-signer-info", true);
+        boolean resolveSigners = boolOrDefault(node, "resolve-signers", true);
         boolean importToKeyring = boolOrDefault(node, "import-to-keyring", false);
         List<String> keyservers = parseStringList(node.get("keyservers"));
-        Map<String, Map<String, String>> tools = parseDiscoveryTools(node.get("tools"));
-        JsonNode tpNode = node.get("tool-priority");
-        List<String> toolPriority = (tpNode != null && !tpNode.isNull()) ? parseStringList(tpNode) : null;
-        return new ToolsConfig(resolveSigners, importToKeyring, keyservers, tools, toolPriority);
-    }
-
-    private static Map<String, Map<String, String>> parseDiscoveryTools(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return Map.of();
-        }
-        Map<String, Map<String, String>> result = new LinkedHashMap<>();
-        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-        while (fields.hasNext()) {
-            Map.Entry<String, JsonNode> entry = fields.next();
-            Map<String, String> settings = new LinkedHashMap<>();
-            Iterator<Map.Entry<String, JsonNode>> toolFields = entry.getValue().fields();
-            while (toolFields.hasNext()) {
-                Map.Entry<String, JsonNode> tf = toolFields.next();
-                settings.put(tf.getKey(), tf.getValue().asText());
-            }
-            result.put(entry.getKey(), Map.copyOf(settings));
-        }
-        return result;
+        JsonNode tcNode = node.get("toolchain");
+        List<String> toolchain = (tcNode != null && !tcNode.isNull()) ? parseStringList(tcNode) : null;
+        return new DiscoveryConfig(resolveSigners, importToKeyring, keyservers, toolchain);
     }
 
     // --- Utilities ---

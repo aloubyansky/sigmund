@@ -29,8 +29,8 @@ final class BcToolFactory implements SignatureToolFactory {
     private static final String DEFAULT_SIGNING_KEY_ENV = "SIGMUND_BC_SIGNING_KEY";
 
     @Override
-    public SignatureTool create(Credential credential, Map<String, String> settings) {
-        return create(credential, settings, null);
+    public SignatureTool createSigning(Credential credential, Map<String, String> settings) {
+        return createSigning(credential, settings, null);
     }
 
     /**
@@ -51,7 +51,7 @@ final class BcToolFactory implements SignatureToolFactory {
      * The env var takes precedence so that CI environments can override
      * file-based configuration without modifying {@code sigmund.yaml}.
      */
-    SignatureTool create(Credential credential, Map<String, String> settings,
+    SignatureTool createSigning(Credential credential, Map<String, String> settings,
             PassphraseProvider explicitProvider) {
         BcKeyStore keyStore = buildKeyStore(settings);
         byte[] tskBytes = resolveSigningKeyBytes(settings);
@@ -75,7 +75,7 @@ final class BcToolFactory implements SignatureToolFactory {
         BcKeyStore keyStore = buildKeyStore(settings);
         boolean resolveSigners = "true".equals(settings.get("resolve-signers"));
         boolean importToKeyring = "true".equals(settings.get("import-to-keyring"));
-        List<String> keyservers = ToolsConfig.parseKeyserversSetting(settings.get("keyservers"));
+        List<String> keyservers = DiscoveryConfig.parseKeyserversSetting(settings.get("keyservers"));
         return new BcRunner(keyStore, null, null, null, null,
                 resolveSigners, importToKeyring, keyservers);
     }

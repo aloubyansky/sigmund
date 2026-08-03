@@ -17,7 +17,7 @@ final class SqToolFactory implements SignatureToolFactory {
     }
 
     @Override
-    public SignatureTool create(Credential credential, Map<String, String> settings) {
+    public SignatureTool createSigning(Credential credential, Map<String, String> settings) {
         String executable = settings.getOrDefault("executable", "sq");
         Path home = resolveHome(settings);
         String fingerprint = settings.get("signing-fingerprint");

@@ -2,10 +2,12 @@ package dev.cyberstamp.sigmund.cli;
 
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.CredentialParser;
+import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SignerInspectionReport;
 import dev.cyberstamp.sigmund.core.SignerInspectionReportFormatter;
+import dev.cyberstamp.sigmund.core.ToolConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
 import java.util.HashMap;
 import java.util.List;
@@ -66,10 +68,11 @@ public class InspectSignerCommand implements Callable<Integer> {
     public Integer call() {
         try {
             Credential credential = buildCredential();
-            Sigmund sigmund = buildSigmund();
-            SignerInspectionReport report = sigmund.inspectSigner(credential, tool);
-            SignerInspectionReportFormatter.format(report, System.out::println);
-            return 0;
+            try (Sigmund sigmund = buildSigmund()) {
+                SignerInspectionReport report = sigmund.inspectSigner(credential, tool);
+                SignerInspectionReportFormatter.format(report, System.out::println);
+                return 0;
+            }
         } catch (IllegalArgumentException e) {
             System.err.println("Error: " + e.getMessage());
             return 1;
@@ -108,31 +111,57 @@ public class InspectSignerCommand implements Callable<Integer> {
     }
 
     private Sigmund buildSigmund() {
-        SigmundConfig config = null;
-        try {
-            config = configMixin.loadConfig();
-        } catch (Exception e) {
-            System.err.println("WARNING: Could not load config: " + e.getMessage());
-        }
+        SigmundConfig config = loadConfigSafely();
 
-        ToolsConfig fileConfig = config != null && config.toolsConfig() != null
+        DiscoveryConfig fileDiscovery = config != null && config.discoveryConfig() != null
+                ? config.discoveryConfig()
+                : DiscoveryConfig.DEFAULT;
+        ToolsConfig fileTools = config != null && config.toolsConfig() != null
                 ? config.toolsConfig()
-                : ToolsConfig.DEFAULT;
+                : ToolsConfig.EMPTY;
 
         List<String> effectiveServers = keyservers != null
                 ? keyservers
-                : fileConfig.keyservers();
-        boolean effectiveResolve = keyservers != null || fileConfig.resolveSigners();
+                : fileDiscovery.keyservers();
+        boolean effectiveResolve = keyservers != null || fileDiscovery.resolveSigners();
 
-        Map<String, Map<String, String>> toolOverrides = new HashMap<>(fileConfig.tools());
-        if (sqHomeMixin.resolveSequoiaHome() != null) {
-            toolOverrides.put("sq",
-                    Map.of("home", sqHomeMixin.resolveSequoiaHome().toString()));
+        DiscoveryConfig discoveryConfig = new DiscoveryConfig(
+                effectiveResolve, fileDiscovery.importToKeyring(),
+                effectiveServers, fileDiscovery.toolchain());
+
+        ToolsConfig toolsConfig = mergeSquoiaHome(fileTools);
+
+        return Sigmund.builder()
+                .discoveryConfig(discoveryConfig)
+                .toolsConfig(toolsConfig)
+                .build();
+    }
+
+    /**
+     * Loads the config, returning {@code null} on failure instead of throwing.
+     */
+    private SigmundConfig loadConfigSafely() {
+        try {
+            return configMixin.loadConfig();
+        } catch (Exception e) {
+            System.err.println("WARNING: Could not load config: " + e.getMessage());
+            return null;
         }
+    }
 
-        ToolsConfig toolsConfig = new ToolsConfig(effectiveResolve, fileConfig.importToKeyring(),
-                effectiveServers, toolOverrides, fileConfig.toolPriority());
-
-        return Sigmund.builder().toolsConfig(toolsConfig).build();
+    /**
+     * Merges Sequoia home override into the tools config if specified.
+     */
+    private ToolsConfig mergeSquoiaHome(ToolsConfig base) {
+        if (sqHomeMixin.resolveSequoiaHome() == null) {
+            return base;
+        }
+        Map<String, ToolConfig> merged = new HashMap<>();
+        for (String name : base.toolNames()) {
+            merged.put(name, base.get(name));
+        }
+        merged.put("sq", new ToolConfig(null,
+                Map.of("home", sqHomeMixin.resolveSequoiaHome().toString())));
+        return new ToolsConfig(merged);
     }
 }

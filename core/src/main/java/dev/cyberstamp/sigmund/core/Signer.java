@@ -139,7 +139,7 @@ public class Signer {
                     Path finalPath = outputDir.resolve(artifactName + format.fileExtension());
                     moveFile(r.tempFile, finalPath);
                     signedFiles.add(new SignedFile(finalPath, r.tool.name(),
-                            format.name(), r.result.algorithm()));
+                            format.name(), r.result.algorithm(), format.fileExtension()));
                 }
             }
         }
@@ -169,7 +169,7 @@ public class Signer {
                 .map(r -> r.tool.name())
                 .reduce((a, b) -> a + "+" + b)
                 .orElse("unknown");
-        return new SignedFile(combinedPath, toolNames, format.name(), algorithms);
+        return new SignedFile(combinedPath, toolNames, format.name(), algorithms, format.fileExtension());
     }
 
     /**

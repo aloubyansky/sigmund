@@ -229,7 +229,7 @@ class SignatureEvidenceAdapterTest {
             }
 
             @Override
-            public boolean canHandle(Path f) {
+            public boolean canHandleByContent(Path f) {
                 return canHandle;
             }
 
@@ -442,7 +442,7 @@ class SignatureEvidenceAdapterTest {
                 }
 
                 @Override
-                public boolean canHandle(Path f) {
+                public boolean canHandleByContent(Path f) {
                     return canHandle;
                 }
 

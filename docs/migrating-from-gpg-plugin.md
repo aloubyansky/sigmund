@@ -125,19 +125,18 @@ Map your existing `maven-gpg-plugin` properties to Sigmund equivalents:
 
 | maven-gpg-plugin property | Sigmund equivalent | Notes |
 |---------------------------|-------------------|-------|
-| `gpg.keyname` | `sigmund.yaml` → `signing.tools.gpg.key-name` | GPG key ID or email. Configured in `sigmund.yaml`, not as a Maven property. |
-| `gpg.passphrase` | `sigmund.yaml` → `signing.tools.gpg.passphrase-env` | Env var name, not the passphrase itself. See [Passphrase handling](#3-passphrase-handling). |
-| `gpg.executable` | `sigmund.yaml` → `signing.tools.gpg.executable` | Path to GPG binary. Set in config file, not as Maven property. |
+| `gpg.keyname` | `sigmund.yaml` → `tools.gpg.key-name` | GPG key ID or email. Configured in `sigmund.yaml`, not as a Maven property. |
+| `gpg.passphrase` | `sigmund.yaml` → `tools.gpg.passphrase-env` | Env var name, not the passphrase itself. See [Passphrase handling](#3-passphrase-handling). |
+| `gpg.executable` | `sigmund.yaml` → `tools.gpg.executable` | Path to GPG binary. Set in config file, not as Maven property. |
 | `gpg.skip` | `sigmund.skip` | Skip signing when `true`. |
 | `gpg.useagent` | Implicit | Sigmund always uses GPG agent when no `passphrase-env` is configured. |
 
 **Example: specifying GPG key in sigmund.yaml**
 
 ```yaml
-signing:
-  tools:
-    gpg:
-      key-name: user@example.com
+tools:
+  gpg:
+    key-name: user@example.com
 ```
 
 **Example: skipping signing**

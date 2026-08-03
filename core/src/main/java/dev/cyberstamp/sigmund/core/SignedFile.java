@@ -9,10 +9,12 @@ import java.nio.file.Path;
  * @param toolName the tool that produced it (e.g., {@code "gpg"}, {@code "sq"})
  * @param format the signature format name (e.g., {@code "openpgp"})
  * @param algorithm the algorithm used (e.g., {@code "RSA"}, {@code "ML-DSA-87+Ed448"})
+ * @param fileExtension the file extension including the leading dot (e.g., {@code ".asc"})
  */
 public record SignedFile(
         Path path,
         String toolName,
         String format,
-        String algorithm) {
+        String algorithm,
+        String fileExtension) {
 }

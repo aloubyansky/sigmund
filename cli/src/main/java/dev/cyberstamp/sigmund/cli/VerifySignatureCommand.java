@@ -3,6 +3,7 @@ package dev.cyberstamp.sigmund.cli;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SignatureVerificationReport;
+import dev.cyberstamp.sigmund.core.ToolConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -51,26 +52,31 @@ public class VerifySignatureCommand implements Callable<Integer> {
                     .config(config);
 
             if (sqHomeMixin.hasExplicitHome()) {
-                ToolsConfig dc = config.toolsConfig();
-                Map<String, Map<String, String>> tools = new HashMap<>(dc.tools());
-                Map<String, String> sqSettings = new HashMap<>(tools.getOrDefault("sq", Map.of()));
+                ToolsConfig tc = config.toolsConfig();
+                Map<String, ToolConfig> merged = new HashMap<>();
+                for (String name : tc.toolNames()) {
+                    merged.put(name, tc.get(name));
+                }
+                Map<String, String> sqSettings = new HashMap<>();
+                ToolConfig existingSq = tc.get("sq");
+                if (existingSq != null) {
+                    sqSettings.putAll(existingSq.settings());
+                }
                 sqSettings.put("home", sqHomeMixin.resolveSequoiaHome().toString());
-                tools.put("sq", sqSettings);
-                builder.toolsConfig(new ToolsConfig(
-                        dc.resolveSigners(), dc.importToKeyring(),
-                        dc.keyservers(), tools, dc.toolPriority()));
+                merged.put("sq", new ToolConfig(null, sqSettings));
+                builder.toolsConfig(new ToolsConfig(merged));
             }
 
-            Sigmund sigmund = builder.build();
+            try (Sigmund sigmund = builder.build()) {
+                SignatureVerificationReport report = sigmund.verify(artifactFile, signatureFile);
 
-            SignatureVerificationReport report = sigmund.verify(artifactFile, signatureFile);
+                System.out.println(report.format());
 
-            System.out.println(report.format());
-
-            if (lenient) {
-                return report.isLenientPass() ? 0 : 1;
+                if (lenient) {
+                    return report.isLenientPass() ? 0 : 1;
+                }
+                return report.isPass() ? 0 : 1;
             }
-            return report.isPass() ? 0 : 1;
         } catch (Exception e) {
             printErrorMessage(e);
             return 1;

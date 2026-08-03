@@ -1,10 +1,9 @@
 package dev.cyberstamp.sigmund.plugin;
 
+import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SignatureVerificationReport;
-import dev.cyberstamp.sigmund.core.ToolsConfig;
 import java.io.File;
-import java.util.List;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -37,11 +36,17 @@ public class VerifySignatureMojo extends AbstractSigmundMojo {
         getLog().info("Verifying signature for: " + file.getName());
         getLog().info("Using signature file: " + signature.getName());
 
-        Sigmund sigmund = createSigmund();
-        SignatureVerificationReport report = performVerification(sigmund);
+        try (Sigmund sigmund = createSigmund()) {
+            SignatureVerificationReport report = performVerification(sigmund);
 
-        logReport(report);
-        checkVerdict(report);
+            logReport(report);
+            checkVerdict(report);
+        } catch (Exception e) {
+            if (e instanceof MojoExecutionException mee) {
+                throw mee;
+            }
+            throw new MojoExecutionException("Signature verification failed", e);
+        }
     }
 
     private void validateInputFiles() throws MojoExecutionException {
@@ -57,7 +62,8 @@ public class VerifySignatureMojo extends AbstractSigmundMojo {
     private Sigmund createSigmund() throws MojoExecutionException {
         try {
             return buildSigmund(
-                    new ToolsConfig(true, false, List.of(), toolOverrides(), null));
+                    new DiscoveryConfig(true, false, null, null),
+                    mergeToolOverrides(SequoiaHomeResolver.toolsConfigOverrides(sqHome)));
         } catch (Exception e) {
             throw new MojoExecutionException("Failed to create verifier", e);
         }

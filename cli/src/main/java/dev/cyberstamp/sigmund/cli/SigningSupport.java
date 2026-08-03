@@ -1,5 +1,6 @@
 package dev.cyberstamp.sigmund.cli;
 
+import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SigmundException;
@@ -20,18 +21,19 @@ final class SigningSupport {
     static Sigmund buildSigningSigmund(SigmundConfig config, SqHomeMixin sqHomeMixin) {
         Sigmund.Builder builder = Sigmund.builder().config(config);
 
-        Map<String, ToolConfig> configuredTools = config.signingConfig().tools();
-        List<String> toolNames = configuredTools.isEmpty()
-                ? ToolsConfig.DEFAULT_TOOL_PRIORITY
-                : List.copyOf(configuredTools.keySet());
+        List<String> toolchain = config.signingConfig().toolchain();
+        ToolsConfig toolsConfig = config.toolsConfig();
+        List<String> toolNames = toolchain.isEmpty()
+                ? DiscoveryConfig.DEFAULT_TOOL_PRIORITY
+                : toolchain;
 
         for (String toolName : toolNames) {
             Map<String, String> settings = mergeToolSettings(
-                    toolName, configuredTools, sqHomeMixin);
+                    toolName, toolsConfig, sqHomeMixin);
             try {
                 builder.addSigningTool(toolName, settings);
             } catch (SigmundException e) {
-                if (configuredTools.containsKey(toolName)) {
+                if (toolchain.contains(toolName)) {
                     throw e;
                 }
                 System.err.println("Note: signing tool '" + toolName + "' not available, skipping");
@@ -42,9 +44,9 @@ final class SigningSupport {
     }
 
     private static Map<String, String> mergeToolSettings(String toolName,
-            Map<String, ToolConfig> configuredTools, SqHomeMixin sqHomeMixin) {
+            ToolsConfig toolsConfig, SqHomeMixin sqHomeMixin) {
         Map<String, String> settings = new HashMap<>();
-        ToolConfig toolConfig = configuredTools.get(toolName);
+        ToolConfig toolConfig = toolsConfig.get(toolName);
         if (toolConfig != null) {
             settings.putAll(toolConfig.settings());
         }

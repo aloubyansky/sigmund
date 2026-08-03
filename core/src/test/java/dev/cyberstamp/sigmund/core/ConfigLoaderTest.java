@@ -29,7 +29,7 @@ class ConfigLoaderTest {
         SigmundConfig config = ConfigLoader.load(configFile);
         assertNotNull(config);
         assertEquals(1, config.version());
-        assertTrue(config.signers().containsKey("alice"));
+        assertNotNull(config.signers().get("alice"));
     }
 
     @Test
@@ -49,7 +49,7 @@ class ConfigLoaderTest {
         assertEquals(1, config.version());
         assertTrue(config.signers().isEmpty());
         assertEquals(SigningConfig.DEFAULT, config.signingConfig());
-        assertEquals(ToolsConfig.DEFAULT, config.toolsConfig());
+        assertTrue(config.toolsConfig().isEmpty());
     }
 
     @Test

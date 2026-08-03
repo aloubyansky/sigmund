@@ -2,6 +2,7 @@ package dev.cyberstamp.sigmund.cli;
 
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
+import dev.cyberstamp.sigmund.core.SignedFile;
 import dev.cyberstamp.sigmund.core.SigningOutput;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,7 +23,8 @@ public class SignCommand implements Callable<Integer> {
     @CommandLine.Mixin
     private ConfigMixin configMixin;
 
-    @CommandLine.Option(names = { "--output" }, description = "Output signature file path (default: <file>.asc)")
+    @CommandLine.Option(names = {
+            "--output" }, description = "Output signature file path (only valid when signing produces a single file)")
     private String output;
 
     @Override
@@ -30,42 +32,69 @@ public class SignCommand implements Callable<Integer> {
         try {
             SigmundConfig config = configMixin.loadConfig();
             Path artifactFile = Path.of(file);
-            Path outputFile = resolveOutputFile(artifactFile);
 
-            Sigmund sigmund = buildSigningSigmund(config);
-            Path outputDir = outputFile.getParent();
-            if (outputDir == null) {
-                outputDir = Path.of(".");
-            }
-            SigningOutput result = sigmund.signer()
-                    .sign(artifactFile, outputDir);
-
-            if (!result.files().isEmpty()) {
-                Path produced = result.files().get(0).path();
-                if (!produced.equals(outputFile)) {
-                    Files.move(produced, outputFile, StandardCopyOption.REPLACE_EXISTING);
+            try (Sigmund sigmund = buildSigningSigmund(config)) {
+                Path outputDir = artifactFile.getParent();
+                if (outputDir == null) {
+                    outputDir = Path.of(".");
                 }
-            }
+                SigningOutput result = sigmund.signer().sign(artifactFile, outputDir);
 
-            System.out.println("Signature created successfully!");
-            System.out.println();
-            System.out.println("Signature file: " + outputFile.toAbsolutePath());
-            return 0;
+                if (output != null && !output.isEmpty()) {
+                    return handleExplicitOutput(result);
+                }
+                return handleDefaultOutput(result);
+            }
         } catch (Exception e) {
             printErrorMessage(e);
             return 1;
         }
     }
 
-    private Sigmund buildSigningSigmund(SigmundConfig config) {
-        return SigningSupport.buildSigningSigmund(config, sqHomeMixin);
+    /**
+     * Handles the case where {@code --output} is explicitly set.
+     * <p>
+     * Only valid when signing produces exactly one file. If multiple files
+     * are produced, returns an error since a single output path cannot
+     * accommodate them all.
+     */
+    private int handleExplicitOutput(SigningOutput result) throws Exception {
+        if (result.files().size() > 1) {
+            System.err.println("Error: --output cannot be used when signing produces multiple files ("
+                    + result.files().size() + " files produced).");
+            System.err.println("Remove --output to use default file names.");
+            return 1;
+        }
+        Path outputFile = Paths.get(output);
+        if (!result.files().isEmpty()) {
+            Path produced = result.files().get(0).path();
+            if (!produced.equals(outputFile)) {
+                Files.move(produced, outputFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+        System.out.println("Signature created successfully!");
+        System.out.println();
+        System.out.println("Signature file: " + outputFile.toAbsolutePath());
+        return 0;
     }
 
-    private Path resolveOutputFile(Path artifactFile) {
-        if (output != null && !output.isEmpty()) {
-            return Paths.get(output);
+    /**
+     * Handles default output when {@code --output} is not set.
+     * <p>
+     * {@link dev.cyberstamp.sigmund.core.Signer#sign} already writes files
+     * to the output directory with the correct names, so no renaming is needed.
+     */
+    private int handleDefaultOutput(SigningOutput result) {
+        System.out.println("Signature created successfully!");
+        System.out.println();
+        for (SignedFile sf : result.files()) {
+            System.out.println("Signature file: " + sf.path().toAbsolutePath());
         }
-        return Paths.get(artifactFile.toString() + ".asc");
+        return 0;
+    }
+
+    private Sigmund buildSigningSigmund(SigmundConfig config) {
+        return SigningSupport.buildSigningSigmund(config, sqHomeMixin);
     }
 
     private void printErrorMessage(Exception e) {

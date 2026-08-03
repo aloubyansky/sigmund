@@ -167,7 +167,7 @@ public class TrustVerifier {
         if (matched.isEmpty()) {
             return TrustVerdict.UNTRUSTED;
         }
-        if (policy.requireAllEvidenceMatch() && !unmatched.isEmpty()) {
+        if (policy.listedEvidence() == ListedEvidencePolicy.ALL && !unmatched.isEmpty()) {
             return TrustVerdict.UNTRUSTED;
         }
         return TrustVerdict.TRUSTED;

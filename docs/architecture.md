@@ -5,7 +5,7 @@ This document describes how Sigmund works internally — the three-tool system, 
 ## Contents
 
 - [Three-Tool System](#three-tool-system)
-- [Tool Priority and Routing](#tool-priority-and-routing)
+- [Toolchain and Routing](#toolchain-and-routing)
 - [OpenPGP Key Structure](#openpgp-key-structure)
 - [Key Management](#key-management)
   - [BC Key Store](#bc-key-store)
@@ -49,20 +49,20 @@ Sigmund supports three OpenPGP backends, each with distinct capabilities:
 
 **gpg (GnuPG)** provides compatibility with existing GPG-based workflows and reads GPG keyrings. GnuPG follows LibrePGP and does not support v6 keys.
 
-## Tool Priority and Routing
+## Toolchain and Routing
 
-Verification units are routed to tools based on a configurable priority list. The default priority is:
+Verification units are routed to tools based on a configurable toolchain. The default toolchain is:
 
 ```
 [bc, sq, gpg]
 ```
 
-BC attempts verification first. If BC cannot fully verify a signature (missing key, unsupported algorithm, or verification failure), the next tool in the priority list is tried. This ensures that each tool's strengths are leveraged — BC's zero-dependency backend, GPG's local keyring (`pubring.kbx`), and Sequoia's PQC support and cert store.
+BC attempts verification first. If BC cannot fully verify a signature (missing key, unsupported algorithm, or verification failure), the next tool in the toolchain is tried. This ensures that each tool's strengths are leveraged — BC's zero-dependency backend, GPG's local keyring (`pubring.kbx`), and Sequoia's PQC support and cert store.
 
 The routing mechanism works as follows:
 
 1. Each signature file is parsed into one or more `VerificationUnit`s by its `SignatureFormat`
-2. For each unit, tools are checked in priority order
+2. For each unit, tools are checked in toolchain order
 3. Each tool where `canVerify(unit)` returns true attempts verification
 4. If a tool returns `PASS`, it is used immediately
 5. If a tool returns `NO_KEY` or `FAIL`, the next tool is tried — a different tool may have the key in its local keyring or support the algorithm
@@ -72,14 +72,14 @@ For example, a hybrid `.asc` with both a PGP4 (RSA) and PGP6 (ML-DSA) signature:
 - **PGP4 block:** BC may return `NO_KEY` if the key is not in its stores, but GPG finds it in `pubring.kbx` and returns `PASS`
 - **PGP6 block:** BC and GPG cannot verify ML-DSA, but Sequoia finds the key in its cert store and returns `PASS`
 
-Configure priority in `sigmund.yaml`:
+Configure the toolchain in `sigmund.yaml`:
 
 ```yaml
 discovery:
-  tool-priority: [bc, sq, gpg]
+  toolchain: [bc, sq, gpg]
 ```
 
-When `tool-priority` is set, only the listed tools are used. When omitted, all available tools are initialized in the default order.
+When `toolchain` is set, only the listed tools are used. When omitted, all available tools are initialized in the default order.
 
 ## OpenPGP Key Structure
 
@@ -313,7 +313,7 @@ for (Credential proven : evidence.provenCredentials()) {
 ### Trust Verdicts
 
 - `TRUSTED` — at least one expected signer matched, and policy requirements met
-- `UNTRUSTED` — no expected signers matched, or unmatched evidence when `require-all-evidence-match` is true
+- `UNTRUSTED` — no expected signers matched, or unmatched evidence per `listed-evidence`/`unlisted-evidence` policy
 - `UNSIGNED` — no evidence files provided
 - `VERIFICATION_FAILED` — at least one signature failed cryptographic verification
 - `NOT_CONFIGURED` — no expected signers configured for this artifact
