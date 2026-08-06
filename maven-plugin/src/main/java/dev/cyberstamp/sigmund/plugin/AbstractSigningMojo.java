@@ -1,12 +1,12 @@
 package dev.cyberstamp.sigmund.plugin;
 
+import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SigmundException;
-import dev.cyberstamp.sigmund.core.Signer;
 import dev.cyberstamp.sigmund.core.ToolConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -22,17 +22,18 @@ abstract class AbstractSigningMojo extends AbstractSigmundMojo {
             SigmundConfig config = loadConfig();
             Sigmund.Builder builder = Sigmund.builder().config(config);
 
-            Map<String, ToolConfig> configuredTools = config.signingConfig().tools();
-            List<String> toolNames = configuredTools.isEmpty()
-                    ? ToolsConfig.DEFAULT_TOOL_PRIORITY
-                    : List.copyOf(configuredTools.keySet());
+            List<String> toolchain = config.signingConfig().toolchain();
+            ToolsConfig toolsConfig = config.toolsConfig();
+            List<String> toolNames = toolchain.isEmpty()
+                    ? DiscoveryConfig.DEFAULT_TOOL_PRIORITY
+                    : toolchain;
 
             for (String toolName : toolNames) {
-                Map<String, String> settings = mergeToolSettings(toolName, configuredTools);
+                Map<String, String> settings = mergeToolSettings(toolName, toolsConfig);
                 try {
                     builder.addSigningTool(toolName, settings);
                 } catch (SigmundException e) {
-                    if (configuredTools.containsKey(toolName)) {
+                    if (toolchain.contains(toolName)) {
                         throw e;
                     }
                     getLog().debug("Signing tool '" + toolName + "' not available, skipping");
@@ -45,18 +46,10 @@ abstract class AbstractSigningMojo extends AbstractSigmundMojo {
         }
     }
 
-    protected Signer createSigner() throws MojoExecutionException {
-        return buildSigningSigmund().signer();
-    }
-
-    protected Signer createSigner(String profile) throws MojoExecutionException {
-        return buildSigningSigmund().signer(profile);
-    }
-
     private Map<String, String> mergeToolSettings(String toolName,
-            Map<String, ToolConfig> configuredTools) {
-        Map<String, String> settings = new HashMap<>();
-        ToolConfig toolConfig = configuredTools.get(toolName);
+            ToolsConfig toolsConfig) {
+        Map<String, String> settings = new LinkedHashMap<>();
+        ToolConfig toolConfig = toolsConfig.get(toolName);
         if (toolConfig != null) {
             settings.putAll(toolConfig.settings());
         }

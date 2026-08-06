@@ -1,86 +1,88 @@
 package dev.cyberstamp.sigmund.core;
 
-import java.util.List;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * Configuration for tool initialization, key fetching, and per-tool settings.
+ * Read-only registry of per-tool configurations, parsed from the top-level
+ * {@code tools} section of {@code sigmund.yaml}.
  * <p>
- * Separated from {@link TrustPolicy} because these are transport/infrastructure
- * concerns, not trust decisions. A trust policy backed by OPA or a database does
- * not need to know about keyservers or tool-specific settings.
+ * Each entry maps a tool name to its {@link ToolConfig} containing credentials
+ * and settings. The registry is ordered by insertion (YAML declaration order).
+ * <p>
+ * Tool configurations provide per-tool overrides for credential types and
+ * tool-specific settings (e.g., cipher suite, key formats). These are combined
+ * with operational settings from {@link DiscoveryConfig} during tool initialization.
  *
- * <h2>Key fetching behavior</h2>
- * <p>
- * When {@link #resolveSigners()} is {@code true} (the default), tools attempt to
- * fetch missing keys from keyservers to resolve signer identities (names and emails).
- * The behavior depends on {@link #importToKeyring()}:
- * <ul>
- * <li>{@code importToKeyring = false} (default) — BC fetches keys to an in-memory
- * cache, used for verification, and discarded when the JVM exits. Not persisted to disk.
- * GnuPG requires keys in its on-disk keyring and cannot do ephemeral imports — key
- * fetch is skipped when {@code importToKeyring} is {@code false}.</li>
- * <li>{@code importToKeyring = true} — keys are permanently imported into the tool's
- * keyring (BC cert-d, GPG keyring).</li>
- * </ul>
- * <p>
- * When {@link #resolveSigners()} is {@code false}, no key fetching is attempted by any tool.
- * <p>
- * When {@link #keyservers()} is empty, {@code hkps://keys.openpgp.org} is used as the default.
- *
- * @param resolveSigners whether tools should attempt to fetch missing keys to resolve signer identities
- * @param importToKeyring whether to persist fetched keys into the tool's keyring
- * @param keyservers keyserver URLs for key fetching (empty = default)
- * @param tools per-tool settings, keyed by tool name
- * @param toolPriority tools to use and their order; {@code null} means all available
- *        tools in the default order; an explicit list restricts to only those tools
+ * @see ToolConfig
+ * @see SigmundConfig
+ * @see DiscoveryConfig
  */
-public record ToolsConfig(
-        boolean resolveSigners,
-        boolean importToKeyring,
-        List<String> keyservers,
-        Map<String, Map<String, String>> tools,
-        List<String> toolPriority) {
+public class ToolsConfig {
 
-    public static final String DEFAULT_KEYSERVER = "hkps://keys.openpgp.org";
-    public static final List<String> DEFAULT_TOOL_PRIORITY = List.of("bc", "sq", "gpg");
+    /** Empty tool registry. */
+    public static final ToolsConfig EMPTY = new ToolsConfig(Map.of());
 
-    public static final ToolsConfig DEFAULT = new ToolsConfig(true, false, List.of(DEFAULT_KEYSERVER), Map.of(),
-            null);
+    private final Map<String, ToolConfig> tools;
 
     /**
-     * Creates a new tools configuration with defensive copies.
+     * Creates a tool registry from the given map.
      * <p>
-     * A {@code null} {@code toolPriority} means "initialize all available tools"
-     * in the default order. An explicit list restricts to only those tools.
+     * The map is defensively copied using {@link LinkedHashMap} to preserve
+     * insertion order (YAML declaration order).
+     *
+     * @param tools tool configurations keyed by tool name
      */
-    public ToolsConfig {
-        keyservers = keyservers != null && !keyservers.isEmpty() ? List.copyOf(keyservers) : List.of(DEFAULT_KEYSERVER);
-        tools = tools != null ? Map.copyOf(tools) : Map.of();
-        toolPriority = toolPriority != null && !toolPriority.isEmpty() ? List.copyOf(toolPriority) : null;
+    public ToolsConfig(Map<String, ToolConfig> tools) {
+        this.tools = tools != null
+                ? new LinkedHashMap<>(tools)
+                : new LinkedHashMap<>();
     }
 
     /**
-     * Returns the tool priority list for iteration, falling back to the default
-     * order when {@link #toolPriority()} is {@code null}.
+     * Returns the configuration for the given tool, or {@code null} if not registered.
+     * <p>
+     * A {@code null} result means no tool-specific overrides are configured for
+     * that tool name — the tool should use its defaults.
      *
-     * @return the effective tool priority list, never {@code null}
+     * @param toolName the tool name (e.g., {@code "bc"}, {@code "sq"}, {@code "gpg"})
+     * @return the tool configuration, or {@code null} if not found
      */
-    public List<String> effectiveToolPriority() {
-        return toolPriority != null ? toolPriority : DEFAULT_TOOL_PRIORITY;
+    public ToolConfig get(String toolName) {
+        return tools.get(toolName);
     }
 
     /**
-     * Parses a comma-separated keyservers string from the internal settings map.
-     * Used by tool factories to read the injected {@code "keyservers"} setting.
+     * Returns all registered tool names.
+     * <p>
+     * The returned set preserves insertion order (YAML declaration order).
      *
-     * @param value comma-separated keyserver URLs, or {@code null}
-     * @return the parsed list, or an empty list if the input is null or blank
+     * @return an unmodifiable set of tool names, never {@code null}
      */
-    static List<String> parseKeyserversSetting(String value) {
-        if (value == null || value.isBlank()) {
-            return List.of();
-        }
-        return List.of(value.split(","));
+    public Set<String> toolNames() {
+        return Collections.unmodifiableSet(new LinkedHashSet<>(tools.keySet()));
+    }
+
+    /**
+     * Returns whether this registry is empty.
+     * <p>
+     * An empty registry means no tool-specific overrides are configured.
+     *
+     * @return {@code true} if no tools are registered
+     */
+    public boolean isEmpty() {
+        return tools.isEmpty();
+    }
+
+    /**
+     * Returns the number of registered tools.
+     *
+     * @return the number of tools in the registry
+     */
+    public int size() {
+        return tools.size();
     }
 }

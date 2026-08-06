@@ -56,7 +56,32 @@ class OpenPgpSignatureFormatTest {
         @Test
         void missingFile(@TempDir Path tmp) {
             Path file = tmp.resolve("nonexistent.asc");
-            assertFalse(format.canHandle(file));
+            // Extension-first detection returns true for .asc files regardless of existence
+            assertTrue(format.canHandle(file));
+        }
+    }
+
+    @Nested
+    class CanHandleByContent {
+
+        @Test
+        void returnsTrueForValidPgpContent(@TempDir Path tmp) throws IOException {
+            Path file = tmp.resolve("sig.bin");
+            Files.writeString(file, "-----BEGIN PGP SIGNATURE-----\ndata\n-----END PGP SIGNATURE-----\n");
+            assertTrue(format.canHandleByContent(file));
+        }
+
+        @Test
+        void returnsFalseForNonPgpContent(@TempDir Path tmp) throws IOException {
+            Path file = tmp.resolve("data.bin");
+            Files.writeString(file, "This is not a PGP signature file.");
+            assertFalse(format.canHandleByContent(file));
+        }
+
+        @Test
+        void returnsFalseForMissingFile(@TempDir Path tmp) {
+            Path file = tmp.resolve("missing.bin");
+            assertFalse(format.canHandleByContent(file));
         }
     }
 

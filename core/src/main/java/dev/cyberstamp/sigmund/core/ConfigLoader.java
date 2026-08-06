@@ -2,7 +2,6 @@ package dev.cyberstamp.sigmund.core;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
 
 /**
  * Locates and loads {@code sigmund.yaml} configuration files.
@@ -97,6 +96,6 @@ public class ConfigLoader {
     }
 
     private static SigmundConfig defaultConfig() {
-        return new SigmundConfig(1, Map.of(), Map.of(), null, null, null);
+        return new SigmundConfig(1, null, null, null, null, null, null);
     }
 }

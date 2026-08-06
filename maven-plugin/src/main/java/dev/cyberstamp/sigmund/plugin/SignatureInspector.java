@@ -1,10 +1,10 @@
 package dev.cyberstamp.sigmund.plugin;
 
+import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.FileSignatureReport;
 import dev.cyberstamp.sigmund.core.KeyImporter;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SignatureVerificationReport;
-import dev.cyberstamp.sigmund.core.ToolsConfig;
 import dev.cyberstamp.sigmund.core.UnverifiedResult;
 import dev.cyberstamp.sigmund.core.Verdict;
 import dev.cyberstamp.sigmund.core.VerifyResult;
@@ -13,7 +13,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.RepositorySystem;
@@ -27,7 +26,7 @@ import org.eclipse.aether.repository.RemoteRepository;
  * Uses the {@link Sigmund} facade for signature verification and
  * {@link ArtifactFileResolver} for Maven artifact resolution.
  */
-class SignatureInspector {
+class SignatureInspector implements AutoCloseable {
 
     private final Log log;
     private final ArtifactFileResolver fileResolver;
@@ -86,9 +85,9 @@ class SignatureInspector {
 
         SignatureInspector build() throws MojoExecutionException {
             if (sigmund == null) {
-                Map<String, Map<String, String>> overrides = SequoiaHomeResolver.toolOverrides(sqHome);
                 sigmund = Sigmund.builder()
-                        .toolsConfig(new ToolsConfig(true, false, List.of(), overrides, null))
+                        .discoveryConfig(new DiscoveryConfig(true, false, List.of(), null))
+                        .toolsConfig(SequoiaHomeResolver.toolsConfigOverrides(sqHome))
                         .build();
             }
             return new SignatureInspector(this);
@@ -197,6 +196,11 @@ class SignatureInspector {
             log.debug("Re-verification failed: " + e.getMessage());
         }
         return entry;
+    }
+
+    @Override
+    public void close() {
+        sigmund.close();
     }
 
     static List<String> parseKeyservers(String keyservers) {

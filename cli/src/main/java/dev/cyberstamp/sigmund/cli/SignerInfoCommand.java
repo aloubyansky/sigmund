@@ -24,25 +24,25 @@ public class SignerInfoCommand implements Callable<Integer> {
     public Integer call() {
         try {
             SigmundConfig config = configMixin.loadConfig();
-            Sigmund sigmund = SigningSupport.buildSigningSigmund(config, sqHomeMixin);
+            try (Sigmund sigmund = SigningSupport.buildSigningSigmund(config, sqHomeMixin)) {
+                Signer signer = profile != null
+                        ? sigmund.signer(profile)
+                        : sigmund.signer();
 
-            Signer signer = profile != null
-                    ? sigmund.signer(profile)
-                    : sigmund.signer();
+                List<SigningInfo> infos = signer.signingInfo();
+                if (infos.isEmpty()) {
+                    System.out.println("No signing identity information available");
+                    return 0;
+                }
 
-            List<SigningInfo> infos = signer.signingInfo();
-            if (infos.isEmpty()) {
-                System.out.println("No signing identity information available");
+                if (profile != null) {
+                    System.out.println("Profile: " + profile);
+                }
+                for (SigningInfo info : infos) {
+                    System.out.println(info.display());
+                }
                 return 0;
             }
-
-            if (profile != null) {
-                System.out.println("Profile: " + profile);
-            }
-            for (SigningInfo info : infos) {
-                System.out.println(info.display());
-            }
-            return 0;
         } catch (Exception e) {
             System.err.println("Error: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
             return 1;

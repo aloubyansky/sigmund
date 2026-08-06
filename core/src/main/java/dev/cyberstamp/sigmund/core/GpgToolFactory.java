@@ -19,7 +19,7 @@ final class GpgToolFactory implements SignatureToolFactory {
     }
 
     @Override
-    public SignatureTool create(Credential credential, Map<String, String> settings) {
+    public SignatureTool createSigning(Credential credential, Map<String, String> settings) {
         String executable = settings.getOrDefault("executable", "gpg");
         String keyName = settings.get("key-name");
         if (keyName == null && credential instanceof FingerprintCredential fp) {
@@ -35,7 +35,7 @@ final class GpgToolFactory implements SignatureToolFactory {
         String executable = settings.getOrDefault("executable", "gpg");
         boolean resolveSigners = "true".equals(settings.get("resolve-signers"));
         boolean importToKeyring = "true".equals(settings.get("import-to-keyring"));
-        List<String> keyservers = ToolsConfig.parseKeyserversSetting(settings.get("keyservers"));
+        List<String> keyservers = DiscoveryConfig.parseKeyserversSetting(settings.get("keyservers"));
         return new GpgRunner(executable, null, settings.get("home"),
                 null, false, resolveSigners, importToKeyring, keyservers);
     }

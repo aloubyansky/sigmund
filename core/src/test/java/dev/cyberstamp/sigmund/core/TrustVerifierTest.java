@@ -18,7 +18,7 @@ class TrustVerifierTest {
 
         @Test
         void trustedWhenEvidenceMatchesExpectedSigner() {
-            var policy = policyFor(ALICE, false);
+            var policy = policyFor(ALICE, ListedEvidencePolicy.ANY);
             var provider = passingProvider("openpgp",
                     new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23"));
             var verifier = new TrustVerifier(policy, List.of(provider));
@@ -34,7 +34,7 @@ class TrustVerifierTest {
 
         @Test
         void untrustedWhenEvidenceDoesNotMatch() {
-            var policy = policyFor(ALICE, false);
+            var policy = policyFor(ALICE, ListedEvidencePolicy.ANY);
             var provider = passingProvider("openpgp",
                     new FingerprintCredential("openpgp4", "DIFFERENT18F83AFD"));
             var verifier = new TrustVerifier(policy, List.of(provider));
@@ -49,7 +49,7 @@ class TrustVerifierTest {
 
         @Test
         void unsignedWhenNoEvidence() {
-            var policy = policyFor(ALICE, false);
+            var policy = policyFor(ALICE, ListedEvidencePolicy.ANY);
             var verifier = new TrustVerifier(policy, List.of());
 
             var result = verifier.assess(
@@ -75,7 +75,7 @@ class TrustVerifierTest {
 
         @Test
         void verificationFailedWhenEvidenceFails() {
-            var policy = policyFor(ALICE, false);
+            var policy = policyFor(ALICE, ListedEvidencePolicy.ANY);
             var provider = failingProvider();
             var verifier = new TrustVerifier(policy, List.of(provider));
 
@@ -94,7 +94,7 @@ class TrustVerifierTest {
         @Test
         void untrustedWhenUnmatchedEvidenceAndPolicyRequiresAll() {
             var alice = ALICE;
-            var policy = policyFor(alice, true);
+            var policy = policyFor(alice, ListedEvidencePolicy.ALL);
             var provider = multiResultProvider(
                     new EvidenceResult(PGP_PASS,
                             List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23")),
@@ -114,7 +114,7 @@ class TrustVerifierTest {
 
         @Test
         void trustedWhenUnmatchedEvidenceButPolicyDoesNotRequireAll() {
-            var policy = policyFor(ALICE, false);
+            var policy = policyFor(ALICE, ListedEvidencePolicy.ANY);
             var provider = multiResultProvider(
                     new EvidenceResult(PGP_PASS,
                             List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23")),
@@ -139,7 +139,7 @@ class TrustVerifierTest {
 
         @Test
         void noKeyEvidenceIncludedInUnmatched() {
-            var policy = policyFor(ALICE, false);
+            var policy = policyFor(ALICE, ListedEvidencePolicy.ANY);
             var noKeyResult = new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4,
                     null, "DEADBEEFDEADBEEF");
             var provider = multiResultProvider(
@@ -208,7 +208,7 @@ class TrustVerifierTest {
         };
     }
 
-    private static TrustPolicy policyFor(SignerIdentity signer, boolean requireAll) {
+    private static TrustPolicy policyFor(SignerIdentity signer, ListedEvidencePolicy listedEvidence) {
         return new TrustPolicy() {
             public List<SignerIdentity> expectedSigners(ArtifactIdentity a) {
                 return List.of(signer);
@@ -218,8 +218,12 @@ class TrustVerifierTest {
                 return false;
             }
 
-            public boolean requireAllEvidenceMatch() {
-                return requireAll;
+            public ListedEvidencePolicy listedEvidence() {
+                return listedEvidence;
+            }
+
+            public UnlistedEvidencePolicy unlistedEvidence() {
+                return UnlistedEvidencePolicy.IGNORE;
             }
 
             public UntrustedPolicy onUntrusted() {
@@ -238,8 +242,12 @@ class TrustVerifierTest {
                 return false;
             }
 
-            public boolean requireAllEvidenceMatch() {
-                return false;
+            public ListedEvidencePolicy listedEvidence() {
+                return ListedEvidencePolicy.ANY;
+            }
+
+            public UnlistedEvidencePolicy unlistedEvidence() {
+                return UnlistedEvidencePolicy.IGNORE;
             }
 
             public UntrustedPolicy onUntrusted() {

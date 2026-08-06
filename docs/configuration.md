@@ -15,6 +15,7 @@ Sigmund uses a `sigmund.yaml` file for configuration. This reference documents e
   - [unsigned](#unsigned)
   - [policy](#policy)
   - [discovery](#discovery)
+  - [tools](#tools)
 - [Tool Settings Tables](#tool-settings-tables)
   - [BC (BouncyCastle)](#bc-bouncycastle)
   - [SQ (Sequoia)](#sq-sequoia)
@@ -91,28 +92,17 @@ policy:
   # Action on untrusted artifacts: "fail" or "warn"
   on-untrusted: fail
   
-  # Require all signature types to match the same trusted signer
-  require-all-evidence-match: true
+  # Evidence matching for artifacts with multiple signatures
+  listed-evidence: all      # 'all' or 'any' - default: all
+  unlisted-evidence: ignore # 'ignore', 'warn', or 'require' - default: ignore
 
 # Signing configuration
 signing:
   # Which signer identity to sign as (references signers section)
   signer: jane
   
-  # Per-tool signing settings
-  tools:
-    bc:
-      signing-fingerprint: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
-      passphrase-env: SIGMUND_BC_PASSPHRASE
-      cipher-suite: ed25519
-    
-    sq:
-      home: ~/.local/share/sequoia
-      signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
-    
-    gpg:
-      key-name: "0xDEADBEEF"
-      home: ~/.gnupg
+  # Toolchain order for signing operations
+  toolchain: [bc, sq, gpg]
   
   # Named profiles for different signing scenarios
   profiles:
@@ -129,8 +119,8 @@ signing:
 
 # Discovery and verification settings
 discovery:
-  # Tool priority order (only listed tools are used if specified)
-  tool-priority: [bc, sq, gpg]
+  # Toolchain order for verification operations
+  toolchain: [bc, sq, gpg]
   
   # Fetch missing keys from keyservers during verification
   resolve-signers: true
@@ -141,21 +131,35 @@ discovery:
   # Keyserver URLs for key discovery
   keyservers:
     - hkps://keys.openpgp.org
+
+# Tool-specific settings (used by both signing and discovery)
+tools:
+  bc:
+    # Signing settings
+    signing-fingerprint: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
+    passphrase-env: SIGMUND_BC_PASSPHRASE
+    cipher-suite: ed25519
+    
+    # Verification settings
+    gnupg-home: ~/.gnupg
+    cert-d-home: ~/.local/share/openpgp-cert-d
+    bc-private-home: ~/.local/share/openpgp-cert-d/bc-private
   
-  # Per-tool verification settings
-  tools:
-    bc:
-      gnupg-home: ~/.gnupg
-      cert-d-home: ~/.local/share/openpgp-cert-d
-      bc-private-home: ~/.local/share/openpgp-cert-d/bc-private
+  sq:
+    # Signing settings
+    signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
     
-    sq:
-      home: ~/.local/share/sequoia
-      executable: sq
+    # Common settings
+    home: ~/.local/share/sequoia
+    executable: sq
+  
+  gpg:
+    # Signing settings
+    key-name: "0xDEADBEEF"
     
-    gpg:
-      executable: gpg
-      home: ~/.gnupg
+    # Common settings
+    executable: gpg
+    home: ~/.gnupg
 ```
 
 ## Section Reference
@@ -233,16 +237,14 @@ signers:
 ### `signing`
 
 **Type:** Object  
-**Default:** No signer, no tools configured
+**Default:** No signer, no toolchain configured
 
-Configures which identity to sign as and per-tool signing settings.
+Configures which identity to sign as and the signing toolchain.
 
 ```yaml
 signing:
   signer: my-identity        # References a signer from the signers section
-  tools:                      # Per-tool settings (see tool tables below)
-    bc:
-      signing-fingerprint: "ABCD...EF12"
+  toolchain: [bc, sq, gpg]   # Tools to use for signing, in priority order
   profiles:                   # Named credential type profiles
     classic:
       - openpgp4
@@ -252,13 +254,9 @@ signing:
 #### Fields
 
 - **`signer`** (string, optional) — References a signer ID from the `signers` section. This identity will be used for signing operations.
-- **`tools`** (map, optional) — Per-tool configuration. Keys are tool names (`bc`, `sq`, `gpg`). Values are tool-specific settings (see tables below).
+- **`toolchain`** (array of strings, optional) — Lists which tools to use for signing and in what order. Only the listed tools are initialized. Tool names: `bc`, `sq`, `gpg`, `sigstore`. Per-tool settings are configured in the top-level `tools` section.
 - **`profiles`** (map, optional) — Named profiles that specify which credential types to use. Keys are profile names, values are arrays of credential type strings (`openpgp4`, `openpgp6`, etc.).
 - **`default-profile`** (string, optional) — The default profile to use when none is explicitly specified.
-
-#### Per-Tool Settings
-
-See [Tool Settings Tables](#tool-settings-tables) below.
 
 ### `artifacts`
 
@@ -342,14 +340,15 @@ Pattern syntax is the same as the `trust` section.
 ### `policy`
 
 **Type:** Object  
-**Default:** `on-untrusted: fail`, `require-all-evidence-match: true`
+**Default:** `on-untrusted: fail`, `listed-evidence: all`, `unlisted-evidence: ignore`
 
 Configures trust policy enforcement rules.
 
 ```yaml
 policy:
   on-untrusted: fail
-  require-all-evidence-match: true
+  listed-evidence: all
+  unlisted-evidence: ignore
 ```
 
 #### Fields
@@ -358,37 +357,43 @@ policy:
   - `fail` — Reject artifacts that are not trusted or unsigned
   - `warn` — Log a warning but allow the build to continue
 
-- **`require-all-evidence-match`** (boolean, default: `true`)
-  - `true` — All signature types on an artifact must match the same trusted signer
-  - `false` — Accept the artifact if any signature matches a trusted signer
+- **`listed-evidence`** (string, default: `all`)
+  
+  Controls how to handle signatures from signers listed in the trust configuration:
+  - `all` — All signatures must match the expected signer(s) for the artifact
+  - `any` — At least one signature must match an expected signer
+
+- **`unlisted-evidence`** (string, default: `ignore`)
+  
+  Controls how to handle signatures from signers NOT listed in the trust configuration:
+  - `ignore` — Unlisted signatures are ignored (trust decision based only on listed signers)
+  - `warn` — Log a warning when unlisted signatures are found, but don't fail
+  - `require` — Fail if any unlisted signatures are found on the artifact
 
 ### `discovery`
 
 **Type:** Object  
 **Default:** See fields below
 
-Configures tool initialization, key fetching, and verification behavior.
+Configures the verification toolchain, key fetching, and verification behavior.
 
 ```yaml
 discovery:
-  tool-priority: [bc, sq, gpg]
+  toolchain: [bc, sq, gpg]
   resolve-signers: true
   import-to-keyring: false
   keyservers:
     - hkps://keys.openpgp.org
-  tools:
-    bc:
-      cert-d-home: /custom/cert-d
 ```
 
 #### Fields
 
-- **`tool-priority`** (array of strings, default: `[bc, sq, gpg]`)
+- **`toolchain`** (array of strings, default: `[bc, sq, gpg]`)
   
-  Lists which tools to use and in what order. When specified, **only** the listed tools are initialized. When omitted, all available tools are initialized in the default order (`bc`, `sq`, `gpg`).
+  Lists which tools to use for verification and in what order. When specified, **only** the listed tools are initialized. When omitted, all available tools are initialized in the default order (`bc`, `sq`, `gpg`). Tool-specific settings are configured in the top-level `tools` section.
   
   ```yaml
-  tool-priority: [bc, sq]  # Use only BC and Sequoia
+  toolchain: [bc, sq]  # Use only BC and Sequoia
   ```
 
 - **`resolve-signers`** (boolean, default: `true`)
@@ -401,7 +406,7 @@ discovery:
   | `true` | `false` (default) | fetch ephemerally (in-memory, discarded after build) | skip (GPG cannot do ephemeral imports) |
   | `true` | `true` | fetch + persist to cert-d | fetch + persist to GPG keyring |
 
-  When `resolve-signers: true` but no tool in the configured priority can fetch keys (e.g., only GPG with `import-to-keyring: false`), Sigmund logs a warning.
+  When `resolve-signers: true` but no tool in the configured toolchain can fetch keys (e.g., only GPG with `import-to-keyring: false`), Sigmund logs a warning.
 
   A per-keyserver circuit breaker prevents slow builds when offline — after the first connection failure to a keyserver, all subsequent fetch attempts to that server are skipped. A per-key negative cache prevents re-querying the same missing key across artifacts.
 
@@ -424,15 +429,43 @@ discovery:
     - hkps://keyserver.ubuntu.com
   ```
 
-- **`tools`** (map, optional)
+### `tools`
+
+**Type:** Map of tool name → tool settings  
+**Default:** `{}` (empty)
+
+Configures per-tool settings used by both signing and discovery operations. All tool-specific configuration lives here, avoiding duplication between `signing` and `discovery` sections.
+
+```yaml
+tools:
+  bc:
+    signing-fingerprint: "ABCD...EF12"
+    passphrase-env: MY_BC_PASSPHRASE
+    gnupg-home: ~/.gnupg
+    cert-d-home: ~/.local/share/openpgp-cert-d
   
-  Per-tool settings for verification. Keys are tool names (`bc`, `sq`, `gpg`). See [Tool Settings Tables](#tool-settings-tables) below.
+  sq:
+    home: ~/.local/share/sequoia
+    signing-fingerprint: "1234...CDEF"
+    executable: sq
+  
+  gpg:
+    key-name: "0xDEADBEEF"
+    home: ~/.gnupg
+    executable: gpg
+```
+
+#### Fields
+
+Keys are tool names (`bc`, `sq`, `gpg`, `sigstore`). Values are tool-specific settings documented in the [Tool Settings Tables](#tool-settings-tables) below.
+
+Settings configured here are available to both signing and verification operations. For example, `tools.bc.signing-fingerprint` is used by signing operations, while `tools.bc.gnupg-home` is used by verification.
 
 ## Tool Settings Tables
 
 ### BC (BouncyCastle)
 
-Used in both `signing.tools.bc` and `discovery.tools.bc` sections.
+Configured in the top-level `tools.bc` section.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -469,23 +502,18 @@ PQC composite (experimental):
 **Example:**
 
 ```yaml
-signing:
-  tools:
-    bc:
-      signing-fingerprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
-      passphrase-env: MY_BC_KEY_PASSPHRASE
-      cipher-suite: ed448
-
-discovery:
-  tools:
-    bc:
-      gnupg-home: /custom/gnupg
-      cert-d-home: /custom/cert-d
+tools:
+  bc:
+    signing-fingerprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+    passphrase-env: MY_BC_KEY_PASSPHRASE
+    cipher-suite: ed448
+    gnupg-home: /custom/gnupg
+    cert-d-home: /custom/cert-d
 ```
 
 ### SQ (Sequoia)
 
-Used in both `signing.tools.sq` and `discovery.tools.sq` sections.
+Configured in the top-level `tools.sq` section.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -504,21 +532,16 @@ Sequoia supports post-quantum cryptography hybrid cipher suites as defined in RF
 **Example:**
 
 ```yaml
-signing:
-  tools:
-    sq:
-      home: ~/.local/share/sequoia
-      signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
-
-discovery:
-  tools:
-    sq:
-      executable: /usr/local/bin/sq
+tools:
+  sq:
+    home: ~/.local/share/sequoia
+    signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
+    executable: /usr/local/bin/sq
 ```
 
 ### GPG (GnuPG)
 
-Used in both `signing.tools.gpg` and `discovery.tools.gpg` sections.
+Configured in the top-level `tools.gpg` section.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -532,16 +555,11 @@ Used in both `signing.tools.gpg` and `discovery.tools.gpg` sections.
 **Example:**
 
 ```yaml
-signing:
-  tools:
-    gpg:
-      key-name: "0xDEADBEEF"
-      home: ~/.gnupg
-
-discovery:
-  tools:
-    gpg:
-      executable: /usr/bin/gpg2
+tools:
+  gpg:
+    key-name: "0xDEADBEEF"
+    home: ~/.gnupg
+    executable: /usr/bin/gpg2
 ```
 
 ## Common Configuration Patterns
@@ -571,10 +589,12 @@ signers:
 
 signing:
   signer: ci-bot
-  tools:
-    bc:
-      signing-fingerprint: "ABCD...EF12"
-      passphrase-env: CI_SIGNING_KEY_PASSPHRASE
+  toolchain: [bc]
+
+tools:
+  bc:
+    signing-fingerprint: "ABCD...EF12"
+    passphrase-env: CI_SIGNING_KEY_PASSPHRASE
 ```
 
 ### Multi-Tool Hybrid Signing
@@ -590,14 +610,7 @@ signers:
 
 signing:
   signer: release-team
-  tools:
-    bc:
-      signing-fingerprint: "1234...CDEF"  # Use v6 key
-      cipher-suite: ed448
-    sq:
-      signing-fingerprint: "1234...CDEF"
-    gpg:
-      key-name: "0xABCDEF12"  # Use v4 key
+  toolchain: [bc, sq, gpg]
   
   profiles:
     hybrid:
@@ -607,7 +620,18 @@ signing:
   default-profile: hybrid
 
 discovery:
-  tool-priority: [bc, sq, gpg]
+  toolchain: [bc, sq, gpg]
+
+tools:
+  bc:
+    signing-fingerprint: "1234...CDEF"  # Use v6 key
+    cipher-suite: ed448
+  
+  sq:
+    signing-fingerprint: "1234...CDEF"
+  
+  gpg:
+    key-name: "0xABCDEF12"  # Use v4 key
 ```
 
 ### Strict Trust Policy
@@ -617,11 +641,12 @@ version: 1
 
 policy:
   on-untrusted: fail
-  require-all-evidence-match: true
+  listed-evidence: all       # All listed signatures must match
+  unlisted-evidence: require # Fail on any unlisted signatures
 
 discovery:
-  resolve-signers: false      # Don't auto-fetch keys
-  import-to-keyring: false       # Don't persist fetched keys
+  resolve-signers: false     # Don't auto-fetch keys
+  import-to-keyring: false   # Don't persist fetched keys
 ```
 
 ### Permissive Development Config
@@ -630,14 +655,15 @@ discovery:
 version: 1
 
 policy:
-  on-untrusted: warn             # Warn but don't fail
-  require-all-evidence-match: false
+  on-untrusted: warn           # Warn but don't fail
+  listed-evidence: any         # Any matching signature is sufficient
+  unlisted-evidence: ignore    # Ignore unlisted signatures
 
 unsigned:
-  - "com.internal.*"             # Internal artifacts don't need signatures
-  - "com.example:*:*-SNAPSHOT"   # Snapshots don't need signatures
+  - "com.internal.*"           # Internal artifacts don't need signatures
+  - "com.example:*:*-SNAPSHOT" # Snapshots don't need signatures
 
 discovery:
   resolve-signers: true        # Auto-fetch missing keys
-  import-to-keyring: true        # Cache keys permanently
+  import-to-keyring: true      # Cache keys permanently
 ```

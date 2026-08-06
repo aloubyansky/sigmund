@@ -277,17 +277,18 @@ Example `sigmund.yaml` for CLI usage:
 
 ```yaml
 signing:
-  tools:
-    sq:
-      signing-fingerprint: D62AAB339E45E5EA2FD036872B01D46A517A2991...
-    gpg:
-      key-name: alice@example.com
+  toolchain: [sq, gpg]
 
 discovery:
-  tool-priority: [bc, sq, gpg]
-  tools:
-    sq:
-      home: ~/.local/share/sequoia
+  toolchain: [bc, sq, gpg]
+
+tools:
+  sq:
+    signing-fingerprint: D62AAB339E45E5EA2FD036872B01D46A517A2991...
+    home: ~/.local/share/sequoia
+  
+  gpg:
+    key-name: alice@example.com
 ```
 
 See [configuration.md](configuration.md) for full configuration reference.

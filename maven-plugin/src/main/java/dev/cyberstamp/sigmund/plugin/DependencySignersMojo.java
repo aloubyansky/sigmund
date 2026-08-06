@@ -2,11 +2,11 @@ package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.Algorithms;
 import dev.cyberstamp.sigmund.core.ArtifactIdentity;
+import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.GpgRunner;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
 import dev.cyberstamp.sigmund.core.PolicyConfigException;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
-import dev.cyberstamp.sigmund.core.ToolsConfig;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
 import dev.cyberstamp.sigmund.core.Verdict;
 import dev.cyberstamp.sigmund.core.VerifyResult;
@@ -79,26 +79,29 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         }
 
         SigmundConfig config = loadConfig();
-        ToolsConfig toolsConfig = resolveToolsConfig(
-                config != null ? config.toolsConfig() : ToolsConfig.DEFAULT);
-        SignatureInspector inspector = buildInspector(toolsConfig);
+        DiscoveryConfig discoveryConfig = resolveDiscoveryConfig(
+                config != null ? config.discoveryConfig() : DiscoveryConfig.DEFAULT);
+        try (SignatureInspector inspector = buildInspector(discoveryConfig,
+                mergeToolOverrides(config != null ? config.toolsConfig()
+                        : dev.cyberstamp.sigmund.core.ToolsConfig.EMPTY))) {
 
-        List<ArtifactCoords> artifacts = resolveDependencies();
-        getLog().info("Inspecting signatures for " + artifacts.size() + " dependency(ies)...");
-        getLog().info("");
+            List<ArtifactCoords> artifacts = resolveDependencies();
+            getLog().info("Inspecting signatures for " + artifacts.size() + " dependency(ies)...");
+            getLog().info("");
 
-        List<SignedArtifact> results = inspector.inspectAll(artifacts);
+            List<SignedArtifact> results = inspector.inspectAll(artifacts);
 
-        logReport(results);
+            logReport(results);
 
-        if (generateTrustConfig != null && !generateTrustConfig.isEmpty()) {
-            File configFile = resolveTrustConfigFile(generateTrustConfig);
-            writeTrustConfigYaml(results, configFile);
-        }
+            if (generateTrustConfig != null && !generateTrustConfig.isEmpty()) {
+                File configFile = resolveTrustConfigFile(generateTrustConfig);
+                writeTrustConfigYaml(results, configFile);
+            }
 
-        if (updateTrustConfig != null && !updateTrustConfig.isEmpty()) {
-            File configFile = resolveTrustConfigFile(updateTrustConfig);
-            updateExistingTrustConfig(results, configFile);
+            if (updateTrustConfig != null && !updateTrustConfig.isEmpty()) {
+                File configFile = resolveTrustConfigFile(updateTrustConfig);
+                updateExistingTrustConfig(results, configFile);
+            }
         }
     }
 
@@ -475,7 +478,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         Map<String, SignerInfo> newSigners = new LinkedHashMap<>();
         Map<String, Set<String>> newArtifactSigners = new LinkedHashMap<>();
         List<String> newUnsigned = new ArrayList<>();
-        int signerCounter = existing.signers().size();
+        int signerCounter = existing.signers().names().size();
 
         for (var entry : byArtifact.entrySet()) {
             String coords = entry.getKey();
@@ -506,7 +509,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
                 if (info == null) {
                     signerCounter++;
                     info = new SignerInfo(
-                            resolveUniqueSignerId(vr, signerCounter, newSigners, existing.signers().keySet()),
+                            resolveUniqueSignerId(vr, signerCounter, newSigners, existing.signers().names()),
                             vr);
                     newSigners.put(id, info);
                 } else {

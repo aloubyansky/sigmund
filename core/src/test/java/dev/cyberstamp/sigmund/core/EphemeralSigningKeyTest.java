@@ -6,7 +6,6 @@ import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
@@ -43,14 +42,12 @@ class EphemeralSigningKeyTest {
         if ("exclusive".equals(mode)) {
             sigmund = Sigmund.builder().build();
         } else if ("key-provider".equals(mode)) {
-            Map<String, ToolConfig> tools = new LinkedHashMap<>();
-            tools.put("bc", new ToolConfig(null, Map.of()));
-            tools.put("gpg", new ToolConfig(null, Map.of()));
-            SigmundConfig config = new SigmundConfig(1, Map.of(), Map.of(), null,
-                    new SigningConfig(null, tools, Map.of(), null),
-                    ToolsConfig.DEFAULT);
+            List<String> toolchain = List.of("bc", "gpg");
+            SigmundConfig config = new SigmundConfig(1, null, null, null,
+                    new SigningConfig(null, toolchain, Map.of(), null),
+                    null, null);
             Sigmund.Builder builder = Sigmund.builder().config(config);
-            for (String toolName : config.signingConfig().tools().keySet()) {
+            for (String toolName : toolchain) {
                 try {
                     builder.addSigningTool(toolName, Map.of());
                 } catch (SigmundException e) {

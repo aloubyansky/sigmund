@@ -25,21 +25,28 @@ public class SignerInfoMojo extends AbstractSigningMojo {
             getLog().info("Skipping signer-info");
             return;
         }
-        Signer signer = profile != null
-                ? createSigner(profile)
-                : createSigner();
+        try (var sigmund = buildSigningSigmund()) {
+            Signer signer = profile != null
+                    ? sigmund.signer(profile)
+                    : sigmund.signer();
 
-        var infos = signer.signingInfo();
-        if (infos.isEmpty()) {
-            getLog().warn("No signing identity information available");
-            return;
-        }
+            var infos = signer.signingInfo();
+            if (infos.isEmpty()) {
+                getLog().warn("No signing identity information available");
+                return;
+            }
 
-        if (profile != null) {
-            getLog().info("Signing profile: " + profile);
-        }
-        for (SigningInfo info : infos) {
-            getLog().info(info.display());
+            if (profile != null) {
+                getLog().info("Signing profile: " + profile);
+            }
+            for (SigningInfo info : infos) {
+                getLog().info(info.display());
+            }
+        } catch (Exception e) {
+            if (e instanceof MojoExecutionException mee) {
+                throw mee;
+            }
+            throw new MojoExecutionException("Failed to retrieve signer info", e);
         }
     }
 }

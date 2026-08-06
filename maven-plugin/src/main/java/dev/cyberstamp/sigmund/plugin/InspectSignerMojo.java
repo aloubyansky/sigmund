@@ -2,11 +2,11 @@ package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.CredentialParser;
+import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SignerInspectionReport;
 import dev.cyberstamp.sigmund.core.SignerInspectionReportFormatter;
-import dev.cyberstamp.sigmund.core.ToolsConfig;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -61,9 +61,10 @@ public class InspectSignerMojo extends AbstractSigmundMojo {
         }
         try {
             Credential credential = buildCredential();
-            Sigmund sigmund = createSigmund();
-            SignerInspectionReport report = sigmund.inspectSigner(credential, tool);
-            SignerInspectionReportFormatter.format(report, msg -> getLog().info(msg));
+            try (Sigmund sigmund = createSigmund()) {
+                SignerInspectionReport report = sigmund.inspectSigner(credential, tool);
+                SignerInspectionReportFormatter.format(report, msg -> getLog().info(msg));
+            }
         } catch (IllegalArgumentException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         } catch (Exception e) {
@@ -99,8 +100,8 @@ public class InspectSignerMojo extends AbstractSigmundMojo {
 
     private Sigmund createSigmund() throws MojoExecutionException {
         SigmundConfig config = loadConfig();
-        ToolsConfig toolsConfig = resolveToolsConfig(
-                config.toolsConfig(), resolveSigners, keyservers, null);
-        return buildSigmund(toolsConfig);
+        DiscoveryConfig discoveryConfig = resolveDiscoveryConfig(
+                config.discoveryConfig(), resolveSigners, keyservers, null);
+        return buildSigmund(discoveryConfig, mergeToolOverrides(config.toolsConfig()));
     }
 }

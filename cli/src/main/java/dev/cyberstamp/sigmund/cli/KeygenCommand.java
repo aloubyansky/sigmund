@@ -77,7 +77,7 @@ public class KeygenCommand implements Callable<Integer> {
         SigmundConfig config = configMixin.loadConfig();
 
         Map<String, String> settings = new HashMap<>();
-        ToolConfig toolConfig = config.signingConfig().tools().get("bc");
+        ToolConfig toolConfig = config.toolsConfig().get("bc");
         if (toolConfig != null) {
             settings.putAll(toolConfig.settings());
         }
@@ -91,23 +91,24 @@ public class KeygenCommand implements Callable<Integer> {
         if (passphraseResult.provider != null) {
             builder.bcPassphraseProvider(passphraseResult.provider);
         }
-        Sigmund sigmund = builder.addSigningTool("bc", settings).build();
-        KeyGenerator keygen = sigmund.findTool(KeyGenerator.class, "bc");
-        String fingerprint = keygen.generateKey(userId, suite);
+        try (Sigmund sigmund = builder.addSigningTool("bc", settings).build()) {
+            KeyGenerator keygen = sigmund.findTool(KeyGenerator.class, "bc");
+            String fingerprint = keygen.generateKey(userId, suite);
 
-        System.out.println("BC key generated successfully!");
-        System.out.println();
-        System.out.println("Fingerprint: " + fingerprint);
-        if (passphraseResult.provider != null) {
-            if (passphraseResult.envVarSource != null) {
-                System.out.println("Key is passphrase-protected (from " + passphraseResult.envVarSource + ").");
-            } else {
-                System.out.println("Key is passphrase-protected.");
+            System.out.println("BC key generated successfully!");
+            System.out.println();
+            System.out.println("Fingerprint: " + fingerprint);
+            if (passphraseResult.provider != null) {
+                if (passphraseResult.envVarSource != null) {
+                    System.out.println("Key is passphrase-protected (from " + passphraseResult.envVarSource + ").");
+                } else {
+                    System.out.println("Key is passphrase-protected.");
+                }
             }
+            System.out.println();
+            System.out.println("Use this fingerprint with the 'sign' command.");
+            return 0;
         }
-        System.out.println();
-        System.out.println("Use this fingerprint with the 'sign' command.");
-        return 0;
     }
 
     private record PassphraseResult(PassphraseProvider provider, String envVarSource) {

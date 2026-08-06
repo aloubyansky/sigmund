@@ -114,7 +114,7 @@ Verifies that all project dependencies are signed by trusted signers as defined 
 |----------|----------|---------|-------------|
 | `sigmund.trustConfig` | No | `${project.basedir}/sigmund.yaml` | Path to the trust configuration file |
 | `sigmund.onUntrusted` | No | — | Policy for untrusted artifacts: `fail` or `warn`. Overrides config file setting. |
-| `sigmund.verifyAllSignatures` | No | — | When `true`, unverified signatures on trusted artifacts are reported. Overrides config file setting. |
+| `sigmund.listedEvidence` | No | — | Overrides `policy.listed-evidence` in `sigmund.yaml`. Values: `all` (all listed evidence must match) or `any` (at least one match sufficient). |
 | `sigmund.resolveSigners` | No | `true` | Fetch unknown GPG keys from keyservers. Overrides config file setting. |
 | `sigmund.keyservers` | No | `hkps://keys.openpgp.org` | Comma-separated keyserver list. Used when `resolveSigners` is enabled. |
 | `sigmund.verifyPomFiles` | No | `false` | Also verify signatures on POM files for each dependency |
@@ -258,7 +258,7 @@ Maven properties (`-Dsigmund.*`) override `sigmund.yaml` values, which override 
 **Properties that override config file settings:**
 
 - `sigmund.onUntrusted` overrides `policy.on-untrusted` in `sigmund.yaml`
-- `sigmund.verifyAllSignatures` overrides `policy.require-all-evidence-match` in `sigmund.yaml`
+- `sigmund.listedEvidence` overrides `policy.listed-evidence` in `sigmund.yaml` (`all` or `any`)
 - `sigmund.resolveSigners` overrides `discovery.resolve-signers` in `sigmund.yaml`
 - `sigmund.keyservers` overrides `discovery.keyservers` in `sigmund.yaml`
 

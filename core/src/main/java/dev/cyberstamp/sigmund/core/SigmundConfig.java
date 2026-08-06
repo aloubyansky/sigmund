@@ -1,8 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Map;
 
 /**
  * Unified configuration parsed from a single YAML file ({@code sigmund.yaml}).
@@ -19,30 +17,37 @@ import java.util.Map;
  * TrustPolicy policy = config.trustPolicy();
  * SigningConfig signing = config.signingConfig();
  * ToolsConfig tools = config.toolsConfig();
+ * DiscoveryConfig discovery = config.discoveryConfig();
  * }</pre>
  *
  * @param version the schema version (currently 1)
- * @param signers shared identity registry keyed by signer id
+ * @param signers shared identity registry
  * @param artifacts named groups of artifact patterns for reuse in trust/unsigned sections
  * @param trustPolicy the trust policy parsed from trust/unsigned/policy sections
  * @param signingConfig the signing configuration parsed from the signing section
- * @param toolsConfig the tools configuration parsed from the discovery section
+ * @param toolsConfig the per-tool configuration registry parsed from the top-level tools section
+ * @param discoveryConfig the discovery configuration parsed from the discovery section
  * @see SigmundConfigParser
  */
 public record SigmundConfig(
         int version,
-        Map<String, SignerIdentity> signers,
-        Map<String, List<String>> artifacts,
+        SignersConfig signers,
+        ArtifactsConfig artifacts,
         TrustPolicy trustPolicy,
         SigningConfig signingConfig,
-        ToolsConfig toolsConfig) {
+        ToolsConfig toolsConfig,
+        DiscoveryConfig discoveryConfig) {
 
     /**
-     * Creates a config with defensive copies.
+     * Creates a config with defensive defaults for null fields.
      */
     public SigmundConfig {
-        signers = signers != null ? Map.copyOf(signers) : Map.of();
-        artifacts = artifacts != null ? Map.copyOf(artifacts) : Map.of();
+        if (signers == null) {
+            signers = SignersConfig.EMPTY;
+        }
+        if (artifacts == null) {
+            artifacts = ArtifactsConfig.EMPTY;
+        }
         if (trustPolicy == null) {
             trustPolicy = DefaultTrustPolicy.EMPTY;
         }
@@ -50,7 +55,10 @@ public record SigmundConfig(
             signingConfig = SigningConfig.DEFAULT;
         }
         if (toolsConfig == null) {
-            toolsConfig = ToolsConfig.DEFAULT;
+            toolsConfig = ToolsConfig.EMPTY;
+        }
+        if (discoveryConfig == null) {
+            discoveryConfig = DiscoveryConfig.DEFAULT;
         }
     }
 

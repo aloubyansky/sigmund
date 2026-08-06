@@ -39,15 +39,16 @@ public class OpenPgpSignatureFormat implements SignatureFormat {
     }
 
     /**
-     * Checks whether the file contains ASCII-armored OpenPGP data.
+     * Checks whether the file contains ASCII-armored OpenPGP data by inspecting its content.
      * <p>
      * Reads the file and checks for the presence of a {@code -----BEGIN PGP } marker.
+     * Called by {@link SignatureFormat#canHandle(Path)} when the file extension does not match.
      *
      * @param signatureFile the path to the signature file
      * @return {@code true} if the file contains OpenPGP armored data
      */
     @Override
-    public boolean canHandle(Path signatureFile) {
+    public boolean canHandleByContent(Path signatureFile) {
         try {
             String content = Files.readString(signatureFile);
             return content.contains(BEGIN_PGP);

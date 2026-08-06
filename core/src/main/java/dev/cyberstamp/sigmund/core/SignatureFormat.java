@@ -50,12 +50,30 @@ public interface SignatureFormat {
     /**
      * Checks whether this format can handle the given signature file.
      * <p>
-     * Detection is content-based where possible — the file is read and inspected.
+     * Detection is extension-first for performance: if the file name matches
+     * {@link #fileExtension()}, returns {@code true} immediately. Otherwise,
+     * delegates to {@link #canHandleByContent(Path)} for content-based detection.
      *
      * @param signatureFile the path to the signature file
      * @return {@code true} if this format can parse the file
      */
-    boolean canHandle(Path signatureFile);
+    default boolean canHandle(Path signatureFile) {
+        if (signatureFile.getFileName().toString().endsWith(fileExtension())) {
+            return true;
+        }
+        return canHandleByContent(signatureFile);
+    }
+
+    /**
+     * Checks whether this format can handle the given signature file by inspecting its content.
+     * <p>
+     * Called by {@link #canHandle(Path)} when the file extension does not match.
+     * Implementations read the file and inspect its structure.
+     *
+     * @param signatureFile the path to the signature file
+     * @return {@code true} if this format can parse the file based on its content
+     */
+    boolean canHandleByContent(Path signatureFile);
 
     /**
      * Parses a signature file into individually verifiable units.

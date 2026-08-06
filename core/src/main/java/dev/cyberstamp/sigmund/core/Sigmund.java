@@ -4,8 +4,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.ServiceLoader;
+import java.util.Set;
 
 /**
  * The central facade for Sigmund — tool registry, signature verification, and session creation.
@@ -48,18 +51,18 @@ import java.util.Map;
  * @see Signer
  * @see TrustVerifier
  */
-public class Sigmund {
+public class Sigmund implements AutoCloseable {
 
     private final List<SignatureTool> tools;
     private final List<EvidenceProvider> evidenceProviders;
     private final SigningConfig signingConfig;
     private final List<SignatureFormat> formats;
-    private final ToolsConfig toolsConfig;
+    private final DiscoveryConfig discoveryConfig;
     private volatile boolean fetchWarningEmitted;
 
     private Sigmund(List<SignatureTool> tools, List<SignatureFormat> formats,
             List<EvidenceProvider> evidenceProviders, SigningConfig signingConfig,
-            ToolsConfig toolsConfig) {
+            DiscoveryConfig discoveryConfig) {
         if (tools.isEmpty()) {
             throw new SigmundException("No tools available");
         }
@@ -67,7 +70,7 @@ public class Sigmund {
         this.formats = formats;
         this.evidenceProviders = evidenceProviders;
         this.signingConfig = signingConfig;
-        this.toolsConfig = toolsConfig;
+        this.discoveryConfig = discoveryConfig;
     }
 
     /**
@@ -77,6 +80,29 @@ public class Sigmund {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    /**
+     * Closes all tools that implement {@link AutoCloseable}.
+     * <p>
+     * Iterates through all registered tools and attempts to close any that
+     * implement {@code AutoCloseable}. Exceptions thrown by individual tools
+     * are suppressed to ensure all tools have an opportunity to close.
+     * <p>
+     * This method is idempotent — calling it multiple times has the same
+     * effect as calling it once.
+     */
+    @Override
+    public void close() {
+        for (SignatureTool tool : tools) {
+            if (tool instanceof AutoCloseable ac) {
+                try {
+                    ac.close();
+                } catch (Exception ignored) {
+                    // Suppress exceptions to allow all tools to close
+                }
+            }
+        }
     }
 
     /**
@@ -123,14 +149,14 @@ public class Sigmund {
     }
 
     /**
-     * Filters signing tool candidates to only those listed in {@link SigningConfig#tools()}.
+     * Filters signing tool candidates to only those listed in {@link SigningConfig#toolchain()}.
      * <p>
-     * When no signing tools are explicitly configured, returns the candidates unchanged.
+     * When the signing toolchain is empty, returns the candidates unchanged.
      * When tools are configured, each must be present in the candidates list; if a
      * configured tool is missing, an exception is thrown with a diagnostic message
      * (not available, not signing-capable, or credential type mismatch).
      * <p>
-     * The result preserves the iteration order of {@link SigningConfig#tools()}, so
+     * The result preserves the iteration order of {@link SigningConfig#toolchain()}, so
      * the signing order matches the user's YAML configuration.
      *
      * @param candidates signing-capable tools, possibly pre-filtered by profile credential types
@@ -138,7 +164,7 @@ public class Sigmund {
      * @throws SigmundException if a configured tool is not in the candidates list
      */
     private List<SignatureTool> configuredSigningTools(List<SignatureTool> candidates) {
-        if (signingConfig == null || signingConfig.tools().isEmpty()) {
+        if (signingConfig == null || signingConfig.toolchain().isEmpty()) {
             return candidates;
         }
         Map<String, SignatureTool> candidatesByName = new HashMap<>();
@@ -146,7 +172,7 @@ public class Sigmund {
             candidatesByName.put(t.name(), t);
         }
         List<SignatureTool> result = new ArrayList<>();
-        for (String toolName : signingConfig.tools().keySet()) {
+        for (String toolName : signingConfig.toolchain()) {
             SignatureTool t = candidatesByName.get(toolName);
             if (t != null) {
                 result.add(t);
@@ -178,7 +204,7 @@ public class Sigmund {
     /**
      * Creates a trust verifier using the given policy.
      * <p>
-     * The {@link ToolsConfig} set at build time is used for key fetching.
+     * The {@link DiscoveryConfig} set at build time is used for key fetching.
      *
      * @param policy the trust policy to apply
      * @return a new trust verifier
@@ -189,7 +215,7 @@ public class Sigmund {
     }
 
     private void warnIfNoFetchCapableImporter() {
-        if (fetchWarningEmitted || !toolsConfig.resolveSigners()) {
+        if (fetchWarningEmitted || !discoveryConfig.resolveSigners()) {
             return;
         }
         for (SignatureTool tool : tools) {
@@ -201,7 +227,7 @@ public class Sigmund {
         System.getLogger(Sigmund.class.getName())
                 .log(System.Logger.Level.WARNING,
                         "resolve-signers is enabled but no tool can fetch keys; "
-                                + "set import-to-keyring: true or add bc to tool-priority");
+                                + "set import-to-keyring: true or add bc to toolchain");
     }
 
     /**
@@ -285,6 +311,23 @@ public class Sigmund {
             }
         }
         return null;
+    }
+
+    /**
+     * Returns the set of signature file extensions produced by all configured formats.
+     * <p>
+     * The returned set preserves iteration order (format registration order) and
+     * is immutable. For example, if OpenPGP ({@code .asc}) and Sigstore
+     * ({@code .sigstore.json}) formats are registered, the set contains both extensions.
+     *
+     * @return an unmodifiable set of file extensions including leading dots
+     */
+    public Set<String> signatureFileExtensions() {
+        Set<String> extensions = new LinkedHashSet<>();
+        for (SignatureFormat format : formats) {
+            extensions.add(format.fileExtension());
+        }
+        return Set.copyOf(extensions);
     }
 
     /**
@@ -374,17 +417,30 @@ public class Sigmund {
      * Builder for constructing a {@link Sigmund} instance.
      * <p>
      * {@link #build()} always initializes tools from registered factories based on the
-     * {@link ToolsConfig}. Explicit {@link #addTool(SignatureTool)} calls take precedence.
-     * {@link #config(SigmundConfig)} applies the full config including signing and tool settings.
-     * {@link #toolsConfig(ToolsConfig)} sets key fetching and tool config.
+     * {@link DiscoveryConfig}. Explicit {@link #addTool(SignatureTool)} calls take precedence.
+     * {@link #config(SigmundConfig)} applies the full config including signing, tool, and
+     * discovery settings. {@link #discoveryConfig(DiscoveryConfig)} sets key fetching config.
+     * {@link #toolsConfig(ToolsConfig)} sets per-tool configuration overrides.
      */
     public static class Builder {
 
         private final List<SignatureTool> tools = new ArrayList<>(2);
         private final List<EvidenceProvider> extraProviders = new ArrayList<>();
-        private ToolsConfig toolsConfig = ToolsConfig.DEFAULT;
+        private ToolsConfig toolsConfig = ToolsConfig.EMPTY;
+        private DiscoveryConfig discoveryConfig = DiscoveryConfig.DEFAULT;
         private SigningConfig signingConfig;
         private PassphraseProvider bcPassphraseProvider;
+
+        /**
+         * Sets per-tool configuration overrides from the top-level {@code tools} section.
+         *
+         * @param tc the tool registry
+         * @return this builder
+         */
+        public Builder toolsConfig(ToolsConfig tc) {
+            this.toolsConfig = tc != null ? tc : ToolsConfig.EMPTY;
+            return this;
+        }
 
         /**
          * Sets key fetching and keyserver configuration, fixed at build time.
@@ -393,15 +449,15 @@ public class Sigmund {
          * @param dc the discovery configuration
          * @return this builder
          */
-        public Builder toolsConfig(ToolsConfig dc) {
-            this.toolsConfig = dc != null ? dc : ToolsConfig.DEFAULT;
+        public Builder discoveryConfig(DiscoveryConfig dc) {
+            this.discoveryConfig = dc != null ? dc : DiscoveryConfig.DEFAULT;
             return this;
         }
 
         /**
          * Applies the full configuration.
          * <p>
-         * Overrides any prior {@code toolsConfig()} call.
+         * Overrides any prior {@code toolsConfig()} or {@code discoveryConfig()} call.
          * Explicit {@code addTool()} calls take precedence over initialized tools.
          *
          * @param config the unified configuration
@@ -409,6 +465,7 @@ public class Sigmund {
          */
         public Builder config(SigmundConfig config) {
             this.toolsConfig = config.toolsConfig();
+            this.discoveryConfig = config.discoveryConfig();
             this.signingConfig = config.signingConfig();
             return this;
         }
@@ -482,14 +539,14 @@ public class Sigmund {
         }
 
         private SignatureTool createFromFactory(String toolName, boolean signing, Map<String, String> settings) {
-            for (SignatureToolFactory factory : FACTORIES) {
+            for (SignatureToolFactory factory : allFactories()) {
                 if (factory.toolName().equals(toolName)) {
                     if (signing && factory instanceof BcToolFactory bcFactory
                             && bcPassphraseProvider != null) {
-                        return bcFactory.create(null, settings, bcPassphraseProvider);
+                        return bcFactory.createSigning(null, settings, bcPassphraseProvider);
                     }
                     return signing
-                            ? factory.create(null, settings)
+                            ? factory.createSigning(null, settings)
                             : factory.createVerifyOnly(settings);
                 }
             }
@@ -510,7 +567,7 @@ public class Sigmund {
         /**
          * Builds the {@link Sigmund} instance.
          * <p>
-         * First initializes tools from registered factories based on {@link ToolsConfig}
+         * First initializes tools from registered factories based on {@link DiscoveryConfig}
          * (explicit {@link #addTool} calls take precedence — already-added tools are
          * skipped), then enforces exclusive signer constraints (see
          * {@link SignatureToolFactory#isDefaultExclusiveSigner()}). When no signing
@@ -523,37 +580,61 @@ public class Sigmund {
          *         claim exclusive signing
          */
         public Sigmund build() {
-            initializeTools();
-            enforceExclusiveSigners();
+            try {
+                initializeTools();
+                enforceExclusiveSigners();
 
-            Map<String, List<SignatureTool>> toolsByFormat = new LinkedHashMap<>(2);
+                Map<String, List<SignatureTool>> toolsByFormat = new LinkedHashMap<>(2);
+                for (SignatureTool tool : tools) {
+                    toolsByFormat.computeIfAbsent(tool.signatureFormat().name(), k -> new ArrayList<>(2))
+                            .add(tool);
+                }
+
+                List<SignatureFormat> formats = new ArrayList<>(toolsByFormat.size());
+                List<EvidenceProvider> providers = new ArrayList<>(toolsByFormat.size() + extraProviders.size());
+                for (List<SignatureTool> group : toolsByFormat.values()) {
+                    SignatureFormat format = group.get(0).signatureFormat();
+                    formats.add(format);
+                    providers.add(new SignatureEvidenceAdapter(format, group));
+                }
+                for (EvidenceProvider ep : extraProviders) {
+                    if (ep.isAvailable()) {
+                        providers.add(ep);
+                    }
+                }
+
+                return new Sigmund(List.copyOf(tools), List.copyOf(formats),
+                        List.copyOf(providers), signingConfig, discoveryConfig);
+            } catch (RuntimeException e) {
+                // Clean up any AutoCloseable tools before propagating the exception
+                closeTools();
+                throw e;
+            }
+        }
+
+        /**
+         * Closes all tools that implement {@link AutoCloseable}.
+         * <p>
+         * Used during builder cleanup when construction fails after tools
+         * have been initialized. Exceptions from individual tools are suppressed.
+         */
+        private void closeTools() {
             for (SignatureTool tool : tools) {
-                toolsByFormat.computeIfAbsent(tool.signatureFormat().name(), k -> new ArrayList<>(2))
-                        .add(tool);
-            }
-
-            List<SignatureFormat> formats = new ArrayList<>(toolsByFormat.size());
-            List<EvidenceProvider> providers = new ArrayList<>(toolsByFormat.size() + extraProviders.size());
-            for (List<SignatureTool> group : toolsByFormat.values()) {
-                SignatureFormat format = group.get(0).signatureFormat();
-                formats.add(format);
-                providers.add(new SignatureEvidenceAdapter(format, group));
-            }
-            for (EvidenceProvider ep : extraProviders) {
-                if (ep.isAvailable()) {
-                    providers.add(ep);
+                if (tool instanceof AutoCloseable ac) {
+                    try {
+                        ac.close();
+                    } catch (Exception ignored) {
+                        // Suppress exceptions during cleanup
+                    }
                 }
             }
-
-            return new Sigmund(List.copyOf(tools), List.copyOf(formats),
-                    List.copyOf(providers), signingConfig, toolsConfig);
         }
 
         /**
          * Polls registered factories for default exclusive signer claims when no
          * signing tools are explicitly configured in {@code sigmund.yaml}.
          * <p>
-         * This method is a no-op when {@link SigningConfig#tools()} is non-empty —
+         * This method is a no-op when {@link SigningConfig#toolchain()} is non-empty —
          * the user has explicitly chosen their signing tools, so factory-level
          * exclusivity does not apply. In that case, the env var still participates
          * as a key provider through {@link BcToolFactory}'s key priority, but does
@@ -574,7 +655,7 @@ public class Sigmund {
          * @throws SigmundException if multiple factories claim default exclusive signing
          */
         private void enforceExclusiveSigners() {
-            enforceExclusiveSigners(FACTORIES);
+            enforceExclusiveSigners(allFactories());
         }
 
         /**
@@ -591,7 +672,7 @@ public class Sigmund {
          * @see #enforceExclusiveSigners()
          */
         void enforceExclusiveSigners(List<SignatureToolFactory> factories) {
-            if (signingConfig != null && !signingConfig.tools().isEmpty()) {
+            if (signingConfig != null && !signingConfig.toolchain().isEmpty()) {
                 return;
             }
             SignatureToolFactory exclusive = null;
@@ -615,40 +696,82 @@ public class Sigmund {
                 if (existing != null) {
                     tools.remove(existing);
                 }
-                addSigningTool(name, toolsConfig.tools().getOrDefault(name, Map.of()));
+                Map<String, String> settings = resolveToolSettings(name);
+                addSigningTool(name, settings);
             }
             signingConfig = null;
         }
 
-        private static final List<SignatureToolFactory> FACTORIES = List.of(
+        private static final List<SignatureToolFactory> BUILTIN_FACTORIES = List.of(
                 new BcToolFactory(), new GpgToolFactory(), new SqToolFactory());
 
+        /**
+         * Returns all factories: built-in factories followed by ServiceLoader-discovered ones.
+         * <p>
+         * Discovered factories whose {@link SignatureToolFactory#supportedCredentialTypes()}
+         * overlap with a built-in factory's types are included. When such overlap exists and
+         * no toolchain is explicitly configured in {@code sigmund.yaml}, the caller must
+         * detect and reject the ambiguity.
+         *
+         * @return the combined list of factories
+         */
+        private static final List<SignatureToolFactory> ALL_FACTORIES = loadAllFactories();
+
+        private static List<SignatureToolFactory> loadAllFactories() {
+            List<SignatureToolFactory> all = new ArrayList<>(BUILTIN_FACTORIES);
+            ServiceLoader.load(SignatureToolFactory.class).forEach(all::add);
+            return List.copyOf(all);
+        }
+
+        private static List<SignatureToolFactory> allFactories() {
+            return ALL_FACTORIES;
+        }
+
+        /**
+         * Initializes tools from registered factories using the discovery toolchain.
+         * <p>
+         * Reads the toolchain from {@link DiscoveryConfig#effectiveToolchain()} and
+         * per-tool settings from {@link ToolsConfig}. Explicitly added tools are skipped.
+         */
         private void initializeTools() {
-            Map<String, Map<String, String>> toolSettings = toolsConfig.tools();
-            List<String> priority = toolsConfig.effectiveToolPriority();
+            List<String> priority = discoveryConfig.effectiveToolchain();
             for (String toolName : priority) {
                 if (findByName(toolName) != null) {
                     continue;
                 }
-                initializeTool(toolName, toolSettings);
+                initializeTool(toolName);
             }
-            if (toolsConfig.toolPriority() == null) {
-                for (SignatureToolFactory factory : FACTORIES) {
+            if (discoveryConfig.toolchain() == null) {
+                for (SignatureToolFactory factory : allFactories()) {
                     if (findByName(factory.toolName()) == null
                             && !priority.contains(factory.toolName())) {
-                        initializeTool(factory.toolName(), toolSettings);
+                        initializeTool(factory.toolName());
                     }
                 }
             }
         }
 
-        private void initializeTool(String toolName, Map<String, Map<String, String>> toolSettings) {
-            for (SignatureToolFactory factory : FACTORIES) {
+        /**
+         * Initializes a single tool from its factory, merging per-tool settings
+         * from {@link ToolsConfig} with discovery settings from {@link DiscoveryConfig}.
+         * <p>
+         * OpenPGP-specific fetch settings ({@code resolve-signers}, {@code import-to-keyring},
+         * {@code keyservers}) are only injected for factories whose
+         * {@link SignatureToolFactory#supportedCredentialTypes()} includes OpenPGP types.
+         *
+         * @param toolName the name of the tool to initialize
+         */
+        private void initializeTool(String toolName) {
+            for (SignatureToolFactory factory : allFactories()) {
                 if (!factory.toolName().equals(toolName)) {
                     continue;
                 }
-                Map<String, String> settings = injectFetchSettings(
-                        toolSettings.getOrDefault(toolName, Map.of()));
+                Map<String, String> settings = resolveToolSettings(toolName);
+                if (supportsOpenPgp(factory)) {
+                    settings = injectFetchSettings(settings);
+                } else {
+                    settings = Map.copyOf(settings);
+                }
                 try {
                     SignatureTool tool = factory.createVerifyOnly(settings);
                     if (tool.isAvailable()) {
@@ -663,14 +786,46 @@ public class Sigmund {
             }
             System.getLogger(Sigmund.class.getName())
                     .log(System.Logger.Level.WARNING,
-                            "Unknown tool '" + toolName + "' in tool-priority");
+                            "Unknown tool '" + toolName + "' in toolchain");
         }
 
+        /**
+         * Returns whether the given factory supports any OpenPGP credential type.
+         *
+         * @param factory the factory to check
+         * @return {@code true} if the factory supports {@code openpgp4} or {@code openpgp6}
+         */
+        private static boolean supportsOpenPgp(SignatureToolFactory factory) {
+            Set<String> types = factory.supportedCredentialTypes();
+            return types.contains(Credential.TYPE_OPENPGP_V4)
+                    || types.contains(Credential.TYPE_OPENPGP_V6);
+        }
+
+        /**
+         * Resolves per-tool settings from the {@link ToolsConfig} registry.
+         * Returns the tool's settings map if a {@link ToolConfig} exists for the
+         * given name, or an empty map otherwise.
+         *
+         * @param toolName the tool name to look up
+         * @return the tool's settings, never {@code null}
+         */
+        private Map<String, String> resolveToolSettings(String toolName) {
+            ToolConfig tc = toolsConfig.get(toolName);
+            return tc != null ? new HashMap<>(tc.settings()) : new HashMap<>();
+        }
+
+        /**
+         * Injects discovery-level fetch settings into a tool's settings map.
+         * These settings are read by tool factories to configure key fetching behavior.
+         *
+         * @param toolSettings the base tool settings (may be mutated)
+         * @return an immutable copy of the merged settings
+         */
         private Map<String, String> injectFetchSettings(Map<String, String> toolSettings) {
             var merged = new HashMap<>(toolSettings);
-            merged.put("resolve-signers", String.valueOf(toolsConfig.resolveSigners()));
-            merged.put("import-to-keyring", String.valueOf(toolsConfig.importToKeyring()));
-            merged.put("keyservers", String.join(",", toolsConfig.keyservers()));
+            merged.put("resolve-signers", String.valueOf(discoveryConfig.resolveSigners()));
+            merged.put("import-to-keyring", String.valueOf(discoveryConfig.importToKeyring()));
+            merged.put("keyservers", String.join(",", discoveryConfig.keyservers()));
             return Map.copyOf(merged);
         }
 

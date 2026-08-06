@@ -193,7 +193,7 @@ class SignerTest {
             }
 
             @Override
-            public boolean canHandle(Path f) {
+            public boolean canHandleByContent(Path f) {
                 return true;
             }
 

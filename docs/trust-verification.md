@@ -191,14 +191,16 @@ The `policy` section controls trust verification behavior:
 
 ```yaml
 policy:
-  on-untrusted: fail  # or "warn"
-  require-all-evidence-match: true
+  on-untrusted: fail       # or "warn"
+  listed-evidence: all     # or "any"
+  unlisted-evidence: ignore # "ignore", "warn", or "require"
 ```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `on-untrusted` | `fail` | Action when untrusted artifacts are found: `fail` (build fails) or `warn` (log warning only) |
-| `require-all-evidence-match` | `true` | When `true`, all signatures on an artifact must match expected signers. When `false`, at least one matching signature is sufficient. |
+| `listed-evidence` | `all` | How to handle signatures from signers in your trust config: `all` (all must match expected signers) or `any` (at least one must match) |
+| `unlisted-evidence` | `ignore` | How to handle signatures from signers NOT in your trust config: `ignore` (skip them), `warn` (log warning), or `require` (fail if found) |
 
 **Note:** The `on-untrusted` setting can be overridden with the `-Dsigmund.onUntrusted` Maven property.
 
@@ -276,8 +278,9 @@ unsigned:
 
 # Trust policy settings
 policy:
-  on-untrusted: fail  # fail | warn
-  require-all-evidence-match: true
+  on-untrusted: fail        # fail | warn
+  listed-evidence: all      # all | any
+  unlisted-evidence: ignore # ignore | warn | require
 
 # Discovery settings
 discovery:
@@ -354,7 +357,7 @@ These properties override settings from `sigmund.yaml`:
 |----------|---------|-------------|
 | `sigmund.trustConfig` | `${project.basedir}/sigmund.yaml` | Path to the trust configuration file |
 | `sigmund.onUntrusted` | (from config) | Override policy: `fail` or `warn` |
-| `sigmund.verifyAllSignatures` | (from config) | Override `require-all-evidence-match` |
+| `sigmund.listedEvidence` | (from config) | Override `listed-evidence` policy (`all` or `any`) |
 | `sigmund.resolveSigners` | `true` | Fetch unknown GPG keys from keyservers |
 | `sigmund.keyservers` | `hkps://keys.openpgp.org` | Comma-separated keyserver list (also accepts singular `sigmund.keyserver`) |
 | `sigmund.verifyPomFiles` | `false` | Also verify signatures on POM files |

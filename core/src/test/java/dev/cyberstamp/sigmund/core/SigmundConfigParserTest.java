@@ -322,7 +322,8 @@ class SigmundConfigParserTest {
         @Test
         void defaults() {
             var config = parse("version: 1");
-            assertTrue(config.trustPolicy().requireAllEvidenceMatch());
+            assertEquals(ListedEvidencePolicy.ALL, config.trustPolicy().listedEvidence());
+            assertEquals(UnlistedEvidencePolicy.IGNORE, config.trustPolicy().unlistedEvidence());
             assertEquals(UntrustedPolicy.FAIL, config.trustPolicy().onUntrusted());
         }
 
@@ -331,10 +332,10 @@ class SigmundConfigParserTest {
             var config = parse("""
                     policy:
                       on-untrusted: warn
-                      require-all-evidence-match: false
+                      listed-evidence: any
                     """);
             assertEquals(UntrustedPolicy.WARN, config.trustPolicy().onUntrusted());
-            assertFalse(config.trustPolicy().requireAllEvidenceMatch());
+            assertEquals(ListedEvidencePolicy.ANY, config.trustPolicy().listedEvidence());
         }
 
         @Test
@@ -357,15 +358,17 @@ class SigmundConfigParserTest {
                       default-profile: hybrid
                       profiles:
                         hybrid: [openpgp4, openpgp6]
-                      tools:
-                        sq:
-                          cipher-suite: "mldsa87-ed448"
+                      toolchain: [sq]
+                    tools:
+                      sq:
+                        cipher-suite: "mldsa87-ed448"
                     """);
             var signing = config.signingConfig();
             assertEquals("alice", signing.signer());
             assertEquals("hybrid", signing.defaultProfile());
             assertEquals(List.of("openpgp4", "openpgp6"), signing.profiles().get("hybrid"));
-            assertEquals("mldsa87-ed448", signing.tools().get("sq").settings().get("cipher-suite"));
+            assertEquals(List.of("sq"), signing.toolchain());
+            assertEquals("mldsa87-ed448", config.toolsConfig().get("sq").settings().get("cipher-suite"));
         }
 
         @Test
@@ -379,56 +382,80 @@ class SigmundConfigParserTest {
     class DiscoveryParsing {
 
         @Test
-        void toolsConfig() {
+        void discoveryConfig() {
             var config = parse("""
                     discovery:
-                      fetch-signer-info: true
+                      resolve-signers: true
                       import-to-keyring: false
                       keyservers:
                         - "hkps://keys.openpgp.org"
-                      tools:
-                        sigstore:
-                          trusted-root: "/path/to/root.json"
                     """);
-            var dc = config.toolsConfig();
+            var dc = config.discoveryConfig();
             assertTrue(dc.resolveSigners());
             assertFalse(dc.importToKeyring());
             assertEquals(List.of("hkps://keys.openpgp.org"), dc.keyservers());
-            assertEquals("/path/to/root.json", dc.tools().get("sigstore").get("trusted-root"));
         }
 
         @Test
-        void toolPriorityList() {
+        void toolchainList() {
             var config = parse("""
                     discovery:
-                      tool-priority: [sq, gpg]
+                      toolchain: [sq, gpg]
                     """);
-            assertEquals(List.of("sq", "gpg"), config.toolsConfig().toolPriority());
+            assertEquals(List.of("sq", "gpg"), config.discoveryConfig().toolchain());
         }
 
         @Test
-        void toolPriorityScalar() {
+        void toolchainScalar() {
             var config = parse("""
                     discovery:
-                      tool-priority: gpg
+                      toolchain: gpg
                     """);
-            assertEquals(List.of("gpg"), config.toolsConfig().toolPriority());
+            assertEquals(List.of("gpg"), config.discoveryConfig().toolchain());
         }
 
         @Test
-        void toolPriorityDefault() {
+        void toolchainDefault() {
             var config = parse("""
                     discovery:
-                      fetch-signer-info: true
+                      resolve-signers: true
                     """);
-            assertNull(config.toolsConfig().toolPriority());
-            assertEquals(ToolsConfig.DEFAULT_TOOL_PRIORITY, config.toolsConfig().effectiveToolPriority());
+            assertNull(config.discoveryConfig().toolchain());
+            assertEquals(DiscoveryConfig.DEFAULT_TOOL_PRIORITY, config.discoveryConfig().effectiveToolchain());
         }
 
         @Test
         void noDiscoverySection() {
             var config = parse("version: 1");
-            assertEquals(ToolsConfig.DEFAULT, config.toolsConfig());
+            assertEquals(DiscoveryConfig.DEFAULT, config.discoveryConfig());
+        }
+    }
+
+    @Nested
+    class ToolsParsing {
+
+        @Test
+        void topLevelToolsConfig() {
+            var config = parse("""
+                    tools:
+                      sigstore:
+                        trusted-root: "/path/to/root.json"
+                      bc:
+                        gnupg-home: "/custom/gnupg"
+                    """);
+            var tc = config.toolsConfig();
+            assertFalse(tc.isEmpty());
+            assertEquals(2, tc.size());
+            assertNotNull(tc.get("sigstore"));
+            assertEquals("/path/to/root.json", tc.get("sigstore").settings().get("trusted-root"));
+            assertNotNull(tc.get("bc"));
+            assertEquals("/custom/gnupg", tc.get("bc").settings().get("gnupg-home"));
+        }
+
+        @Test
+        void noToolsSection() {
+            var config = parse("version: 1");
+            assertTrue(config.toolsConfig().isEmpty());
         }
     }
 
@@ -454,17 +481,16 @@ class SigmundConfigParserTest {
                       - "org.example:unsigned-lib"
                     policy:
                       on-untrusted: fail
-                      require-all-evidence-match: true
                     discovery:
-                      fetch-signer-info: true
+                      resolve-signers: true
                       keyservers:
                         - "hkps://keys.openpgp.org"
                     """);
             assertEquals(1, config.version());
-            assertEquals(2, config.signers().size());
+            assertEquals(2, config.signers().names().size());
             assertEquals("alice", config.signingConfig().signer());
-            assertTrue(config.trustPolicy().requireAllEvidenceMatch());
-            assertTrue(config.toolsConfig().resolveSigners());
+            assertEquals(ListedEvidencePolicy.ALL, config.trustPolicy().listedEvidence());
+            assertTrue(config.discoveryConfig().resolveSigners());
         }
     }
 

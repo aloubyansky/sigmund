@@ -41,20 +41,20 @@ class ToolFactoryTest {
 
         @Test
         void createWithKeyNameSetting() {
-            SignatureTool tool = factory.create(null, Map.of("key-name", "user@example.com"));
+            SignatureTool tool = factory.createSigning(null, Map.of("key-name", "user@example.com"));
             assertTrue(tool.canSign());
         }
 
         @Test
         void createWithCredentialFallback() {
             var cred = new FingerprintCredential(Credential.TYPE_OPENPGP_V4, "ABCD1234ABCD1234");
-            SignatureTool tool = factory.create(cred, Map.of());
+            SignatureTool tool = factory.createSigning(cred, Map.of());
             assertTrue(tool.canSign());
         }
 
         @Test
         void createNoKeyNameNoCredential() {
-            SignatureTool tool = factory.create(null, Map.of());
+            SignatureTool tool = factory.createSigning(null, Map.of());
             assertTrue(tool.canSign());
         }
     }
@@ -94,7 +94,7 @@ class ToolFactoryTest {
 
         @Test
         void createWithFingerprintSetting() {
-            SignatureTool tool = factory.create(null, Map.of(
+            SignatureTool tool = factory.createSigning(null, Map.of(
                     "home", tempDir.toString(),
                     "signing-fingerprint", "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"));
             assertTrue(tool.canSign());
@@ -104,19 +104,19 @@ class ToolFactoryTest {
         void createWithCredentialFallback() {
             var cred = new FingerprintCredential(Credential.TYPE_OPENPGP_V6,
                     "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
-            SignatureTool tool = factory.create(cred, Map.of("home", tempDir.toString()));
+            SignatureTool tool = factory.createSigning(cred, Map.of("home", tempDir.toString()));
             assertTrue(tool.canSign());
         }
 
         @Test
         void createNoFingerprintNoCredential() {
-            SignatureTool tool = factory.create(null, Map.of("home", tempDir.toString()));
+            SignatureTool tool = factory.createSigning(null, Map.of("home", tempDir.toString()));
             assertFalse(tool.canSign());
         }
 
         @Test
         void createCustomExecutable() {
-            SignatureTool tool = factory.create(null, Map.of("executable", "/opt/bin/sq"));
+            SignatureTool tool = factory.createSigning(null, Map.of("executable", "/opt/bin/sq"));
             assertEquals("sq", tool.name());
         }
     }
@@ -156,7 +156,7 @@ class ToolFactoryTest {
 
         @Test
         void createWithFingerprintSetting() {
-            SignatureTool tool = factory.create(null, Map.of(
+            SignatureTool tool = factory.createSigning(null, Map.of(
                     "signing-fingerprint", "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"));
             assertTrue(tool.canSign());
         }
@@ -165,19 +165,19 @@ class ToolFactoryTest {
         void createWithCredentialFallback() {
             var cred = new FingerprintCredential(Credential.TYPE_OPENPGP_V6,
                     "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
-            SignatureTool tool = factory.create(cred, Map.of());
+            SignatureTool tool = factory.createSigning(cred, Map.of());
             assertTrue(tool.canSign());
         }
 
         @Test
         void createNoFingerprintNoCredential() {
-            SignatureTool tool = factory.create(null, Map.of());
+            SignatureTool tool = factory.createSigning(null, Map.of());
             assertFalse(tool.canSign());
         }
 
         @Test
         void createWithTskFile() {
-            SignatureTool tool = factory.create(null, Map.of(
+            SignatureTool tool = factory.createSigning(null, Map.of(
                     "signing-fingerprint", "ABCD1234",
                     "tsk-file", "/tmp/key.tsk"));
             assertTrue(tool.canSign());

@@ -1,7 +1,5 @@
 package dev.cyberstamp.sigmund.core;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -17,11 +15,12 @@ import java.util.Map;
 public class DefaultTrustPolicy implements TrustPolicy {
 
     static final DefaultTrustPolicy EMPTY = new DefaultTrustPolicy(
-            Map.of(), List.of(), false, UntrustedPolicy.FAIL);
+            Map.of(), List.of(), ListedEvidencePolicy.ALL, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
 
     private final Map<String, List<SignerIdentity>> trustMappings;
     private final List<String> unsignedPatterns;
-    private final boolean requireAllEvidenceMatch;
+    private final ListedEvidencePolicy listedEvidence;
+    private final UnlistedEvidencePolicy unlistedEvidence;
     private final UntrustedPolicy untrustedPolicy;
 
     /**
@@ -29,17 +28,20 @@ public class DefaultTrustPolicy implements TrustPolicy {
      *
      * @param trustMappings artifact patterns mapped to expected signers
      * @param unsignedPatterns patterns for artifacts allowed to be unsigned
-     * @param requireAllEvidenceMatch whether all evidence must match
+     * @param listedEvidence policy for evaluating listed evidence
+     * @param unlistedEvidence policy for handling unlisted evidence
      * @param untrustedPolicy how to handle untrusted artifacts
      */
     public DefaultTrustPolicy(
             Map<String, List<SignerIdentity>> trustMappings,
             List<String> unsignedPatterns,
-            boolean requireAllEvidenceMatch,
+            ListedEvidencePolicy listedEvidence,
+            UnlistedEvidencePolicy unlistedEvidence,
             UntrustedPolicy untrustedPolicy) {
         this.trustMappings = Map.copyOf(trustMappings);
         this.unsignedPatterns = List.copyOf(unsignedPatterns);
-        this.requireAllEvidenceMatch = requireAllEvidenceMatch;
+        this.listedEvidence = listedEvidence;
+        this.unlistedEvidence = unlistedEvidence;
         this.untrustedPolicy = untrustedPolicy;
     }
 
@@ -58,8 +60,13 @@ public class DefaultTrustPolicy implements TrustPolicy {
     }
 
     @Override
-    public boolean requireAllEvidenceMatch() {
-        return requireAllEvidenceMatch;
+    public ListedEvidencePolicy listedEvidence() {
+        return listedEvidence;
+    }
+
+    @Override
+    public UnlistedEvidencePolicy unlistedEvidence() {
+        return unlistedEvidence;
     }
 
     @Override
@@ -67,25 +74,4 @@ public class DefaultTrustPolicy implements TrustPolicy {
         return untrustedPolicy;
     }
 
-    /**
-     * Creates a builder-like list of trust mappings from raw parsed data.
-     */
-    static Map<String, List<SignerIdentity>> resolveTrustMappings(
-            Map<String, List<String>> rawTrust,
-            Map<String, SignerIdentity> signers) {
-        var result = new HashMap<String, List<SignerIdentity>>(rawTrust.size());
-        for (var entry : rawTrust.entrySet()) {
-            List<SignerIdentity> resolved = new ArrayList<>();
-            for (String ref : entry.getValue()) {
-                SignerIdentity signer = signers.get(ref);
-                if (signer == null) {
-                    throw new PolicyConfigException(
-                            "Trust entry '" + entry.getKey() + "' references undefined signer '" + ref + "'");
-                }
-                resolved.add(signer);
-            }
-            result.put(entry.getKey(), List.copyOf(resolved));
-        }
-        return result;
-    }
 }
