@@ -80,7 +80,9 @@ public class VerifyMojo extends AbstractDependencyMojo {
                 addPomArtifacts(toAssess);
             }
 
-            ArtifactFileResolver resolver = new ArtifactFileResolver(repoSystem, repoSession, remoteRepos, getLog());
+            ArtifactFileResolver resolver = new ArtifactFileResolver(
+                    repoSystem, repoSession, remoteRepos, getLog(),
+                    sigmund.signatureFileExtensions());
 
             List<AssessmentRequest> requests = new ArrayList<>(toAssess.size());
             List<ArtifactCoords> assessedCoords = new ArrayList<>(toAssess.size());

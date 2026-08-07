@@ -87,10 +87,10 @@ class VerifyResultTest {
         }
 
         @Test
-        void sigstoreReturnsNull() {
+        void sigstoreReturnsOidcSubject() {
             var result = new SigstoreVerifyResult(Verdict.PASS, "alice@example.com", "ECDSA",
-                    "https://accounts.google.com", "12345");
-            assertNull(result.signerIdentifier());
+                    "https://accounts.google.com", "12345", 1);
+            assertEquals("alice@example.com", result.signerIdentifier());
         }
 
         @Test

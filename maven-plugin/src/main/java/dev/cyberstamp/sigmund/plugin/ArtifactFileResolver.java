@@ -2,7 +2,9 @@ package dev.cyberstamp.sigmund.plugin;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
@@ -19,13 +21,15 @@ class ArtifactFileResolver {
     private final RepositorySystem repoSystem;
     private final RepositorySystemSession repoSession;
     private final List<RemoteRepository> remoteRepos;
+    private final Collection<String> signatureExtensions;
 
     ArtifactFileResolver(RepositorySystem repoSystem, RepositorySystemSession repoSession,
-            List<RemoteRepository> remoteRepos, Log log) {
+            List<RemoteRepository> remoteRepos, Log log, Set<String> signatureExtensions) {
         this.repoSystem = repoSystem;
         this.repoSession = repoSession;
         this.remoteRepos = remoteRepos;
         this.log = log;
+        this.signatureExtensions = signatureExtensions;
     }
 
     record ResolvedFiles(Path artifactFile, List<Path> evidenceFiles) {
@@ -46,9 +50,11 @@ class ArtifactFileResolver {
         List<RemoteRepository> sigRepos = signatureRepos(resolved.sourceRepo());
 
         List<Path> evidenceFiles = new ArrayList<>();
-        ResolvedSignature sig = resolveSignature(coords, ".asc", sigRepos);
-        if (sig != null) {
-            evidenceFiles.add(sig.signatureFile());
+        for (String ext : signatureExtensions) {
+            ResolvedSignature sig = resolveSignature(coords, ext, sigRepos);
+            if (sig != null) {
+                evidenceFiles.add(sig.signatureFile());
+            }
         }
 
         return new ResolvedFiles(resolved.artifactFile(), evidenceFiles);

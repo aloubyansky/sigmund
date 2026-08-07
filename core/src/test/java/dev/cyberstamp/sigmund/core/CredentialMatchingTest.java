@@ -11,7 +11,7 @@ class CredentialMatchingTest {
     private static final VerifyResult PGP_PASS = new OpenPgpVerifyResult(
             Verdict.PASS, null, null, 4, null, null);
     private static final VerifyResult SIGSTORE_PASS = new SigstoreVerifyResult(
-            Verdict.PASS, null, null, null, null);
+            Verdict.PASS, null, null, null, null, -1);
 
     @Test
     void fingerprintMatchV4() {

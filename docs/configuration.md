@@ -20,10 +20,13 @@ Sigmund uses a `sigmund.yaml` file for configuration. This reference documents e
   - [BC (BouncyCastle)](#bc-bouncycastle)
   - [SQ (Sequoia)](#sq-sequoia)
   - [GPG (GnuPG)](#gpg-gnupg)
+  - [Sigstore](#sigstore)
 - [Common Configuration Patterns](#common-configuration-patterns)
   - [Minimal Verification-Only Config](#minimal-verification-only-config)
   - [CI/CD Signing Config](#cicd-signing-config)
   - [Multi-Tool Hybrid Signing](#multi-tool-hybrid-signing)
+  - [Sigstore-Only Signing](#sigstore-only-signing)
+  - [Mixed OpenPGP + Sigstore Signing](#mixed-openpgp--sigstore-signing)
   - [Strict Trust Policy](#strict-trust-policy)
   - [Permissive Development Config](#permissive-development-config)
 
@@ -160,6 +163,14 @@ tools:
     # Common settings
     executable: gpg
     home: ~/.gnupg
+  
+  sigstore:
+    # Use the Sigstore staging instance (for testing)
+    staging: false
+    # Custom trusted root file (optional, defaults to TUF-fetched root)
+    trusted-root: /path/to/trusted_root.json
+    # Allow interactive OIDC browser login (for desktop use)
+    interactive: true
 ```
 
 ## Section Reference
@@ -562,6 +573,29 @@ tools:
     executable: /usr/bin/gpg2
 ```
 
+### Sigstore
+
+Configured in the top-level `tools.sigstore` section. Sigstore uses OIDC-based keyless signing via `sigstore-java` — no long-lived keys to manage.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `staging` | `false` | Use the Sigstore staging instance instead of production. For testing only. |
+| `trusted-root` | (none) | Path to a custom `trusted_root.json` file. When omitted, the root is fetched via TUF from the Sigstore public-good instance. |
+| `interactive` | `false` | Allow interactive OIDC browser login. When `false`, only ambient credentials (e.g., GitHub Actions OIDC token) are used. Set to `true` for desktop signing. |
+
+The Sigstore tool is pure Java (provided by the `sigmund-sigstore` module) and does not require any external CLI binary. It is ServiceLoader-discovered — adding the module to the classpath is sufficient.
+
+**Credential type:** `oidc`  
+**File extension:** `.sigstore.json`
+
+**Example:**
+
+```yaml
+tools:
+  sigstore:
+    interactive: true
+```
+
 ## Common Configuration Patterns
 
 ### Minimal Verification-Only Config
@@ -633,6 +667,55 @@ tools:
   gpg:
     key-name: "0xABCDEF12"  # Use v4 key
 ```
+
+### Sigstore-Only Signing
+
+```yaml
+version: 1
+
+signers:
+  ci-bot:
+    oidc:
+      issuer: "https://token.actions.githubusercontent.com"
+      subject: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/heads/main"
+
+signing:
+  signer: ci-bot
+  toolchain: [sigstore]
+```
+
+No tool settings needed — ambient OIDC credentials from GitHub Actions are used automatically.
+
+### Mixed OpenPGP + Sigstore Signing
+
+```yaml
+version: 1
+
+signers:
+  release-lead:
+    name: "Release Lead"
+    openpgp4: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+    oidc:
+      issuer: "https://token.actions.githubusercontent.com"
+      subject: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/heads/main"
+    email: "release@example.com"
+
+signing:
+  signer: release-lead
+  toolchain: [bc, sigstore]
+
+discovery:
+  toolchain: [bc, sigstore]
+
+tools:
+  bc:
+    signing-fingerprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+    passphrase-env: BC_PASSPHRASE
+  sigstore:
+    trusted-root: /etc/sigmund/trusted_root.json
+```
+
+This produces both a `.asc` (OpenPGP) and a `.sigstore.json` (Sigstore bundle) for each artifact. Verifiers match the `email` credential across both backends.
 
 ### Strict Trust Policy
 

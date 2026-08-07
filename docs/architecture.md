@@ -42,12 +42,15 @@ Sigmund supports three OpenPGP backends, each with distinct capabilities:
 | **BC** | Always (pure Java) | Sign, verify | Sign, verify (classic algos) | Phase 2 planned | None |
 | **sq** | Optional | Verify | Sign, verify | Sign, verify (RFC 9980) | Sequoia CLI |
 | **gpg** | Optional | Sign, verify | None | None | GnuPG CLI |
+| **sigstore** | Optional (pure Java) | N/A | N/A | N/A | None |
 
 **BC (Bouncy Castle)** is the default first-choice tool. It requires no external process dependencies and works on any JVM. BC generates v6 keys for Ed25519, Ed448, and RSA using Bouncy Castle 1.85's `BcOpenPGPApi`. ECDSA keys (P-256, P-384, P-521) use a JCA-based fallback and produce v4 keys.
 
 **sq (Sequoia)** is used for PQC hybrid signing when available. Version 1.4.0+ implements RFC 9980 and can generate and verify ML-DSA composite signatures.
 
 **gpg (GnuPG)** provides compatibility with existing GPG-based workflows and reads GPG keyrings. GnuPG follows LibrePGP and does not support v6 keys.
+
+**sigstore** provides OIDC-based keyless signing and verification via the `sigmund-sigstore` module. It uses `sigstore-java` (`dev.sigstore:sigstore-java:1.3.0`) for both signing (Fulcio + Rekor) and verification (KeylessVerifier). It is pure Java, requires no external CLI binary, and is ServiceLoader-discovered — adding `sigmund-sigstore` to the classpath is sufficient. The `SigstoreToolFactory` implements the `SignatureToolFactory` SPI.
 
 ## Toolchain and Routing
 
@@ -351,11 +354,13 @@ PQC algorithm IDs (RFC 9980):
 ## Project Structure
 
 ```
-core/           Core signing and verification library (pure Java, no CLI dependencies)
-cli/            Command-line interface (picocli)
-maven-plugin/   Maven plugin for build integration
+core/              Core signing and verification library (pure Java, no CLI dependencies)
+sigmund-sigstore/  Sigstore signing/verification backend (sigstore-java)
+cli/               Command-line interface (picocli)
+maven-plugin/      Maven plugin for build integration
 ```
 
-- **`core`** contains the `Sigmund` facade, the three tool backends (BC, sq, gpg), the identity verification layer, and configuration parsing.
-- **`cli`** provides standalone commands for key generation, signing, verification, and certificate export.
-- **`maven-plugin`** integrates signing and trust verification into the Maven build lifecycle.
+- **`core`** contains the `Sigmund` facade, the OpenPGP tool backends (BC, sq, gpg), the identity verification layer, and configuration parsing. Defines the `SignatureToolFactory` SPI that backends implement.
+- **`sigmund-sigstore`** provides the Sigstore backend (`SigstoreToolFactory`). It is a separate module to isolate the heavy `sigstore-java` dependency tree from `core`. Discovered at runtime via `ServiceLoader<SignatureToolFactory>`.
+- **`cli`** provides standalone commands for key generation, signing, verification, and certificate export. Bundles `sigmund-sigstore` as a runtime dependency — Sigstore support is available out of the box.
+- **`maven-plugin`** integrates signing and trust verification into the Maven build lifecycle. To enable Sigstore, add `sigmund-sigstore` as a plugin dependency (see [Maven Plugin Reference](maven-plugin.md)).

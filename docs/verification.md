@@ -19,6 +19,10 @@ This guide covers how to verify artifact signatures using Sigmund. Signature ver
   - [How Routing Works](#how-routing-works)
   - [Tool Capabilities](#tool-capabilities)
   - [Verdicts](#verdicts)
+- [Sigstore Verification](#sigstore-verification)
+  - [Auto-Detection](#auto-detection)
+  - [Identity Extraction](#identity-extraction)
+  - [Cross-Backend Identity Matching](#cross-backend-identity-matching)
 - [Toolchain Configuration](#toolchain-configuration)
   - [Example: Prefer Sequoia](#example-prefer-sequoia)
   - [Example: GPG Only](#example-gpg-only)
@@ -53,14 +57,17 @@ This guide covers how to verify artifact signatures using Sigmund. Signature ver
 
 ## Overview
 
-Sigmund verifies OpenPGP signatures by:
+Sigmund verifies signatures by:
 
-1. Parsing the `.asc` file into individual signature blocks
-2. Routing each block to an appropriate verification tool (BC, Sequoia, or GPG)
-3. Verifying each signature against the artifact
-4. Reporting the results with an overall verdict
+1. Detecting the signature format from the file extension (`.asc` for OpenPGP, `.sigstore.json` for Sigstore)
+2. Parsing the signature file into verification units
+3. Routing each unit to an appropriate verification tool (BC, Sequoia, GPG, or Sigstore)
+4. Verifying each signature against the artifact
+5. Reporting the results with an overall verdict
 
-A single `.asc` file may contain multiple signature blocks — for example, a classical v4 signature followed by a PQC v6 signature. Each block is verified independently.
+For OpenPGP, a single `.asc` file may contain multiple signature blocks — for example, a classical v4 signature followed by a PQC v6 signature. Each block is verified independently.
+
+For Sigstore, the `.sigstore.json` bundle is self-contained with the certificate and transparency log entry.
 
 ## Verifying with the CLI
 
@@ -154,13 +161,14 @@ mvn sigmund:verify-signature -Dfile=... -Dsignature=... -Dsigmund.lenient=true
 
 ## Tool Routing
 
-Sigmund supports three OpenPGP verification backends:
+Sigmund supports four verification backends:
 
-| Tool | Availability | v4 Support | v6 Support | PQC Support |
-|------|--------------|------------|------------|-------------|
-| **BC** | Always (pure Java) | Yes | Yes (classic algorithms) | Planned |
-| **sq** | Optional (requires Sequoia CLI) | Yes | Yes | Yes (RFC 9980) |
-| **gpg** | Optional (requires GnuPG) | Yes | No | No |
+| Tool | Availability | Format | v4 Support | v6 Support | PQC Support |
+|------|--------------|--------|------------|------------|-------------|
+| **BC** | Always (pure Java) | OpenPGP | Yes | Yes (classic algorithms) | Planned |
+| **sq** | Optional (requires Sequoia CLI) | OpenPGP | Yes | Yes | Yes (RFC 9980) |
+| **gpg** | Optional (requires GnuPG) | OpenPGP | Yes | No | No |
+| **sigstore** | Optional (`sigmund-sigstore` module) | Sigstore | N/A | N/A | N/A |
 
 ### How Routing Works
 
@@ -198,6 +206,37 @@ Each verification tool returns one of these verdicts:
 - **`FAIL`** — signature is invalid (tampered artifact or incorrect signature)
 - **`NO_KEY`** — signing key not found in any keyring
 - **`SKIPPED`** — tool cannot handle this signature (wrong version, unsupported algorithm, or tool unavailable)
+
+## Sigstore Verification
+
+The Sigstore backend verifies `.sigstore.json` bundles using `sigstore-java`'s `KeylessVerifier`. Verification is fully offline after the initial TUF trusted root fetch.
+
+### Auto-Detection
+
+Sigstore signature files are detected by the `.sigstore.json` extension. When verifying dependencies, Sigmund checks for both `.asc` (OpenPGP) and `.sigstore.json` (Sigstore) files alongside each artifact. No configuration is needed to enable Sigstore verification — if the `sigmund-sigstore` module is on the classpath, `.sigstore.json` files are handled automatically.
+
+### Identity Extraction
+
+After a successful Sigstore verification, the tool extracts identity credentials from the Fulcio certificate embedded in the bundle:
+
+- **`OidcCredential`** — always produced, containing the OIDC `issuer` and `subject` from the certificate extensions. Matches against `oidc` credentials in the signer definition.
+- **`EmailCredential`** — produced when the certificate subject is an RFC 822 email address (SAN type `rfc822Name`). Matches against `email` credentials in the signer definition.
+
+### Cross-Backend Identity Matching
+
+The `EmailCredential` extracted from Sigstore bundles uses the same matching logic as email credentials from OpenPGP user IDs. This means a signer with an `email` credential can be matched by both OpenPGP and Sigstore evidence:
+
+```yaml
+signers:
+  release-lead:
+    email: "release@example.com"
+    openpgp4: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+
+trust:
+  "com.example.*": release-lead
+```
+
+An artifact signed with either OpenPGP (matched via fingerprint or email in the user ID) or Sigstore (matched via email in the Fulcio certificate) will satisfy the trust policy for `release-lead`.
 
 ## Toolchain Configuration
 

@@ -1,0 +1,348 @@
+package dev.cyberstamp.sigmund.sigstore;
+
+import dev.cyberstamp.sigmund.core.Credential;
+import dev.cyberstamp.sigmund.core.EmailCredential;
+import dev.cyberstamp.sigmund.core.OidcCredential;
+import dev.cyberstamp.sigmund.core.SignResult;
+import dev.cyberstamp.sigmund.core.SignatureFormat;
+import dev.cyberstamp.sigmund.core.SignatureTool;
+import dev.cyberstamp.sigmund.core.SigningInfo;
+import dev.cyberstamp.sigmund.core.SigstoreVerificationUnit;
+import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
+import dev.cyberstamp.sigmund.core.ToolExecutionException;
+import dev.cyberstamp.sigmund.core.Verdict;
+import dev.cyberstamp.sigmund.core.VerificationUnit;
+import dev.cyberstamp.sigmund.core.VerifyResult;
+import dev.sigstore.KeylessSigner;
+import dev.sigstore.KeylessSignerException;
+import dev.sigstore.KeylessVerificationException;
+import dev.sigstore.KeylessVerifier;
+import dev.sigstore.bundle.Bundle;
+import dev.sigstore.bundle.BundleParseException;
+import java.io.IOException;
+import java.io.StringReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.cert.CertificateParsingException;
+import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+import org.bouncycastle.asn1.ASN1OctetString;
+import org.bouncycastle.asn1.ASN1UTF8String;
+import org.bouncycastle.asn1.x509.GeneralName;
+
+/**
+ * {@link SignatureTool} implementation for Sigstore keyless signing and verification.
+ * <p>
+ * Wraps sigstore-java's {@link KeylessSigner} and {@link KeylessVerifier}.
+ * Unlike OpenPGP tools that shell out to external CLIs, this is a pure-Java
+ * implementation — {@link #isAvailable()} always returns {@code true}.
+ * <p>
+ * The tool is fully configured at construction time. The {@link KeylessSigner}
+ * is optional (nullable for verify-only mode). When present, it is reused
+ * across multiple {@link #sign(Path, Path)} calls — sigstore-java internally
+ * caches the Fulcio certificate until it has less than 5 minutes of remaining
+ * validity.
+ * <p>
+ * Implements {@link AutoCloseable} to release the {@link KeylessSigner}'s
+ * cached ephemeral signing certificate material.
+ *
+ * @see SigstoreSignatureFormat
+ * @see SigstoreToolFactory
+ */
+public class SigstoreTool implements SignatureTool, AutoCloseable {
+
+    private static final String TOOL_NAME = "sigstore";
+
+    // Sigstore OID for OIDC issuer (V2, current)
+    private static final String OID_ISSUER_V2 = "1.3.6.1.4.1.57264.1.8";
+    // Sigstore OID for OIDC issuer (V1, deprecated)
+    private static final String OID_ISSUER_V1 = "1.3.6.1.4.1.57264.1.1";
+
+    private final SigstoreSignatureFormat format;
+    private final KeylessSigner signer;
+    private final KeylessVerifier verifier;
+    private final String oidcSubject;
+
+    /**
+     * Creates a new Sigstore tool.
+     *
+     * @param format the shared signature format instance
+     * @param signer the keyless signer, or {@code null} for verify-only mode
+     * @param verifier the keyless verifier
+     * @param oidcSubject the expected OIDC subject for signing info display, or {@code null}
+     */
+    SigstoreTool(SigstoreSignatureFormat format, KeylessSigner signer,
+            KeylessVerifier verifier, String oidcSubject) {
+        this.format = format;
+        this.signer = signer;
+        this.verifier = verifier;
+        this.oidcSubject = oidcSubject;
+    }
+
+    @Override
+    public String name() {
+        return TOOL_NAME;
+    }
+
+    /**
+     * Always returns {@code true} — Sigstore is a pure-Java implementation
+     * with no external CLI dependency.
+     */
+    @Override
+    public boolean isAvailable() {
+        return true;
+    }
+
+    @Override
+    public boolean canSign() {
+        return signer != null;
+    }
+
+    @Override
+    public List<SigningInfo> signingInfo() {
+        if (!canSign()) {
+            return List.of();
+        }
+        return List.of(new SigningInfo(TOOL_NAME, null, null, oidcSubject,
+                Set.of(Credential.TYPE_OIDC)));
+    }
+
+    @Override
+    public SignatureFormat signatureFormat() {
+        return format;
+    }
+
+    @Override
+    public Set<String> supportedCredentialTypes() {
+        return Set.of(Credential.TYPE_OIDC);
+    }
+
+    @Override
+    public boolean canVerify(VerificationUnit unit) {
+        return unit instanceof SigstoreVerificationUnit;
+    }
+
+    /**
+     * Signs an artifact using the Sigstore keyless flow.
+     * <p>
+     * Delegates to {@link KeylessSigner#signFile(Path)} which internally
+     * handles OIDC authentication, Fulcio certificate issuance, signing,
+     * and Rekor transparency log submission.
+     *
+     * @param artifactFile the file to sign
+     * @param outputSig the path to write the Sigstore bundle JSON
+     * @return the signing result with the certificate's public key algorithm
+     * @throws ToolExecutionException if signing fails
+     */
+    @Override
+    public SignResult sign(Path artifactFile, Path outputSig) {
+        if (signer == null) {
+            throw new IllegalStateException("Signing not configured");
+        }
+        try {
+            Bundle bundle = signer.signFile(artifactFile);
+            Files.writeString(outputSig, bundle.toJson());
+
+            X509Certificate cert = (X509Certificate) bundle.getCertPath()
+                    .getCertificates().get(0);
+            String algorithm = cert.getPublicKey().getAlgorithm();
+            return new SignResult(algorithm);
+        } catch (KeylessSignerException e) {
+            throw new ToolExecutionException("Sigstore signing failed: " + e.getMessage(), e);
+        } catch (IOException e) {
+            throw new ToolExecutionException(
+                    "Failed to write Sigstore bundle: " + outputSig, e);
+        }
+    }
+
+    /**
+     * Verifies a Sigstore bundle against an artifact.
+     * <p>
+     * Delegates cryptographic verification to {@link KeylessVerifier#verify(Path, Bundle,
+     * dev.sigstore.VerificationOptions)}. On success, extracts the OIDC issuer and subject
+     * from the Fulcio certificate embedded in the bundle.
+     * <p>
+     * Verification is fully offline — all verification data comes from the bundle itself.
+     * The only network access occurs at {@link KeylessVerifier} construction time when the
+     * TUF-managed trusted root is fetched.
+     *
+     * @param artifactFile the artifact that was signed
+     * @param unit the Sigstore verification unit
+     * @return the verification result with OIDC identity and Rekor log index
+     * @throws ToolExecutionException for infrastructure failures (network, configuration)
+     */
+    @Override
+    public VerifyResult verify(Path artifactFile, VerificationUnit unit) {
+        if (verifier == null) {
+            throw new IllegalStateException("Verification not configured");
+        }
+        SigstoreVerificationUnit su = (SigstoreVerificationUnit) unit;
+
+        Bundle bundle;
+        try {
+            bundle = Bundle.from(new StringReader(su.jsonBundle()));
+        } catch (BundleParseException e) {
+            return new SigstoreVerifyResult(Verdict.FAIL, null, null, null, null, -1);
+        }
+
+        try {
+            verifier.verify(artifactFile, bundle,
+                    dev.sigstore.VerificationOptions.empty());
+        } catch (KeylessVerificationException e) {
+            return handleVerificationException(e);
+        }
+
+        return buildSuccessResult(bundle);
+    }
+
+    /**
+     * Extracts proven credentials from a Sigstore verification result.
+     * <p>
+     * Produces an {@link OidcCredential} (issuer + subject) and optionally an
+     * {@link EmailCredential} when the SAN subject type is {@code rfc822Name}.
+     * This dual extraction enables cross-backend identity matching: a signer
+     * configured with only an {@code email} credential matches both OpenPGP
+     * (via UID parsing) and Sigstore (via the {@link EmailCredential}).
+     *
+     * @param result the verification result
+     * @return the proven credentials, or empty if verification did not pass
+     */
+    @Override
+    public List<Credential> extractCredentials(VerifyResult result) {
+        if (result.verdict() != Verdict.PASS) {
+            return List.of();
+        }
+        SigstoreVerifyResult sr = (SigstoreVerifyResult) result;
+        String issuer = sr.issuer();
+        String subject = sr.signerDisplayName();
+
+        List<Credential> credentials = new ArrayList<>(2);
+        if (issuer != null && subject != null) {
+            credentials.add(new OidcCredential(issuer, subject));
+        }
+        if (subject != null && sr.subjectType() == GeneralName.rfc822Name) {
+            credentials.add(new EmailCredential(subject));
+        }
+        return List.copyOf(credentials);
+    }
+
+    /**
+     * Closes the underlying {@link KeylessSigner}, releasing cached ephemeral
+     * signing certificate material. No-op for verify-only instances.
+     */
+    @Override
+    public void close() {
+        if (signer != null) {
+            signer.close();
+        }
+    }
+
+    private VerifyResult handleVerificationException(KeylessVerificationException e) {
+        Throwable cause = e.getCause();
+        if (isInfrastructureFailure(cause)) {
+            throw new ToolExecutionException(
+                    "Sigstore verification infrastructure failure: " + e.getMessage(), e);
+        }
+        return new SigstoreVerifyResult(Verdict.FAIL, null, null, null, null, -1);
+    }
+
+    private boolean isInfrastructureFailure(Throwable cause) {
+        return cause instanceof IOException;
+    }
+
+    private SigstoreVerifyResult buildSuccessResult(Bundle bundle) {
+        X509Certificate cert = (X509Certificate) bundle.getCertPath()
+                .getCertificates().get(0);
+
+        String issuer = extractIssuer(cert);
+        String subject = extractSubject(cert);
+        int subjectType = resolveSubjectType(cert);
+        String logIndex = extractLogIndex(bundle);
+        String algorithm = cert.getPublicKey().getAlgorithm();
+
+        return new SigstoreVerifyResult(
+                Verdict.PASS, subject, algorithm, issuer, logIndex, subjectType);
+    }
+
+    /**
+     * Extracts the OIDC issuer from Fulcio certificate extensions.
+     * <p>
+     * Tries V2 OID ({@code 1.3.6.1.4.1.57264.1.8}) first — an ASN1-encoded
+     * UTF-8 string. Falls back to V1 OID ({@code 1.3.6.1.4.1.57264.1.1})
+     * which contains raw UTF-8 bytes in the octet string.
+     */
+    private String extractIssuer(X509Certificate cert) {
+        byte[] v2 = cert.getExtensionValue(OID_ISSUER_V2);
+        if (v2 != null) {
+            return parseAsn1Utf8Extension(v2);
+        }
+        byte[] v1 = cert.getExtensionValue(OID_ISSUER_V1);
+        if (v1 != null) {
+            return parseRawUtf8Extension(v1);
+        }
+        return null;
+    }
+
+    private String parseAsn1Utf8Extension(byte[] extensionValue) {
+        try {
+            ASN1OctetString outer = ASN1OctetString.getInstance(extensionValue);
+            ASN1UTF8String inner = ASN1UTF8String.getInstance(outer.getOctets());
+            return inner.getString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String parseRawUtf8Extension(byte[] extensionValue) {
+        try {
+            ASN1OctetString outer = ASN1OctetString.getInstance(extensionValue);
+            return new String(outer.getOctets(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Extracts the signer identity from the certificate's Subject Alternative Name.
+     */
+    private String extractSubject(X509Certificate cert) {
+        try {
+            Collection<List<?>> sans = cert.getSubjectAlternativeNames();
+            if (sans == null || sans.isEmpty()) {
+                return null;
+            }
+            List<?> san = sans.iterator().next();
+            return san.size() >= 2 ? san.get(1).toString() : null;
+        } catch (CertificateParsingException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Resolves the SAN type tag from the certificate.
+     *
+     * @return the {@link GeneralName} tag value (1 = rfc822Name, 6 = URI), or {@code -1}
+     */
+    private int resolveSubjectType(X509Certificate cert) {
+        try {
+            Collection<List<?>> sans = cert.getSubjectAlternativeNames();
+            if (sans == null || sans.isEmpty()) {
+                return -1;
+            }
+            List<?> san = sans.iterator().next();
+            return san.size() >= 2 ? ((Integer) san.get(0)) : -1;
+        } catch (CertificateParsingException e) {
+            return -1;
+        }
+    }
+
+    private String extractLogIndex(Bundle bundle) {
+        if (bundle.getEntries().isEmpty()) {
+            return null;
+        }
+        return String.valueOf(bundle.getEntries().get(0).getLogIndex());
+    }
+}

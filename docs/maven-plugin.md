@@ -5,6 +5,7 @@ The Sigmund Maven plugin provides goals for signing artifacts and verifying depe
 ## Contents
 
 - [Plugin Coordinates](#plugin-coordinates)
+- [Enabling Sigstore Support](#enabling-sigstore-support)
 - [Goals](#goals)
   - [sigmund:sign](#sigmundsign)
   - [sigmund:signer-info](#sigmundsigner-info)
@@ -51,6 +52,29 @@ The Sigmund Maven plugin provides goals for signing artifacts and verifying depe
   </executions>
 </plugin>
 ```
+
+## Enabling Sigstore Support
+
+The Maven plugin does not include Sigstore support by default. To enable it, add `sigmund-sigstore` as a plugin dependency:
+
+```xml
+<plugin>
+  <groupId>dev.cyberstamp</groupId>
+  <artifactId>sigmund-maven-plugin</artifactId>
+  <version>${sigmund.version}</version>
+  <dependencies>
+    <dependency>
+      <groupId>dev.cyberstamp.sigmund</groupId>
+      <artifactId>sigmund-sigstore</artifactId>
+      <version>${sigmund.version}</version>
+    </dependency>
+  </dependencies>
+</plugin>
+```
+
+Once on the classpath, `SigstoreToolFactory` is discovered automatically via `ServiceLoader`. No additional configuration is needed — Sigstore signing and verification are available to all plugin goals.
+
+For the CLI, Sigstore support is bundled automatically.
 
 ## Goals
 
@@ -282,6 +306,7 @@ Each backend checks a default environment variable — no `sigmund.yaml` configu
 |---------|----------------|----------|
 | BC | `SIGMUND_BC_PASSPHRASE` | Interactive console prompt |
 | GPG | `SIGMUND_GPG_PASSPHRASE` | `gpg-agent` |
+| Sigstore | (none) | Ambient OIDC token or interactive browser login |
 
 ```bash
 export SIGMUND_BC_PASSPHRASE="your-passphrase"
