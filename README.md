@@ -4,9 +4,11 @@ A Maven plugin and CLI for signing artifacts, verifying signatures, and enforcin
 
 ## Overview
 
-Sigmund is a general-purpose signing and trust verification tool for Maven that brings dependency signature verification to the Maven ecosystem — a capability no other tool provides. It can verify who signed each dependency in your project and enforce trust policies based on signer identity, giving you visibility into and control over your software supply chain.
+As the software signing landscape evolves — from classic PGP to post-quantum cryptography to keyless Sigstore — different projects make different choices. Dependencies in the same build may carry GPG signatures, Sigstore bundles, PQC hybrid signatures, or some combination. Sigmund is built to handle this reality: it recognizes and verifies all of these signature types through a unified trust framework, and can produce multiple signature types in a single build to satisfy downstream consumers with different verification requirements.
 
-Sigmund is also a drop-in replacement for `maven-gpg-plugin` and `sigstore-maven-plugin`. It supports hybrid post-quantum cryptography (PQC) — `.asc` files containing both a classic signature (RSA/EdDSA) and a PQC v6 signature (ML-DSA-87+Ed448 via Sequoia, RFC 9980). A pure-Java Bouncy Castle backend handles classic OpenPGP with zero external tool dependencies. The Sigstore backend provides keyless signing via OIDC — no long-lived keys to manage — producing `.sigstore.json` bundles alongside or instead of OpenPGP signatures.
+Sigmund goes beyond signature validation to provide identity-based trust enforcement for dependencies. It verifies who signed each dependency in your project and enforces trust policies based on signer identity, giving you visibility into and control over your software supply chain.
+
+Sigmund can replace both `maven-gpg-plugin` and `sigstore-maven-plugin` (see [migration guides](#documentation)). It supports hybrid post-quantum cryptography (PQC) — `.asc` files containing both a classic signature (RSA/EdDSA) and a PQC v6 signature (ML-DSA-87+Ed448 via Sequoia, RFC 9980). A pure-Java Bouncy Castle backend handles classic OpenPGP with zero external tool dependencies. The Sigstore backend provides keyless signing via OIDC — no long-lived keys to manage — producing `.sigstore.json` bundles alongside or instead of OpenPGP signatures.
 
 ## Try It Now
 
@@ -145,6 +147,7 @@ Run `mvn sigmund:sign` to sign with both — classic signature first, PQC signat
 - [Migration from maven-gpg-plugin](docs/migrating-from-gpg-plugin.md) — How to migrate from maven-gpg-plugin
 - [Migration from sign-maven-plugin](docs/migrating-from-sign-maven-plugin.md) — How to migrate from sign-maven-plugin (s4u)
 - [Migration from sigstore-maven-plugin](docs/migrating-from-sigstore-maven-plugin.md) — How to migrate from sigstore-maven-plugin
+- [Migration from pgpverify-maven-plugin](docs/migrating-from-pgpverify-maven-plugin.md) — How to migrate from pgpverify-maven-plugin (s4u)
 - [Signing Guide](docs/signing.md) — Signing artifacts with GPG, BC, or hybrid PQC
 - [Signature Verification](docs/verification.md) — How signature verification works
 - [Trust Verification](docs/trust-verification.md) — Enforcing dependency trust policies
