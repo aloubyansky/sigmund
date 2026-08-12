@@ -87,6 +87,14 @@ public class VerifySignatureCommand implements Callable<Integer> {
         System.err.println("Error verifying signature:");
         String msg = e.getMessage();
         System.err.println("  " + (msg != null && !msg.isEmpty() ? msg : e.getClass().getSimpleName()));
+        Throwable cause = e.getCause();
+        while (cause != null) {
+            String causeMsg = cause.getMessage();
+            if (causeMsg != null && !causeMsg.isEmpty()) {
+                System.err.println("  Caused by: " + causeMsg);
+            }
+            cause = cause.getCause();
+        }
         System.err.println();
         System.err.println("Ensure that:");
         System.err.println("  - The signer's public key is available");

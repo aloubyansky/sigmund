@@ -174,6 +174,14 @@ public class KeygenCommand implements Callable<Integer> {
         System.err.println("Error generating key:");
         String message = e.getMessage();
         System.err.println("  " + (message != null && !message.isEmpty() ? message : e.getClass().getSimpleName()));
+        Throwable cause = e.getCause();
+        while (cause != null) {
+            String causeMsg = cause.getMessage();
+            if (causeMsg != null && !causeMsg.isEmpty()) {
+                System.err.println("  Caused by: " + causeMsg);
+            }
+            cause = cause.getCause();
+        }
         if ("sq".equalsIgnoreCase(tool)) {
             System.err.println();
             System.err.println("Make sure the 'sq' command is installed and available on your PATH.");
