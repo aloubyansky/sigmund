@@ -109,7 +109,8 @@ public class SignMojo extends AbstractSigningMojo {
         getLog().info("Signing: " + file.getName());
 
         try {
-            SigningOutput output = signer.sign(artifactPath, artifactPath.getParent());
+            SigningOutput output = signer.sign(artifactPath,
+                    Path.of(project.getBuild().getDirectory()));
             for (SignedFile sf : output.files()) {
                 String attachExtension = fileToSign.extension + sf.fileExtension();
                 projectHelper.attachArtifact(project, attachExtension,
