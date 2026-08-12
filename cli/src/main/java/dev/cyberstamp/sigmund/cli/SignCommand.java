@@ -101,6 +101,14 @@ public class SignCommand implements Callable<Integer> {
         System.err.println("Error creating signature:");
         String message = e.getMessage();
         System.err.println("  " + (message != null && !message.isEmpty() ? message : e.getClass().getSimpleName()));
+        Throwable cause = e.getCause();
+        while (cause != null) {
+            String causeMsg = cause.getMessage();
+            if (causeMsg != null && !causeMsg.isEmpty()) {
+                System.err.println("  Caused by: " + causeMsg);
+            }
+            cause = cause.getCause();
+        }
         System.err.println();
         System.err.println("Ensure that:");
         System.err.println("  - Signing tools are configured in sigmund.yaml or via CLI flags");
