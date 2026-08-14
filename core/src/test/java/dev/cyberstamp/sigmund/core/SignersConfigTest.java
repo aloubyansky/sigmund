@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.Map;
@@ -18,40 +19,40 @@ class SignersConfigTest {
         @Test
         void getReturnsSignerByName() {
             var config = new SignersConfig(Map.of("alice", signer("alice")));
-            assertNotNull(config.get("alice"));
-            assertEquals("alice", config.get("alice").id());
+            assertThat(config.get("alice")).isNotNull();
+            assertThat(config.get("alice").id()).isEqualTo("alice");
         }
 
         @Test
         void getReturnsNullForUnknown() {
             var config = new SignersConfig(Map.of("alice", signer("alice")));
-            assertNull(config.get("bob"));
+            assertThat(config.get("bob")).isNull();
         }
 
         @Test
         void resolveReturnsSignerByName() {
             var config = new SignersConfig(Map.of("alice", signer("alice")));
-            assertEquals("alice", config.resolve("alice").id());
+            assertThat(config.resolve("alice").id()).isEqualTo("alice");
         }
 
         @Test
         void resolveThrowsForUnknown() {
             var config = new SignersConfig(Map.of("alice", signer("alice")));
-            assertThrows(PolicyConfigException.class, () -> config.resolve("bob"));
+            assertThatThrownBy(() -> config.resolve("bob")).isInstanceOf(PolicyConfigException.class);
         }
 
         @Test
         void namesReturnsAllKeys() {
             var config = new SignersConfig(Map.of("alice", signer("alice"), "bob", signer("bob")));
-            assertEquals(2, config.names().size());
-            assertTrue(config.names().contains("alice"));
+            assertThat(config.names().size()).isEqualTo(2);
+            assertThat(config.names().contains("alice")).isTrue();
         }
 
         @Test
         void emptyConfig() {
             var config = SignersConfig.EMPTY;
-            assertTrue(config.isEmpty());
-            assertTrue(config.names().isEmpty());
+            assertThat(config.isEmpty()).isTrue();
+            assertThat(config.names().isEmpty()).isTrue();
         }
     }
 }

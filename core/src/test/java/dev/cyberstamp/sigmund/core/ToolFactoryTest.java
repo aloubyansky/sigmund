@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
 import java.util.Map;
@@ -18,44 +19,44 @@ class ToolFactoryTest {
 
         @Test
         void toolName() {
-            assertEquals("gpg", factory.toolName());
+            assertThat(factory.toolName()).isEqualTo("gpg");
         }
 
         @Test
         void supportedCredentialTypes() {
-            assertEquals(Set.of(Credential.TYPE_OPENPGP_V4), factory.supportedCredentialTypes());
+            assertThat(factory.supportedCredentialTypes()).isEqualTo(Set.of(Credential.TYPE_OPENPGP_V4));
         }
 
         @Test
         void createVerifyOnlyDefaultExecutable() {
             SignatureTool tool = factory.createVerifyOnly(Map.of());
-            assertEquals("gpg", tool.name());
-            assertFalse(tool.canSign());
+            assertThat(tool.name()).isEqualTo("gpg");
+            assertThat(tool.canSign()).isFalse();
         }
 
         @Test
         void createVerifyOnlyCustomExecutable() {
             SignatureTool tool = factory.createVerifyOnly(Map.of("executable", "/usr/local/bin/gpg2"));
-            assertEquals("gpg", tool.name());
+            assertThat(tool.name()).isEqualTo("gpg");
         }
 
         @Test
         void createWithKeyNameSetting() {
             SignatureTool tool = factory.createSigning(null, Map.of("key-name", "user@example.com"));
-            assertTrue(tool.canSign());
+            assertThat(tool.canSign()).isTrue();
         }
 
         @Test
         void createWithCredentialFallback() {
             var cred = new FingerprintCredential(Credential.TYPE_OPENPGP_V4, "ABCD1234ABCD1234");
             SignatureTool tool = factory.createSigning(cred, Map.of());
-            assertTrue(tool.canSign());
+            assertThat(tool.canSign()).isTrue();
         }
 
         @Test
         void createNoKeyNameNoCredential() {
             SignatureTool tool = factory.createSigning(null, Map.of());
-            assertTrue(tool.canSign());
+            assertThat(tool.canSign()).isTrue();
         }
     }
 
@@ -69,27 +70,26 @@ class ToolFactoryTest {
 
         @Test
         void toolName() {
-            assertEquals("sq", factory.toolName());
+            assertThat(factory.toolName()).isEqualTo("sq");
         }
 
         @Test
         void supportedCredentialTypes() {
-            assertEquals(
-                    Set.of(Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6),
-                    factory.supportedCredentialTypes());
+            assertThat(factory.supportedCredentialTypes())
+                    .isEqualTo(Set.of(Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6));
         }
 
         @Test
         void createVerifyOnlyDefaultHome() {
             SignatureTool tool = factory.createVerifyOnly(Map.of("home", tempDir.toString()));
-            assertEquals("sq", tool.name());
-            assertFalse(tool.canSign());
+            assertThat(tool.name()).isEqualTo("sq");
+            assertThat(tool.canSign()).isFalse();
         }
 
         @Test
         void createVerifyOnlyCustomHome() {
             SignatureTool tool = factory.createVerifyOnly(Map.of("home", "/tmp/sq-home"));
-            assertEquals("sq", tool.name());
+            assertThat(tool.name()).isEqualTo("sq");
         }
 
         @Test
@@ -97,7 +97,7 @@ class ToolFactoryTest {
             SignatureTool tool = factory.createSigning(null, Map.of(
                     "home", tempDir.toString(),
                     "signing-fingerprint", "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"));
-            assertTrue(tool.canSign());
+            assertThat(tool.canSign()).isTrue();
         }
 
         @Test
@@ -105,19 +105,19 @@ class ToolFactoryTest {
             var cred = new FingerprintCredential(Credential.TYPE_OPENPGP_V6,
                     "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
             SignatureTool tool = factory.createSigning(cred, Map.of("home", tempDir.toString()));
-            assertTrue(tool.canSign());
+            assertThat(tool.canSign()).isTrue();
         }
 
         @Test
         void createNoFingerprintNoCredential() {
             SignatureTool tool = factory.createSigning(null, Map.of("home", tempDir.toString()));
-            assertFalse(tool.canSign());
+            assertThat(tool.canSign()).isFalse();
         }
 
         @Test
         void createCustomExecutable() {
             SignatureTool tool = factory.createSigning(null, Map.of("executable", "/opt/bin/sq"));
-            assertEquals("sq", tool.name());
+            assertThat(tool.name()).isEqualTo("sq");
         }
     }
 
@@ -128,21 +128,20 @@ class ToolFactoryTest {
 
         @Test
         void toolName() {
-            assertEquals("bc", factory.toolName());
+            assertThat(factory.toolName()).isEqualTo("bc");
         }
 
         @Test
         void supportedCredentialTypes() {
-            assertEquals(
-                    Set.of(Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6),
-                    factory.supportedCredentialTypes());
+            assertThat(factory.supportedCredentialTypes())
+                    .isEqualTo(Set.of(Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6));
         }
 
         @Test
         void createVerifyOnlyDefaultPaths() {
             SignatureTool tool = factory.createVerifyOnly(Map.of());
-            assertEquals("bc", tool.name());
-            assertFalse(tool.canSign());
+            assertThat(tool.name()).isEqualTo("bc");
+            assertThat(tool.canSign()).isFalse();
         }
 
         @Test
@@ -151,14 +150,14 @@ class ToolFactoryTest {
                     "gnupg-home", "/tmp/gnupg",
                     "cert-d-home", "/tmp/cert-d",
                     "bc-private-home", "/tmp/bc-private"));
-            assertEquals("bc", tool.name());
+            assertThat(tool.name()).isEqualTo("bc");
         }
 
         @Test
         void createWithFingerprintSetting() {
             SignatureTool tool = factory.createSigning(null, Map.of(
                     "signing-fingerprint", "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"));
-            assertTrue(tool.canSign());
+            assertThat(tool.canSign()).isTrue();
         }
 
         @Test
@@ -166,13 +165,13 @@ class ToolFactoryTest {
             var cred = new FingerprintCredential(Credential.TYPE_OPENPGP_V6,
                     "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
             SignatureTool tool = factory.createSigning(cred, Map.of());
-            assertTrue(tool.canSign());
+            assertThat(tool.canSign()).isTrue();
         }
 
         @Test
         void createNoFingerprintNoCredential() {
             SignatureTool tool = factory.createSigning(null, Map.of());
-            assertFalse(tool.canSign());
+            assertThat(tool.canSign()).isFalse();
         }
 
         @Test
@@ -180,7 +179,7 @@ class ToolFactoryTest {
             SignatureTool tool = factory.createSigning(null, Map.of(
                     "signing-fingerprint", "ABCD1234",
                     "tsk-file", "/tmp/key.tsk"));
-            assertTrue(tool.canSign());
+            assertThat(tool.canSign()).isTrue();
         }
     }
 
@@ -190,17 +189,17 @@ class ToolFactoryTest {
         @Test
         void addToolUnknownNameThrows() {
             var builder = Sigmund.builder();
-            var ex = assertThrows(SigmundException.class,
-                    () -> builder.addTool("nonexistent", Map.of()));
-            assertTrue(ex.getMessage().contains("Unknown tool"));
+            assertThatThrownBy(() -> builder.addTool("nonexistent", Map.of()))
+                    .isInstanceOf(SigmundException.class)
+                    .hasMessageContaining("Unknown tool");
         }
 
         @Test
         void addSigningToolUnknownNameThrows() {
             var builder = Sigmund.builder();
-            var ex = assertThrows(SigmundException.class,
-                    () -> builder.addSigningTool("nonexistent", Map.of()));
-            assertTrue(ex.getMessage().contains("Unknown tool"));
+            assertThatThrownBy(() -> builder.addSigningTool("nonexistent", Map.of()))
+                    .isInstanceOf(SigmundException.class)
+                    .hasMessageContaining("Unknown tool");
         }
     }
 }

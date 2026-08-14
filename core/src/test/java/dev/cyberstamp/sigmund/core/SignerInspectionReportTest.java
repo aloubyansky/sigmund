@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.util.List;
@@ -25,8 +25,7 @@ class SignerInspectionReportTest {
         var report = new SignerInspectionReport(
                 new FingerprintCredential("openpgp4", FP), List.of(r1, r2));
 
-        assertEquals(Set.of("Alice <a@b.com>", "Bob <b@b.com>"),
-                Set.copyOf(report.allUserIds()));
+        assertThat(Set.copyOf(report.allUserIds())).isEqualTo(Set.of("Alice <a@b.com>", "Bob <b@b.com>"));
     }
 
     @Test
@@ -38,8 +37,8 @@ class SignerInspectionReportTest {
         var report = new SignerInspectionReport(
                 new FingerprintCredential("openpgp4", FP), List.of(withUids, noUids));
 
-        assertEquals(1, report.sourcesWithNoUids().size());
-        assertEquals("server2", report.sourcesWithNoUids().get(0).sourceLabel());
+        assertThat(report.sourcesWithNoUids()).hasSize(1);
+        assertThat(report.sourcesWithNoUids().get(0).sourceLabel()).isEqualTo("server2");
     }
 
     @Test
@@ -50,17 +49,17 @@ class SignerInspectionReportTest {
         var report = new SignerInspectionReport(
                 new FingerprintCredential("openpgp4", FP), List.of(found, notFound));
 
-        assertEquals(1, report.sourcesWhereNotFound().size());
-        assertEquals(1, report.sourcesWithKey().size());
+        assertThat(report.sourcesWhereNotFound()).hasSize(1);
+        assertThat(report.sourcesWithKey()).hasSize(1);
     }
 
     @Test
     void emptyReportReturnsEmptyCollections() {
         var report = new SignerInspectionReport(
                 new FingerprintCredential("openpgp4", FP), List.of());
-        assertTrue(report.allUserIds().isEmpty());
-        assertTrue(report.sourcesWithNoUids().isEmpty());
-        assertTrue(report.sourcesWhereNotFound().isEmpty());
-        assertTrue(report.sourcesWithKey().isEmpty());
+        assertThat(report.allUserIds()).isEmpty();
+        assertThat(report.sourcesWithNoUids()).isEmpty();
+        assertThat(report.sourcesWhereNotFound()).isEmpty();
+        assertThat(report.sourcesWithKey()).isEmpty();
     }
 }

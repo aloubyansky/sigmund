@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -43,8 +43,8 @@ class BcGpgCrossToolTest {
                 "gpg", "--batch", "--passphrase", "", "--pinentry-mode", "loopback",
                 "--quick-gen-key", "--yes",
                 "GPG Test <gpg@test.example>", "ed25519", "sign", "0");
-        assertEquals(0, genResult.exitCode(),
-                "GPG key generation failed: " + genResult.stderr());
+        assertThat(genResult.exitCode())
+                .as("GPG key generation failed: " + genResult.stderr()).isEqualTo(0);
 
         Path artifact = tempDir.resolve("artifact.txt");
         Files.writeString(artifact, "cross-tool test GPG→BC ed25519");
@@ -52,7 +52,7 @@ class BcGpgCrossToolTest {
 
         GpgRunner gpgRunner = new GpgRunner("gpg", null, gpgHome.toString());
         gpgRunner.sign(artifact, sigFile);
-        assertTrue(Files.exists(sigFile));
+        assertThat(Files.exists(sigFile)).isTrue();
 
         String armoredPubKey = exportGpgKey(gpgHome, "gpg@test.example");
         BcKeyStore bcStore = createBcKeyStore(tempDir);
@@ -60,8 +60,8 @@ class BcGpgCrossToolTest {
 
         BcRunner bcRunner = new BcRunner(bcStore, null, null);
         VerifyResult result = verifyWithBc(bcRunner, artifact, sigFile);
-        assertEquals(Verdict.PASS, result.verdict(),
-                "BC verification of GPG Ed25519 signature failed");
+        assertThat(result.verdict())
+                .as("BC verification of GPG Ed25519 signature failed").isEqualTo(Verdict.PASS);
     }
 
     @Test
@@ -73,8 +73,8 @@ class BcGpgCrossToolTest {
                 "gpg", "--batch", "--passphrase", "", "--pinentry-mode", "loopback",
                 "--quick-gen-key", "--yes",
                 "GPG RSA <gpg-rsa@test.example>", "rsa4096", "sign", "0");
-        assertEquals(0, genResult.exitCode(),
-                "GPG key generation failed: " + genResult.stderr());
+        assertThat(genResult.exitCode())
+                .as("GPG key generation failed: " + genResult.stderr()).isEqualTo(0);
 
         Path artifact = tempDir.resolve("artifact.txt");
         Files.writeString(artifact, "cross-tool test GPG→BC rsa");
@@ -89,8 +89,8 @@ class BcGpgCrossToolTest {
 
         BcRunner bcRunner = new BcRunner(bcStore, null, null);
         VerifyResult result = verifyWithBc(bcRunner, artifact, sigFile);
-        assertEquals(Verdict.PASS, result.verdict(),
-                "BC verification of GPG RSA signature failed");
+        assertThat(result.verdict())
+                .as("BC verification of GPG RSA signature failed").isEqualTo(Verdict.PASS);
     }
 
     @Test
@@ -121,8 +121,8 @@ class BcGpgCrossToolTest {
         CliTool.Result importResult = CliTool.run(
                 Map.of("GNUPGHOME", gpgHome.toString()),
                 "gpg", "--batch", "--import", certFile.toString());
-        assertEquals(0, importResult.exitCode(),
-                "GPG import of BC v4 cert failed: " + importResult.stderr());
+        assertThat(importResult.exitCode())
+                .as("GPG import of BC v4 cert failed: " + importResult.stderr()).isEqualTo(0);
 
         Path artifact = tempDir.resolve("artifact.txt");
         Files.writeString(artifact, "cross-tool test BC→GPG " + cipherSuite);
@@ -132,8 +132,8 @@ class BcGpgCrossToolTest {
         CliTool.Result verifyResult = CliTool.run(
                 Map.of("GNUPGHOME", gpgHome.toString()),
                 "gpg", "--verify", sigFile.toString(), artifact.toString());
-        assertTrue(verifyResult.exitCode() == 0 || verifyResult.stderr().contains("Good signature"),
-                "GPG verification of BC " + cipherSuite + " signature failed: " + verifyResult.stderr());
+        assertThat(verifyResult.exitCode() == 0 || verifyResult.stderr().contains("Good signature"))
+                .as("GPG verification of BC " + cipherSuite + " signature failed: " + verifyResult.stderr()).isTrue();
     }
 
     /**
@@ -153,8 +153,8 @@ class BcGpgCrossToolTest {
         CliTool.Result exportResult = CliTool.run(
                 Map.of("GNUPGHOME", gpgHome.toString()),
                 "gpg", "--batch", "--armor", "--export", uid);
-        assertEquals(0, exportResult.exitCode(), "GPG export failed: " + exportResult.stderr());
-        assertFalse(exportResult.stdout().isEmpty(), "GPG exported empty public key");
+        assertThat(exportResult.exitCode()).as("GPG export failed: " + exportResult.stderr()).isEqualTo(0);
+        assertThat(exportResult.stdout().isEmpty()).as("GPG exported empty public key").isFalse();
         return exportResult.stdout();
     }
 
@@ -182,7 +182,7 @@ class BcGpgCrossToolTest {
     private VerifyResult verifyWithBc(BcRunner runner, Path artifact, Path sigFile) throws Exception {
         String armored = Files.readString(sigFile);
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
-        assertTrue(info.version() > 0, "Failed to parse signature packet");
+        assertThat(info.version() > 0).as("Failed to parse signature packet").isTrue();
 
         OpenPgpVerificationUnit unit = new OpenPgpVerificationUnit(
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());

@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.plugin;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
 import dev.cyberstamp.sigmund.core.UnverifiedResult;
@@ -21,13 +22,13 @@ class DependencySignersMojoTest {
                 "User <user@example.com>", "RSA", 4, "ABCD1234", "ABCD1234");
         SignedArtifact signer = new SignedArtifact(
                 "com.example:lib:1.0", "central", vr, null, null);
-        assertEquals("com.example:lib:1.0", signer.coordinates());
-        assertEquals("central", signer.repoId());
-        assertInstanceOf(OpenPgpVerifyResult.class, signer.verifyResult());
+        assertThat(signer.coordinates()).isEqualTo("com.example:lib:1.0");
+        assertThat(signer.repoId()).isEqualTo("central");
+        assertThat(signer.verifyResult()).isInstanceOf(OpenPgpVerifyResult.class);
         OpenPgpVerifyResult opvr = (OpenPgpVerifyResult) signer.verifyResult();
-        assertEquals(4, opvr.version());
-        assertEquals("ABCD1234", opvr.preferredKeyId());
-        assertEquals("User <user@example.com>", opvr.signerDisplayName());
+        assertThat(opvr.version()).isEqualTo(4);
+        assertThat(opvr.preferredKeyId()).isEqualTo("ABCD1234");
+        assertThat(opvr.signerDisplayName()).isEqualTo("User <user@example.com>");
     }
 
     @Test
@@ -37,18 +38,18 @@ class DependencySignersMojoTest {
         SignedArtifact signer = new SignedArtifact(
                 "com.example:lib:1.0", "central", vr, null, null);
         OpenPgpVerifyResult opvr = (OpenPgpVerifyResult) signer.verifyResult();
-        assertEquals(6, opvr.version());
-        assertNull(opvr.preferredKeyId());
-        assertEquals(Verdict.SKIPPED, signer.verdict());
+        assertThat(opvr.version()).isEqualTo(6);
+        assertThat(opvr.preferredKeyId()).isNull();
+        assertThat(signer.verdict()).isEqualTo(Verdict.SKIPPED);
     }
 
     @Test
     void signedArtifactNoSignature() {
         SignedArtifact signer = new SignedArtifact(
                 "com.example:lib:1.0", null, Verdict.SKIPPED);
-        assertNull(signer.repoId());
-        assertInstanceOf(UnverifiedResult.class, signer.verifyResult());
-        assertEquals(Verdict.SKIPPED, signer.verdict());
+        assertThat(signer.repoId()).isNull();
+        assertThat(signer.verifyResult()).isInstanceOf(UnverifiedResult.class);
+        assertThat(signer.verdict()).isEqualTo(Verdict.SKIPPED);
     }
 
     // --- ArtifactCoords.toString tests ---
@@ -56,28 +57,28 @@ class DependencySignersMojoTest {
     @Test
     void artifactCoordsSimpleJar() {
         ArtifactCoords coords = createArtifact("com.example", "lib", "1.0");
-        assertEquals("com.example:lib:1.0", coords.toString());
+        assertThat(coords.toString()).isEqualTo("com.example:lib:1.0");
     }
 
     @Test
     void artifactCoordsWithClassifier() {
         ArtifactCoords coords = new ArtifactCoords(
                 "com.example", "lib", "sources", "jar", "1.0");
-        assertEquals("com.example:lib:jar:sources:1.0", coords.toString());
+        assertThat(coords.toString()).isEqualTo("com.example:lib:jar:sources:1.0");
     }
 
     @Test
     void artifactCoordsNonJarType() {
         ArtifactCoords coords = new ArtifactCoords(
                 "com.example", "lib", "", "pom", "1.0");
-        assertEquals("com.example:lib:pom:1.0", coords.toString());
+        assertThat(coords.toString()).isEqualTo("com.example:lib:pom:1.0");
     }
 
     @Test
     void artifactCoordsNonJarTypeWithClassifier() {
         ArtifactCoords coords = new ArtifactCoords(
                 "com.example", "lib", "dist", "zip", "1.0");
-        assertEquals("com.example:lib:zip:dist:1.0", coords.toString());
+        assertThat(coords.toString()).isEqualTo("com.example:lib:zip:dist:1.0");
     }
 
     @Nested
@@ -87,28 +88,28 @@ class DependencySignersMojoTest {
 
         @Test
         void normalUidProducesKebabCaseId() {
-            assertEquals("john-smith",
-                    mojo.generateSignerId("John Smith <john@example.com>", 1));
+            assertThat(mojo.generateSignerId("John Smith <john@example.com>", 1))
+                    .isEqualTo("john-smith");
         }
 
         @Test
         void uidWithoutEmailBrackets() {
-            assertEquals("jane-doe", mojo.generateSignerId("Jane Doe", 1));
+            assertThat(mojo.generateSignerId("Jane Doe", 1)).isEqualTo("jane-doe");
         }
 
         @Test
         void emptyNameFallsBackToCounter() {
-            assertEquals("signer-1", mojo.generateSignerId(" <user@example.com>", 1));
+            assertThat(mojo.generateSignerId(" <user@example.com>", 1)).isEqualTo("signer-1");
         }
 
         @Test
         void specialCharsOnlyFallsBackToCounter() {
-            assertEquals("signer-2", mojo.generateSignerId("... <user@example.com>", 2));
+            assertThat(mojo.generateSignerId("... <user@example.com>", 2)).isEqualTo("signer-2");
         }
 
         @Test
         void nullUidFallsBackToCounter() {
-            assertEquals("signer-3", mojo.generateSignerId(null, 3));
+            assertThat(mojo.generateSignerId(null, 3)).isEqualTo("signer-3");
         }
 
         @Test
@@ -124,8 +125,8 @@ class DependencySignersMojoTest {
             existingSigners.put("KEY1", info1);
 
             String id2 = mojo.resolveUniqueSignerId(vr2, 2, existingSigners, Set.of());
-            assertEquals("john-smith", info1.id);
-            assertEquals("john-smith-2", id2);
+            assertThat(info1.id).isEqualTo("john-smith");
+            assertThat(id2).isEqualTo("john-smith-2");
         }
 
         @Test
@@ -133,7 +134,7 @@ class DependencySignersMojoTest {
             VerifyResult vr = new OpenPgpVerifyResult(Verdict.PASS,
                     "Alice <alice@example.com>", "RSA", 4, "KEY1", "KEY1");
             String id = mojo.resolveUniqueSignerId(vr, 1, new LinkedHashMap<>(), Set.of("alice"));
-            assertEquals("alice-2", id);
+            assertThat(id).isEqualTo("alice-2");
         }
     }
 
@@ -145,8 +146,8 @@ class DependencySignersMojoTest {
             VerifyResult vr = new OpenPgpVerifyResult(Verdict.PASS,
                     "User <user@example.com>", "RSA", 4, null, "FP4");
             var info = new DependencySignersMojo.SignerInfo("test", vr);
-            assertEquals("FP4", info.pgp4Key);
-            assertNull(info.pgp6Key);
+            assertThat(info.pgp4Key).isEqualTo("FP4");
+            assertThat(info.pgp6Key).isNull();
         }
 
         @Test
@@ -154,8 +155,8 @@ class DependencySignersMojoTest {
             VerifyResult vr = new OpenPgpVerifyResult(Verdict.PASS,
                     "User <user@example.com>", "ML-DSA-87+Ed448", 6, null, "FP6");
             var info = new DependencySignersMojo.SignerInfo("test", vr);
-            assertNull(info.pgp4Key);
-            assertEquals("FP6", info.pgp6Key);
+            assertThat(info.pgp4Key).isNull();
+            assertThat(info.pgp6Key).isEqualTo("FP6");
         }
 
         @Test
@@ -166,9 +167,9 @@ class DependencySignersMojoTest {
                     null, "ML-DSA-87+Ed448", 6, null, "FP6");
             var info = new DependencySignersMojo.SignerInfo("test", vr4);
             info.merge(vr6);
-            assertEquals("FP4", info.pgp4Key);
-            assertEquals("FP6", info.pgp6Key);
-            assertEquals("user@example.com", info.email);
+            assertThat(info.pgp4Key).isEqualTo("FP4");
+            assertThat(info.pgp6Key).isEqualTo("FP6");
+            assertThat(info.email).isEqualTo("user@example.com");
         }
     }
 
@@ -177,15 +178,15 @@ class DependencySignersMojoTest {
 
         @Test
         void unverifiedWithPassThrows() {
-            assertThrows(IllegalArgumentException.class,
-                    () -> new SignedArtifact("coords", null, Verdict.PASS));
+            assertThatThrownBy(() -> new SignedArtifact("coords", null, Verdict.PASS))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
         void unverifiedWithFail() {
             var sa = new SignedArtifact("coords", "repo", Verdict.FAIL);
-            assertEquals(Verdict.FAIL, sa.verdict());
-            assertInstanceOf(dev.cyberstamp.sigmund.core.UnverifiedResult.class, sa.verifyResult());
+            assertThat(sa.verdict()).isEqualTo(Verdict.FAIL);
+            assertThat(sa.verifyResult()).isInstanceOf(dev.cyberstamp.sigmund.core.UnverifiedResult.class);
         }
     }
 

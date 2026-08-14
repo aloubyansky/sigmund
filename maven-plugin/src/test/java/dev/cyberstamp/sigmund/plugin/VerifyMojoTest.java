@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.plugin;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,16 +25,16 @@ class VerifyMojoTest {
 
             mojo.addPomArtifacts(artifacts);
 
-            assertEquals(4, artifacts.size());
+            assertThat(artifacts.size()).isEqualTo(4);
             ArtifactCoords pomA = artifacts.get(2);
-            assertEquals("com.example", pomA.groupId());
-            assertEquals("lib-a", pomA.artifactId());
-            assertEquals("pom", pomA.type());
-            assertEquals("1.0", pomA.version());
+            assertThat(pomA.groupId()).isEqualTo("com.example");
+            assertThat(pomA.artifactId()).isEqualTo("lib-a");
+            assertThat(pomA.type()).isEqualTo("pom");
+            assertThat(pomA.version()).isEqualTo("1.0");
 
             ArtifactCoords pomB = artifacts.get(3);
-            assertEquals("lib-b", pomB.artifactId());
-            assertEquals("pom", pomB.type());
+            assertThat(pomB.artifactId()).isEqualTo("lib-b");
+            assertThat(pomB.type()).isEqualTo("pom");
         }
 
         @Test
@@ -46,8 +46,8 @@ class VerifyMojoTest {
 
             mojo.addPomArtifacts(artifacts);
 
-            assertEquals(3, artifacts.size());
-            assertEquals("pom", artifacts.get(2).type());
+            assertThat(artifacts.size()).isEqualTo(3);
+            assertThat(artifacts.get(2).type()).isEqualTo("pom");
         }
 
         @Test
@@ -59,7 +59,7 @@ class VerifyMojoTest {
 
             mojo.addPomArtifacts(artifacts);
 
-            assertEquals(1, artifacts.size());
+            assertThat(artifacts.size()).isEqualTo(1);
         }
     }
 }

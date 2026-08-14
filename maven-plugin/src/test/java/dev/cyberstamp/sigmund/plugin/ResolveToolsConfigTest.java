@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.plugin;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import java.util.List;
@@ -23,40 +23,40 @@ class ResolveToolsConfigTest {
         void defaultsToFileConfig() {
             var fileConfig = new DiscoveryConfig(false, false, List.of(), null);
             var result = resolve(fileConfig, null, null, null);
-            assertFalse(result.resolveSigners());
+            assertThat(result.resolveSigners()).isFalse();
         }
 
         @Test
         void defaultsToTrueFromDefaultConfig() {
             var result = resolve(DiscoveryConfig.DEFAULT, null, null, null);
-            assertTrue(result.resolveSigners());
+            assertThat(result.resolveSigners()).isTrue();
         }
 
         @Test
         void explicitTrueOverridesFileConfig() {
             var fileConfig = new DiscoveryConfig(false, false, List.of(), null);
             var result = resolve(fileConfig, true, null, null);
-            assertTrue(result.resolveSigners());
+            assertThat(result.resolveSigners()).isTrue();
         }
 
         @Test
         void explicitFalseOverridesFileConfig() {
             var result = resolve(DiscoveryConfig.DEFAULT, false, null, null);
-            assertFalse(result.resolveSigners());
+            assertThat(result.resolveSigners()).isFalse();
         }
 
         @Test
         void impliedTrueWhenKeyserversProvided() {
             var fileConfig = new DiscoveryConfig(false, false, List.of(), null);
             var result = resolve(fileConfig, null, "hkps://keys.openpgp.org", null);
-            assertTrue(result.resolveSigners());
+            assertThat(result.resolveSigners()).isTrue();
         }
 
         @Test
         void explicitFalseOverridesKeyserversImplication() {
             var fileConfig = new DiscoveryConfig(false, false, List.of(), null);
             var result = resolve(fileConfig, false, "hkps://keys.openpgp.org", null);
-            assertFalse(result.resolveSigners());
+            assertThat(result.resolveSigners()).isFalse();
         }
     }
 
@@ -68,38 +68,39 @@ class ResolveToolsConfigTest {
             var fileConfig = new DiscoveryConfig(true, false,
                     List.of("hkps://custom.example.com"), null);
             var result = resolve(fileConfig, null, null, null);
-            assertEquals(List.of("hkps://custom.example.com"), result.keyservers());
+            assertThat(result.keyservers()).isEqualTo(List.of("hkps://custom.example.com"));
         }
 
         @Test
         void explicitKeyserversOverrideFileConfig() {
             var result = resolve(DiscoveryConfig.DEFAULT, null,
                     "hkps://keyserver.ubuntu.com,hkps://pgp.mit.edu", null);
-            assertEquals(List.of("hkps://keyserver.ubuntu.com", "hkps://pgp.mit.edu"),
-                    result.keyservers());
+            assertThat(result.keyservers()).isEqualTo(
+                    List.of("hkps://keyserver.ubuntu.com", "hkps://pgp.mit.edu"));
         }
 
         @Test
         void defaultKeyserverUsedWhenResolveEnabledAndEmpty() {
             var fileConfig = new DiscoveryConfig(true, false, List.of(), null);
             var result = resolve(fileConfig, null, null, null);
-            assertEquals(List.of(DiscoveryConfig.DEFAULT_KEYSERVER), result.keyservers());
+            assertThat(result.keyservers()).isEqualTo(List.of(DiscoveryConfig.DEFAULT_KEYSERVER));
         }
 
         @Test
         void defaultKeyserverAlwaysPresentEvenWhenResolveFalse() {
             var fileConfig = new DiscoveryConfig(false, false, List.of(), null);
             var result = resolve(fileConfig, null, null, null);
-            assertFalse(result.resolveSigners());
-            assertEquals(List.of(DiscoveryConfig.DEFAULT_KEYSERVER), result.keyservers());
+            assertThat(result.resolveSigners()).isFalse();
+            assertThat(result.keyservers()).isEqualTo(List.of(DiscoveryConfig.DEFAULT_KEYSERVER));
         }
 
         @Test
         void parsesCommaSeparatedList() {
             var result = resolve(DiscoveryConfig.DEFAULT, null,
                     "hkps://a.example.com, hkps://b.example.com , hkps://c.example.com", null);
-            assertEquals(List.of("hkps://a.example.com", "hkps://b.example.com",
-                    "hkps://c.example.com"), result.keyservers());
+            assertThat(result.keyservers()).isEqualTo(
+                    List.of("hkps://a.example.com", "hkps://b.example.com",
+                            "hkps://c.example.com"));
         }
     }
 
@@ -112,8 +113,8 @@ class ResolveToolsConfigTest {
             try {
                 System.setProperty("sigmund.keyserver", "hkps://keyserver.ubuntu.com");
                 var result = resolve(DiscoveryConfig.DEFAULT, null, null, null);
-                assertEquals(List.of("hkps://keyserver.ubuntu.com"), result.keyservers());
-                assertTrue(result.resolveSigners());
+                assertThat(result.keyservers()).isEqualTo(List.of("hkps://keyserver.ubuntu.com"));
+                assertThat(result.resolveSigners()).isTrue();
             } finally {
                 if (old != null) {
                     System.setProperty("sigmund.keyserver", old);
@@ -130,7 +131,7 @@ class ResolveToolsConfigTest {
                 System.setProperty("sigmund.keyserver", "hkps://keyserver.ubuntu.com");
                 var result = resolve(DiscoveryConfig.DEFAULT, null,
                         "hkps://keys.openpgp.org", null);
-                assertEquals(List.of("hkps://keys.openpgp.org"), result.keyservers());
+                assertThat(result.keyservers()).isEqualTo(List.of("hkps://keys.openpgp.org"));
             } finally {
                 if (old != null) {
                     System.setProperty("sigmund.keyserver", old);
@@ -146,7 +147,8 @@ class ResolveToolsConfigTest {
             try {
                 System.clearProperty("sigmund.keyserver");
                 var result = resolve(DiscoveryConfig.DEFAULT, null, null, null);
-                assertEquals(List.of(DiscoveryConfig.DEFAULT_KEYSERVER), result.keyservers());
+                assertThat(result.keyservers()).isEqualTo(
+                        List.of(DiscoveryConfig.DEFAULT_KEYSERVER));
             } finally {
                 if (old != null) {
                     System.setProperty("sigmund.keyserver", old);

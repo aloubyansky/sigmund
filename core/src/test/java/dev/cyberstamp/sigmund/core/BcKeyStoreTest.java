@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,7 +29,7 @@ class BcKeyStoreTest {
 
         String fingerprint = BcKeyStore.bytesToHex(key.getFingerprint());
         PGPPublicKeyRing found = store.findPublicKey(fingerprint);
-        assertNotNull(found);
+        assertThat(found).isNotNull();
     }
 
     @Test
@@ -38,7 +38,7 @@ class BcKeyStoreTest {
         Path bcPrivate = tempDir.resolve("bc-private");
         BcKeyStore store = new BcKeyStore(null, certD, bcPrivate);
 
-        assertNull(store.findPublicKey("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
+        assertThat(store.findPublicKey("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")).isNull();
     }
 
     @Test
@@ -52,7 +52,7 @@ class BcKeyStoreTest {
         store.storeSecretKey(secretRing);
 
         String fingerprint = BcKeyStore.bytesToHex(key.getFingerprint());
-        assertNotNull(store.findSecretKey(fingerprint));
+        assertThat(store.findSecretKey(fingerprint)).isNotNull();
     }
 
     @Test
@@ -67,8 +67,8 @@ class BcKeyStoreTest {
 
         String fingerprint = BcKeyStore.bytesToHex(key.getFingerprint());
         String uid = store.findPrimaryUserId(fingerprint);
-        assertNotNull(uid);
-        assertTrue(uid.contains("alice@example.com"));
+        assertThat(uid).isNotNull();
+        assertThat(uid.contains("alice@example.com")).isTrue();
     }
 
     /**
@@ -85,7 +85,7 @@ class BcKeyStoreTest {
         store.cacheEphemeral(pubRing);
 
         String fingerprint = BcKeyStore.bytesToHex(key.getFingerprint());
-        assertNotNull(store.findPublicKey(fingerprint));
+        assertThat(store.findPublicKey(fingerprint)).isNotNull();
     }
 
     /**
@@ -101,7 +101,7 @@ class BcKeyStoreTest {
         PGPPublicKeyRing pubRing = key.toCertificate().getPGPPublicKeyRing();
         store.cacheEphemeral(pubRing);
 
-        assertFalse(Files.exists(certD), "cert-d directory should not be created for ephemeral keys");
+        assertThat(Files.exists(certD)).as("cert-d directory should not be created for ephemeral keys").isFalse();
     }
 
     @Test
@@ -116,10 +116,10 @@ class BcKeyStoreTest {
 
         String fp = BcKeyStore.bytesToHex(key.getFingerprint()).toLowerCase();
         Path keyFile = bcPrivate.resolve(fp.substring(0, 2)).resolve(fp.substring(2));
-        assertTrue(Files.exists(keyFile));
+        assertThat(Files.exists(keyFile)).isTrue();
 
         Set<PosixFilePermission> perms = Files.getPosixFilePermissions(keyFile);
-        assertEquals(Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE), perms);
+        assertThat(perms).isEqualTo(Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
     }
 
     @Test
@@ -134,12 +134,12 @@ class BcKeyStoreTest {
 
         String fp = BcKeyStore.bytesToHex(key.getFingerprint()).toLowerCase();
         Path certFile = certD.resolve(fp.substring(0, 2)).resolve(fp.substring(2));
-        assertTrue(Files.exists(certFile));
+        assertThat(Files.exists(certFile)).isTrue();
 
         Set<PosixFilePermission> perms = Files.getPosixFilePermissions(certFile);
-        assertTrue(perms.contains(PosixFilePermission.OWNER_READ));
+        assertThat(perms.contains(PosixFilePermission.OWNER_READ)).isTrue();
         // cert files should keep default permissions (not restricted to owner-only)
-        assertTrue(perms.size() > 2, "Cert file should have broader permissions than owner-only");
+        assertThat(perms.size() > 2).as("Cert file should have broader permissions than owner-only").isTrue();
     }
 
     // Helper: Generate Ed25519 key using BC 1.85's high-level API

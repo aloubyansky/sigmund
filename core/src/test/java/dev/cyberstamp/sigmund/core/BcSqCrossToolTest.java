@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -47,8 +47,8 @@ class BcSqCrossToolTest {
 
         BcRunner bcRunner = new BcRunner(bcStore, null, null);
         VerifyResult result = verifyWithBc(bcRunner, artifact, sigFile);
-        assertEquals(Verdict.PASS, result.verdict(),
-                "BC verification of SQ Ed25519 signature failed");
+        assertThat(result.verdict())
+                .as("BC verification of SQ Ed25519 signature failed").isEqualTo(Verdict.PASS);
     }
 
     @Test
@@ -70,7 +70,7 @@ class BcSqCrossToolTest {
 
         SqRunner sq = new SqRunner("sq", sqHome);
         Path certFile = sq.findCertFile(bcFp);
-        assertNotNull(certFile, "SQ did not find the imported BC cert");
+        assertThat(certFile).as("SQ did not find the imported BC cert").isNotNull();
 
         // Debug: try sq verify directly and capture stderr
         CliTool.Result sqVerifyResult = CliTool.run(
@@ -79,8 +79,8 @@ class BcSqCrossToolTest {
                 "--signer-file", certFile.toString(),
                 "--signature-file", sigFile.toString(),
                 artifact.toString());
-        assertEquals(0, sqVerifyResult.exitCode(),
-                "SQ verification of BC Ed25519 signature failed: " + sqVerifyResult.stderr());
+        assertThat(sqVerifyResult.exitCode())
+                .as("SQ verification of BC Ed25519 signature failed: " + sqVerifyResult.stderr()).isEqualTo(0);
     }
 
     /**
@@ -110,8 +110,8 @@ class BcSqCrossToolTest {
         CliTool.Result result = CliTool.run(
                 Map.of("SEQUOIA_HOME", sqHome.toString()),
                 "sq", "--overwrite", "cert", "import", certFile.toString());
-        assertEquals(0, result.exitCode(),
-                "SQ cert import failed: " + result.stderr());
+        assertThat(result.exitCode())
+                .as("SQ cert import failed: " + result.stderr()).isEqualTo(0);
     }
 
     /**
@@ -120,7 +120,7 @@ class BcSqCrossToolTest {
     private VerifyResult verifyWithBc(BcRunner runner, Path artifact, Path sigFile) throws Exception {
         String armored = Files.readString(sigFile);
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
-        assertTrue(info.version() > 0, "Failed to parse signature packet");
+        assertThat(info.version() > 0).as("Failed to parse signature packet").isTrue();
 
         OpenPgpVerificationUnit unit = new OpenPgpVerificationUnit(
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());

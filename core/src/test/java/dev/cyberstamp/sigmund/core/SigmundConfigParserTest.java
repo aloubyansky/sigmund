@@ -1,12 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.StringReader;
 import java.util.List;
@@ -29,11 +24,11 @@ class SigmundConfigParserTest {
                       bob: "bob@example.com"
                     """);
             var bob = config.signers().get("bob");
-            assertNotNull(bob);
-            assertEquals("bob", bob.displayName());
-            assertEquals(1, bob.credentials().size());
-            assertInstanceOf(EmailCredential.class, bob.credentials().get(0));
-            assertEquals("bob@example.com", ((EmailCredential) bob.credentials().get(0)).email());
+            assertThat(bob).isNotNull();
+            assertThat(bob.displayName()).isEqualTo("bob");
+            assertThat(bob.credentials().size()).isEqualTo(1);
+            assertThat(bob.credentials().get(0)).isInstanceOf(EmailCredential.class);
+            assertThat(((EmailCredential) bob.credentials().get(0)).email()).isEqualTo("bob@example.com");
         }
 
         @Test
@@ -47,13 +42,13 @@ class SigmundConfigParserTest {
                         openpgp6: "ABCD1234ABCD1234"
                     """);
             var alice = config.signers().get("alice");
-            assertEquals("Alice", alice.displayName());
-            assertEquals(3, alice.credentials().size());
+            assertThat(alice.displayName()).isEqualTo("Alice");
+            assertThat(alice.credentials().size()).isEqualTo(3);
 
             var types = alice.credentials().stream().map(Credential::type).toList();
-            assertTrue(types.contains("openpgp4"));
-            assertTrue(types.contains("openpgp6"));
-            assertTrue(types.contains("email"));
+            assertThat(types.contains("openpgp4")).isTrue();
+            assertThat(types.contains("openpgp6")).isTrue();
+            assertThat(types.contains("email")).isTrue();
         }
 
         @Test
@@ -67,12 +62,13 @@ class SigmundConfigParserTest {
                           source-repository-uri: "https://github.com/org/repo"
                     """);
             var ci = config.signers().get("ci-pipeline");
-            assertEquals("CI Pipeline", ci.displayName());
-            assertEquals(1, ci.credentials().size());
-            var sc = assertInstanceOf(SigstoreCredential.class, ci.credentials().get(0));
-            assertEquals("https://token.actions.githubusercontent.com", sc.issuer());
-            assertEquals("https://github.com/org/repo", sc.sourceRepositoryUri());
-            assertNull(sc.subject());
+            assertThat(ci.displayName()).isEqualTo("CI Pipeline");
+            assertThat(ci.credentials().size()).isEqualTo(1);
+            assertThat(ci.credentials().get(0)).isInstanceOf(SigstoreCredential.class);
+            var sc = (SigstoreCredential) ci.credentials().get(0);
+            assertThat(sc.issuer()).isEqualTo("https://token.actions.githubusercontent.com");
+            assertThat(sc.sourceRepositoryUri()).isEqualTo("https://github.com/org/repo");
+            assertThat(sc.subject()).isNull();
         }
 
         @Test
@@ -85,22 +81,23 @@ class SigmundConfigParserTest {
                           subject: "https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0"
                     """);
             var ci = config.signers().get("ci-pipeline");
-            var sc = assertInstanceOf(SigstoreCredential.class, ci.credentials().get(0));
-            assertEquals("https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0",
-                    sc.subject());
+            assertThat(ci.credentials().get(0)).isInstanceOf(SigstoreCredential.class);
+            var sc = (SigstoreCredential) ci.credentials().get(0);
+            assertThat(sc.subject()).isEqualTo(
+                    "https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0");
         }
 
         @Test
         void sigstoreUnknownFieldThrows() {
-            var ex = assertThrows(PolicyConfigException.class, () -> parse("""
+            assertThatThrownBy(() -> parse("""
                     signers:
                       ci-pipeline:
                         sigstore:
                           issuer: "https://token.actions.githubusercontent.com"
                           oidc-subject: "https://github.com/org/repo"
-                    """));
-            assertTrue(ex.getMessage().contains("oidc-subject"),
-                    "Error should name the unknown field: " + ex.getMessage());
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("oidc-subject");
         }
 
         @Test
@@ -116,13 +113,14 @@ class SigmundConfigParserTest {
                           runner-environment: "github-hosted"
                     """);
             var ci = config.signers().get("ci-pipeline");
-            var sc = assertInstanceOf(SigstoreCredential.class, ci.credentials().get(0));
-            assertEquals("https://token.actions.githubusercontent.com", sc.issuer());
-            assertEquals("https://github.com/org/repo", sc.sourceRepositoryUri());
-            assertEquals("release", sc.buildTrigger());
-            assertEquals("https://github.com/org/repo/.github/workflows/release.yml@refs/heads/main",
-                    sc.buildConfigUri());
-            assertEquals("github-hosted", sc.runnerEnvironment());
+            assertThat(ci.credentials().get(0)).isInstanceOf(SigstoreCredential.class);
+            var sc = (SigstoreCredential) ci.credentials().get(0);
+            assertThat(sc.issuer()).isEqualTo("https://token.actions.githubusercontent.com");
+            assertThat(sc.sourceRepositoryUri()).isEqualTo("https://github.com/org/repo");
+            assertThat(sc.buildTrigger()).isEqualTo("release");
+            assertThat(sc.buildConfigUri()).isEqualTo(
+                    "https://github.com/org/repo/.github/workflows/release.yml@refs/heads/main");
+            assertThat(sc.runnerEnvironment()).isEqualTo("github-hosted");
         }
 
         @Test
@@ -133,8 +131,9 @@ class SigmundConfigParserTest {
                         pgp4: "4AEE18F83AFDEB23"
                     """);
             var alice = config.signers().get("alice");
-            var fp = assertInstanceOf(FingerprintCredential.class, alice.credentials().get(0));
-            assertEquals("openpgp4", fp.type());
+            assertThat(alice.credentials().get(0)).isInstanceOf(FingerprintCredential.class);
+            var fp = (FingerprintCredential) alice.credentials().get(0);
+            assertThat(fp.type()).isEqualTo("openpgp4");
         }
 
         @Test
@@ -144,9 +143,10 @@ class SigmundConfigParserTest {
                       alice:
                         pgp6: "ABCD1234ABCD1234"
                     """);
-            var fp = assertInstanceOf(FingerprintCredential.class,
-                    config.signers().get("alice").credentials().get(0));
-            assertEquals("openpgp6", fp.type());
+            assertThat(config.signers().get("alice").credentials().get(0))
+                    .isInstanceOf(FingerprintCredential.class);
+            var fp = (FingerprintCredential) config.signers().get("alice").credentials().get(0);
+            assertThat(fp.type()).isEqualTo("openpgp6");
         }
 
         @Test
@@ -159,9 +159,10 @@ class SigmundConfigParserTest {
                         pgp4: "4AEE18F83AFDEB23"
                     """);
             var alice = config.signers().get("alice");
-            assertEquals("Alice", alice.displayName());
-            assertTrue(alice.credentials().stream()
-                    .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("alice@example.com")));
+            assertThat(alice.displayName()).isEqualTo("Alice");
+            assertThat(alice.credentials().stream()
+                    .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("alice@example.com")))
+                    .isTrue();
         }
 
         @Test
@@ -176,19 +177,20 @@ class SigmundConfigParserTest {
                           - openpgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
                     """);
             var apache = config.signers().get("apache");
-            assertEquals("Apache Software Foundation", apache.displayName());
-            assertEquals(3, apache.credentials().size());
+            assertThat(apache.displayName()).isEqualTo("Apache Software Foundation");
+            assertThat(apache.credentials().size()).isEqualTo(3);
 
             var fps = apache.credentials().stream()
                     .filter(c -> c instanceof FingerprintCredential)
                     .map(c -> ((FingerprintCredential) c).fingerprint())
                     .toList();
-            assertEquals(2, fps.size());
-            assertTrue(fps.contains("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"));
-            assertTrue(fps.contains("BBE7232D7991050B54C8EA0ADC08637CA615D22C"));
+            assertThat(fps.size()).isEqualTo(2);
+            assertThat(fps.contains("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12")).isTrue();
+            assertThat(fps.contains("BBE7232D7991050B54C8EA0ADC08637CA615D22C")).isTrue();
 
-            assertTrue(apache.credentials().stream()
-                    .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("dev@maven.apache.org")));
+            assertThat(apache.credentials().stream()
+                    .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("dev@maven.apache.org")))
+                    .isTrue();
         }
 
         @Test
@@ -203,12 +205,12 @@ class SigmundConfigParserTest {
                             email: "alice@example.com"
                     """);
             var team = config.signers().get("team");
-            assertEquals(3, team.credentials().size());
+            assertThat(team.credentials().size()).isEqualTo(3);
 
             var types = team.credentials().stream().map(Credential::type).toList();
-            assertTrue(types.contains("openpgp4"));
-            assertTrue(types.contains("openpgp6"));
-            assertTrue(types.contains("email"));
+            assertThat(types.contains("openpgp4")).isTrue();
+            assertThat(types.contains("openpgp6")).isTrue();
+            assertThat(types.contains("email")).isTrue();
         }
 
         @Test
@@ -222,27 +224,30 @@ class SigmundConfigParserTest {
                           - openpgp4: "CCCC3333CCCC3333"
                     """);
             var org = config.signers().get("org");
-            assertEquals(2, org.credentials().size());
-            assertTrue(org.credentials().stream()
-                    .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("org@example.com")));
-            assertTrue(org.credentials().stream()
+            assertThat(org.credentials().size()).isEqualTo(2);
+            assertThat(org.credentials().stream()
+                    .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("org@example.com")))
+                    .isTrue();
+            assertThat(org.credentials().stream()
                     .anyMatch(c -> c instanceof FingerprintCredential fc
-                            && fc.fingerprint().equals("CCCC3333CCCC3333")));
+                            && fc.fingerprint().equals("CCCC3333CCCC3333")))
+                    .isTrue();
         }
 
         @Test
         void emptyMembersWithNoTopLevelCredentialsThrows() {
-            assertThrows(PolicyConfigException.class, () -> parse("""
+            assertThatThrownBy(() -> parse("""
                     signers:
                       empty-org:
                         name: "Empty Org"
                         members: []
-                    """));
+                    """))
+                    .isInstanceOf(PolicyConfigException.class);
         }
 
         @Test
         void nestedMembersThrows() {
-            assertThrows(PolicyConfigException.class, () -> parse("""
+            assertThatThrownBy(() -> parse("""
                     signers:
                       bad-org:
                         name: "Bad Org"
@@ -250,17 +255,19 @@ class SigmundConfigParserTest {
                           - openpgp4: "AAAA1111AAAA1111"
                             members:
                               - openpgp4: "BBBB2222BBBB2222"
-                    """));
+                    """))
+                    .isInstanceOf(PolicyConfigException.class);
         }
 
         @Test
         void membersNotArrayThrows() {
-            assertThrows(PolicyConfigException.class, () -> parse("""
+            assertThatThrownBy(() -> parse("""
                     signers:
                       bad-org:
                         name: "Bad Org"
                         members: "not-an-array"
-                    """));
+                    """))
+                    .isInstanceOf(PolicyConfigException.class);
         }
     }
 
@@ -282,13 +289,16 @@ class SigmundConfigParserTest {
             SigmundConfig config = SigmundConfigParser.parse("<test>", new StringReader(yaml));
             TrustPolicy policy = config.trustPolicy();
             // "apache-stack" should be expanded into its two patterns
-            assertFalse(policy.expectedSigners(
-                    artifact("org.apache.maven.plugins", "maven-compiler-plugin", "3.13.0")).isEmpty());
-            assertFalse(policy.expectedSigners(
-                    artifact("org.apache.commons", "commons-lang3", "3.14")).isEmpty());
+            assertThat(policy.expectedSigners(
+                    artifact("org.apache.maven.plugins", "maven-compiler-plugin", "3.13.0")).isEmpty())
+                    .isFalse();
+            assertThat(policy.expectedSigners(
+                    artifact("org.apache.commons", "commons-lang3", "3.14")).isEmpty())
+                    .isFalse();
             // A non-matching artifact should have no signers
-            assertTrue(policy.expectedSigners(
-                    artifact("com.example", "lib", "1.0")).isEmpty());
+            assertThat(policy.expectedSigners(
+                    artifact("com.example", "lib", "1.0")).isEmpty())
+                    .isTrue();
         }
 
         @Test
@@ -302,8 +312,8 @@ class SigmundConfigParserTest {
                     """);
             var artifact = artifact("org.example", "lib", "1.0");
             var expected = config.trustPolicy().expectedSigners(artifact);
-            assertEquals(1, expected.size());
-            assertEquals("alice", expected.get(0).id());
+            assertThat(expected.size()).isEqualTo(1);
+            assertThat(expected.get(0).id()).isEqualTo("alice");
         }
 
         @Test
@@ -315,16 +325,17 @@ class SigmundConfigParserTest {
                       "org.example:lib": bob
                     """);
             var expected = config.trustPolicy().expectedSigners(artifact("org.example", "lib", "1.0"));
-            assertEquals(1, expected.size());
-            assertEquals("bob", expected.get(0).id());
+            assertThat(expected.size()).isEqualTo(1);
+            assertThat(expected.get(0).id()).isEqualTo("bob");
         }
 
         @Test
         void trustMappingsUndefinedSignerThrows() {
-            assertThrows(PolicyConfigException.class, () -> parse("""
+            assertThatThrownBy(() -> parse("""
                     trust:
                       "org.example:*": [nonexistent]
-                    """));
+                    """))
+                    .isInstanceOf(PolicyConfigException.class);
         }
 
         @Test
@@ -341,17 +352,19 @@ class SigmundConfigParserTest {
                     """);
             var expected = config.trustPolicy().expectedSigners(
                     artifact("org.apache.maven.plugins", "maven-compiler-plugin", "3.13.0"));
-            assertEquals(1, expected.size());
-            assertEquals("apache", expected.get(0).id());
+            assertThat(expected.size()).isEqualTo(1);
+            assertThat(expected.get(0).id()).isEqualTo("apache");
 
             var creds = expected.get(0).credentials();
-            assertEquals(2, creds.size());
-            assertTrue(creds.stream()
+            assertThat(creds.size()).isEqualTo(2);
+            assertThat(creds.stream()
                     .anyMatch(c -> c instanceof FingerprintCredential fc
-                            && fc.fingerprint().equals("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12")));
-            assertTrue(creds.stream()
+                            && fc.fingerprint().equals("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12")))
+                    .isTrue();
+            assertThat(creds.stream()
                     .anyMatch(c -> c instanceof FingerprintCredential fc
-                            && fc.fingerprint().equals("BBE7232D7991050B54C8EA0ADC08637CA615D22C")));
+                            && fc.fingerprint().equals("BBE7232D7991050B54C8EA0ADC08637CA615D22C")))
+                    .isTrue();
         }
 
         @Test
@@ -360,10 +373,10 @@ class SigmundConfigParserTest {
                     unsigned:
                       - "org.example:unsigned-lib"
                     """);
-            assertTrue(config.trustPolicy().isUnsignedAllowed(
-                    artifact("org.example", "unsigned-lib", "1.0")));
-            assertFalse(config.trustPolicy().isUnsignedAllowed(
-                    artifact("org.example", "other-lib", "1.0")));
+            assertThat(config.trustPolicy().isUnsignedAllowed(
+                    artifact("org.example", "unsigned-lib", "1.0"))).isTrue();
+            assertThat(config.trustPolicy().isUnsignedAllowed(
+                    artifact("org.example", "other-lib", "1.0"))).isFalse();
         }
     }
 
@@ -373,9 +386,9 @@ class SigmundConfigParserTest {
         @Test
         void defaults() {
             var config = parse("version: 1");
-            assertEquals(ListedEvidencePolicy.ALL, config.trustPolicy().listedEvidence());
-            assertEquals(UnlistedEvidencePolicy.IGNORE, config.trustPolicy().unlistedEvidence());
-            assertEquals(UntrustedPolicy.FAIL, config.trustPolicy().onUntrusted());
+            assertThat(config.trustPolicy().listedEvidence()).isEqualTo(ListedEvidencePolicy.ALL);
+            assertThat(config.trustPolicy().unlistedEvidence()).isEqualTo(UnlistedEvidencePolicy.IGNORE);
+            assertThat(config.trustPolicy().onUntrusted()).isEqualTo(UntrustedPolicy.FAIL);
         }
 
         @Test
@@ -385,16 +398,17 @@ class SigmundConfigParserTest {
                       on-untrusted: warn
                       listed-evidence: any
                     """);
-            assertEquals(UntrustedPolicy.WARN, config.trustPolicy().onUntrusted());
-            assertEquals(ListedEvidencePolicy.ANY, config.trustPolicy().listedEvidence());
+            assertThat(config.trustPolicy().onUntrusted()).isEqualTo(UntrustedPolicy.WARN);
+            assertThat(config.trustPolicy().listedEvidence()).isEqualTo(ListedEvidencePolicy.ANY);
         }
 
         @Test
         void invalidPolicyThrows() {
-            assertThrows(PolicyConfigException.class, () -> parse("""
+            assertThatThrownBy(() -> parse("""
                     policy:
                       on-untrusted: ignore
-                    """));
+                    """))
+                    .isInstanceOf(PolicyConfigException.class);
         }
     }
 
@@ -415,17 +429,17 @@ class SigmundConfigParserTest {
                         cipher-suite: "mldsa87-ed448"
                     """);
             var signing = config.signingConfig();
-            assertEquals("alice", signing.signer());
-            assertEquals("hybrid", signing.defaultProfile());
-            assertEquals(List.of("openpgp4", "openpgp6"), signing.profiles().get("hybrid"));
-            assertEquals(List.of("sq"), signing.toolchain());
-            assertEquals("mldsa87-ed448", config.toolsConfig().get("sq").settings().get("cipher-suite"));
+            assertThat(signing.signer()).isEqualTo("alice");
+            assertThat(signing.defaultProfile()).isEqualTo("hybrid");
+            assertThat(signing.profiles().get("hybrid")).isEqualTo(List.of("openpgp4", "openpgp6"));
+            assertThat(signing.toolchain()).isEqualTo(List.of("sq"));
+            assertThat(config.toolsConfig().get("sq").settings().get("cipher-suite")).isEqualTo("mldsa87-ed448");
         }
 
         @Test
         void noSigningSection() {
             var config = parse("version: 1");
-            assertEquals(SigningConfig.DEFAULT, config.signingConfig());
+            assertThat(config.signingConfig()).isEqualTo(SigningConfig.DEFAULT);
         }
     }
 
@@ -442,9 +456,9 @@ class SigmundConfigParserTest {
                         - "hkps://keys.openpgp.org"
                     """);
             var dc = config.discoveryConfig();
-            assertTrue(dc.resolveSigners());
-            assertFalse(dc.importToKeyring());
-            assertEquals(List.of("hkps://keys.openpgp.org"), dc.keyservers());
+            assertThat(dc.resolveSigners()).isTrue();
+            assertThat(dc.importToKeyring()).isFalse();
+            assertThat(dc.keyservers()).isEqualTo(List.of("hkps://keys.openpgp.org"));
         }
 
         @Test
@@ -453,7 +467,7 @@ class SigmundConfigParserTest {
                     discovery:
                       toolchain: [sq, gpg]
                     """);
-            assertEquals(List.of("sq", "gpg"), config.discoveryConfig().toolchain());
+            assertThat(config.discoveryConfig().toolchain()).isEqualTo(List.of("sq", "gpg"));
         }
 
         @Test
@@ -462,7 +476,7 @@ class SigmundConfigParserTest {
                     discovery:
                       toolchain: gpg
                     """);
-            assertEquals(List.of("gpg"), config.discoveryConfig().toolchain());
+            assertThat(config.discoveryConfig().toolchain()).isEqualTo(List.of("gpg"));
         }
 
         @Test
@@ -471,14 +485,14 @@ class SigmundConfigParserTest {
                     discovery:
                       resolve-signers: true
                     """);
-            assertNull(config.discoveryConfig().toolchain());
-            assertEquals(DiscoveryConfig.DEFAULT_TOOL_PRIORITY, config.discoveryConfig().effectiveToolchain());
+            assertThat(config.discoveryConfig().toolchain()).isNull();
+            assertThat(config.discoveryConfig().effectiveToolchain()).isEqualTo(DiscoveryConfig.DEFAULT_TOOL_PRIORITY);
         }
 
         @Test
         void noDiscoverySection() {
             var config = parse("version: 1");
-            assertEquals(DiscoveryConfig.DEFAULT, config.discoveryConfig());
+            assertThat(config.discoveryConfig()).isEqualTo(DiscoveryConfig.DEFAULT);
         }
     }
 
@@ -495,18 +509,18 @@ class SigmundConfigParserTest {
                         gnupg-home: "/custom/gnupg"
                     """);
             var tc = config.toolsConfig();
-            assertFalse(tc.isEmpty());
-            assertEquals(2, tc.size());
-            assertNotNull(tc.get("sigstore"));
-            assertEquals("/path/to/root.json", tc.get("sigstore").settings().get("trusted-root"));
-            assertNotNull(tc.get("bc"));
-            assertEquals("/custom/gnupg", tc.get("bc").settings().get("gnupg-home"));
+            assertThat(tc.isEmpty()).isFalse();
+            assertThat(tc.size()).isEqualTo(2);
+            assertThat(tc.get("sigstore")).isNotNull();
+            assertThat(tc.get("sigstore").settings().get("trusted-root")).isEqualTo("/path/to/root.json");
+            assertThat(tc.get("bc")).isNotNull();
+            assertThat(tc.get("bc").settings().get("gnupg-home")).isEqualTo("/custom/gnupg");
         }
 
         @Test
         void noToolsSection() {
             var config = parse("version: 1");
-            assertTrue(config.toolsConfig().isEmpty());
+            assertThat(config.toolsConfig().isEmpty()).isTrue();
         }
     }
 
@@ -537,11 +551,11 @@ class SigmundConfigParserTest {
                       keyservers:
                         - "hkps://keys.openpgp.org"
                     """);
-            assertEquals(1, config.version());
-            assertEquals(2, config.signers().names().size());
-            assertEquals("alice", config.signingConfig().signer());
-            assertEquals(ListedEvidencePolicy.ALL, config.trustPolicy().listedEvidence());
-            assertTrue(config.discoveryConfig().resolveSigners());
+            assertThat(config.version()).isEqualTo(1);
+            assertThat(config.signers().names().size()).isEqualTo(2);
+            assertThat(config.signingConfig().signer()).isEqualTo("alice");
+            assertThat(config.trustPolicy().listedEvidence()).isEqualTo(ListedEvidencePolicy.ALL);
+            assertThat(config.discoveryConfig().resolveSigners()).isTrue();
         }
     }
 

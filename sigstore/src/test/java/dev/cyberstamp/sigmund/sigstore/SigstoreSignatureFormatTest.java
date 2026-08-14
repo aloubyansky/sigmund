@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.sigstore;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.cyberstamp.sigmund.core.SigstoreVerificationUnit;
 import dev.cyberstamp.sigmund.core.VerificationUnit;
@@ -23,17 +23,17 @@ class SigstoreSignatureFormatTest {
     class Properties {
         @Test
         void name() {
-            assertEquals("sigstore", format.name());
+            assertThat(format.name()).isEqualTo("sigstore");
         }
 
         @Test
         void fileExtension() {
-            assertEquals(".sigstore.json", format.fileExtension());
+            assertThat(format.fileExtension()).isEqualTo(".sigstore.json");
         }
 
         @Test
         void doesNotSupportCombining() {
-            assertFalse(format.supportsCombining());
+            assertThat(format.supportsCombining()).isFalse();
         }
     }
 
@@ -43,7 +43,7 @@ class SigstoreSignatureFormatTest {
         void matchesByExtension() throws IOException {
             Path file = tempDir.resolve("artifact.jar.sigstore.json");
             Files.writeString(file, "{}");
-            assertTrue(format.canHandle(file));
+            assertThat(format.canHandle(file)).isTrue();
         }
 
         @Test
@@ -51,7 +51,7 @@ class SigstoreSignatureFormatTest {
             Path file = tempDir.resolve("artifact.jar.sig");
             Files.writeString(file,
                     "{\"mediaType\":\"application/vnd.dev.sigstore.bundle.v0.3+json\"}");
-            assertTrue(format.canHandleByContent(file));
+            assertThat(format.canHandleByContent(file)).isTrue();
         }
 
         @Test
@@ -59,41 +59,41 @@ class SigstoreSignatureFormatTest {
             Path file = tempDir.resolve("artifact.sig");
             Files.writeString(file,
                     "{\"mediaType\":\"application/vnd.dev.sigstore.bundle.v0.1+json\"}");
-            assertTrue(format.canHandleByContent(file));
+            assertThat(format.canHandleByContent(file)).isTrue();
         }
 
         @Test
         void rejectsNonJsonFile() throws IOException {
             Path file = tempDir.resolve("artifact.jar.asc");
             Files.writeString(file, "-----BEGIN PGP SIGNATURE-----");
-            assertFalse(format.canHandleByContent(file));
+            assertThat(format.canHandleByContent(file)).isFalse();
         }
 
         @Test
         void rejectsJsonWithoutMediaType() throws IOException {
             Path file = tempDir.resolve("data.json");
             Files.writeString(file, "{\"key\":\"value\"}");
-            assertFalse(format.canHandleByContent(file));
+            assertThat(format.canHandleByContent(file)).isFalse();
         }
 
         @Test
         void rejectsJsonWithWrongMediaType() throws IOException {
             Path file = tempDir.resolve("data.json");
             Files.writeString(file, "{\"mediaType\":\"application/json\"}");
-            assertFalse(format.canHandleByContent(file));
+            assertThat(format.canHandleByContent(file)).isFalse();
         }
 
         @Test
         void rejectsEmptyFile() throws IOException {
             Path file = tempDir.resolve("empty.json");
             Files.writeString(file, "");
-            assertFalse(format.canHandleByContent(file));
+            assertThat(format.canHandleByContent(file)).isFalse();
         }
 
         @Test
         void handlesMissingFile() {
             Path file = tempDir.resolve("nonexistent.json");
-            assertFalse(format.canHandleByContent(file));
+            assertThat(format.canHandleByContent(file)).isFalse();
         }
     }
 
@@ -108,10 +108,10 @@ class SigstoreSignatureFormatTest {
 
             List<VerificationUnit> units = format.parse(file);
 
-            assertEquals(1, units.size());
-            assertInstanceOf(SigstoreVerificationUnit.class, units.get(0));
-            assertEquals(bundle,
-                    ((SigstoreVerificationUnit) units.get(0)).jsonBundle());
+            assertThat(units.size()).isEqualTo(1);
+            assertThat(units.get(0)).isInstanceOf(SigstoreVerificationUnit.class);
+            assertThat(((SigstoreVerificationUnit) units.get(0)).jsonBundle())
+                    .isEqualTo(bundle);
         }
 
         @Test
@@ -122,8 +122,8 @@ class SigstoreSignatureFormatTest {
 
             List<VerificationUnit> units = format.parse(file);
 
-            assertEquals(bundle,
-                    ((SigstoreVerificationUnit) units.get(0)).jsonBundle());
+            assertThat(((SigstoreVerificationUnit) units.get(0)).jsonBundle())
+                    .isEqualTo(bundle);
         }
     }
 }

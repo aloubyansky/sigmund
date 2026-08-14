@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -10,14 +10,14 @@ class ToolsConfigTest {
     @Test
     void getReturnsTool() {
         var tc = new ToolsConfig(Map.of("bc", new ToolConfig(null, Map.of("key", "val"))));
-        assertNotNull(tc.get("bc"));
-        assertEquals("val", tc.get("bc").settings().get("key"));
+        assertThat(tc.get("bc")).isNotNull();
+        assertThat(tc.get("bc").settings().get("key")).isEqualTo("val");
     }
 
     @Test
     void getReturnsNullForUnknown() {
         var tc = ToolsConfig.EMPTY;
-        assertNull(tc.get("bc"));
+        assertThat(tc.get("bc")).isNull();
     }
 
     @Test
@@ -25,28 +25,28 @@ class ToolsConfigTest {
         var tc = new ToolsConfig(Map.of(
                 "bc", new ToolConfig(null, Map.of()),
                 "sq", new ToolConfig(null, Map.of())));
-        assertEquals(2, tc.toolNames().size());
-        assertTrue(tc.toolNames().contains("bc"));
-        assertTrue(tc.toolNames().contains("sq"));
+        assertThat(tc.toolNames().size()).isEqualTo(2);
+        assertThat(tc.toolNames().contains("bc")).isTrue();
+        assertThat(tc.toolNames().contains("sq")).isTrue();
     }
 
     @Test
     void emptyConfig() {
-        assertTrue(ToolsConfig.EMPTY.isEmpty());
-        assertEquals(0, ToolsConfig.EMPTY.size());
+        assertThat(ToolsConfig.EMPTY.isEmpty()).isTrue();
+        assertThat(ToolsConfig.EMPTY.size()).isEqualTo(0);
     }
 
     @Test
     void nonEmptyConfig() {
         var tc = new ToolsConfig(Map.of("bc", new ToolConfig(null, Map.of())));
-        assertFalse(tc.isEmpty());
-        assertEquals(1, tc.size());
+        assertThat(tc.isEmpty()).isFalse();
+        assertThat(tc.size()).isEqualTo(1);
     }
 
     @Test
     void nullMapBecomesEmpty() {
         var tc = new ToolsConfig(null);
-        assertTrue(tc.isEmpty());
-        assertEquals(0, tc.size());
+        assertThat(tc.isEmpty()).isTrue();
+        assertThat(tc.size()).isEqualTo(0);
     }
 }

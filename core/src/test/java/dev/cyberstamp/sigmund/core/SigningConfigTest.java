@@ -1,10 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -24,24 +21,24 @@ class SigningConfigTest {
 
         @Test
         void hasNullSigner() {
-            assertNull(SigningConfig.DEFAULT.signer());
+            assertThat(SigningConfig.DEFAULT.signer()).isNull();
         }
 
         @Test
         void hasEmptyToolchain() {
-            assertNotNull(SigningConfig.DEFAULT.toolchain());
-            assertTrue(SigningConfig.DEFAULT.toolchain().isEmpty());
+            assertThat(SigningConfig.DEFAULT.toolchain()).isNotNull();
+            assertThat(SigningConfig.DEFAULT.toolchain().isEmpty()).isTrue();
         }
 
         @Test
         void hasEmptyProfiles() {
-            assertNotNull(SigningConfig.DEFAULT.profiles());
-            assertTrue(SigningConfig.DEFAULT.profiles().isEmpty());
+            assertThat(SigningConfig.DEFAULT.profiles()).isNotNull();
+            assertThat(SigningConfig.DEFAULT.profiles().isEmpty()).isTrue();
         }
 
         @Test
         void hasNullDefaultProfile() {
-            assertNull(SigningConfig.DEFAULT.defaultProfile());
+            assertThat(SigningConfig.DEFAULT.defaultProfile()).isNull();
         }
     }
 
@@ -51,15 +48,15 @@ class SigningConfigTest {
         @Test
         void nullToolchainBecomesEmptyList() {
             var config = new SigningConfig("alice", null, Map.of(), null);
-            assertNotNull(config.toolchain());
-            assertTrue(config.toolchain().isEmpty());
+            assertThat(config.toolchain()).isNotNull();
+            assertThat(config.toolchain().isEmpty()).isTrue();
         }
 
         @Test
         void nullProfilesBecomesEmptyMap() {
             var config = new SigningConfig("alice", List.of(), null, null);
-            assertNotNull(config.profiles());
-            assertTrue(config.profiles().isEmpty());
+            assertThat(config.profiles()).isNotNull();
+            assertThat(config.profiles().isEmpty()).isTrue();
         }
     }
 
@@ -71,14 +68,14 @@ class SigningConfigTest {
             var toolchain = new ArrayList<>(List.of("bc", "sq"));
             var config = new SigningConfig(null, toolchain, Map.of(), null);
             toolchain.add("gpg");
-            assertEquals(List.of("bc", "sq"), config.toolchain());
+            assertThat(config.toolchain()).isEqualTo(List.of("bc", "sq"));
         }
 
         @Test
         void toolchainIsImmutable() {
             var config = new SigningConfig(null, List.of("bc"), Map.of(), null);
-            assertThrows(UnsupportedOperationException.class,
-                    () -> config.toolchain().add("gpg"));
+            assertThatThrownBy(() -> config.toolchain().add("gpg"))
+                    .isInstanceOf(UnsupportedOperationException.class);
         }
 
         @Test
@@ -86,15 +83,15 @@ class SigningConfigTest {
             var profiles = new HashMap<>(Map.of("hybrid", List.of("openpgp4", "openpgp6")));
             var config = new SigningConfig(null, List.of(), profiles, null);
             profiles.put("extra", List.of("sigstore"));
-            assertEquals(1, config.profiles().size());
+            assertThat(config.profiles().size()).isEqualTo(1);
         }
 
         @Test
         void profilesIsImmutable() {
             var config = new SigningConfig(null, List.of(),
                     Map.of("hybrid", List.of("openpgp4")), null);
-            assertThrows(UnsupportedOperationException.class,
-                    () -> config.profiles().put("extra", List.of("sigstore")));
+            assertThatThrownBy(() -> config.profiles().put("extra", List.of("sigstore")))
+                    .isInstanceOf(UnsupportedOperationException.class);
         }
     }
 }

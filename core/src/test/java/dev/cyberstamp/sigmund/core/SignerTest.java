@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -28,13 +29,13 @@ class SignerTest {
             Path artifact = createArtifact("test.jar");
             SigningOutput output = signer.sign(artifact, tempDir);
 
-            assertEquals(1, output.files().size());
+            assertThat(output.files().size()).isEqualTo(1);
             SignedFile sf = output.files().get(0);
-            assertEquals("gpg", sf.toolName());
-            assertEquals("openpgp", sf.format());
-            assertEquals("RSA", sf.algorithm());
-            assertTrue(sf.path().getFileName().toString().endsWith(".asc"));
-            assertTrue(Files.exists(sf.path()));
+            assertThat(sf.toolName()).isEqualTo("gpg");
+            assertThat(sf.format()).isEqualTo("openpgp");
+            assertThat(sf.algorithm()).isEqualTo("RSA");
+            assertThat(sf.path().getFileName().toString().endsWith(".asc")).isTrue();
+            assertThat(Files.exists(sf.path())).isTrue();
         }
     }
 
@@ -51,11 +52,11 @@ class SignerTest {
             Path artifact = createArtifact("test.jar");
             SigningOutput output = signer.sign(artifact, tempDir);
 
-            assertEquals(1, output.files().size());
+            assertThat(output.files().size()).isEqualTo(1);
             SignedFile sf = output.files().get(0);
-            assertEquals("gpg+sq", sf.toolName());
-            assertEquals("RSA+ML-DSA-87+Ed448", sf.algorithm());
-            assertEquals("openpgp", sf.format());
+            assertThat(sf.toolName()).isEqualTo("gpg+sq");
+            assertThat(sf.algorithm()).isEqualTo("RSA+ML-DSA-87+Ed448");
+            assertThat(sf.format()).isEqualTo("openpgp");
         }
 
         @Test
@@ -68,7 +69,7 @@ class SignerTest {
             Path artifact = createArtifact("test.jar");
             SigningOutput output = signer.sign(artifact, tempDir);
 
-            assertEquals(2, output.files().size());
+            assertThat(output.files().size()).isEqualTo(2);
         }
     }
 
@@ -86,9 +87,9 @@ class SignerTest {
             Path artifact = createArtifact("test.jar");
             SigningOutput output = signer.sign(artifact, tempDir);
 
-            assertEquals(2, output.files().size());
+            assertThat(output.files().size()).isEqualTo(2);
             var formats = output.files().stream().map(SignedFile::format).sorted().toList();
-            assertEquals(List.of("openpgp", "sigstore"), formats);
+            assertThat(formats).isEqualTo(List.of("openpgp", "sigstore"));
         }
     }
 
@@ -97,8 +98,9 @@ class SignerTest {
 
         @Test
         void rejectsEmptyToolList() {
-            var ex = assertThrows(SigmundException.class, () -> new Signer(List.of()));
-            assertTrue(ex.getMessage().contains("No signing tools available"));
+            assertThatThrownBy(() -> new Signer(List.of()))
+                    .isInstanceOf(SigmundException.class)
+                    .hasMessageContaining("No signing tools available");
         }
     }
 
@@ -116,11 +118,11 @@ class SignerTest {
 
             List<SigningInfo> infos = signer.signingInfo();
 
-            assertEquals(2, infos.size());
-            assertEquals("gpg", infos.get(0).toolName());
-            assertEquals("AAAA", infos.get(0).fingerprint());
-            assertEquals("sq", infos.get(1).toolName());
-            assertEquals("BBBB", infos.get(1).fingerprint());
+            assertThat(infos.size()).isEqualTo(2);
+            assertThat(infos.get(0).toolName()).isEqualTo("gpg");
+            assertThat(infos.get(0).fingerprint()).isEqualTo("AAAA");
+            assertThat(infos.get(1).toolName()).isEqualTo("sq");
+            assertThat(infos.get(1).fingerprint()).isEqualTo("BBBB");
         }
 
         @Test
@@ -129,7 +131,7 @@ class SignerTest {
             var tool = mockSigningTool("gpg", format, "RSA");
             var signer = new Signer(List.of(tool));
 
-            assertTrue(signer.signingInfo().isEmpty());
+            assertThat(signer.signingInfo().isEmpty()).isTrue();
         }
     }
 
@@ -145,10 +147,10 @@ class SignerTest {
 
             Path artifact = createArtifact("test.jar");
 
-            assertThrows(RuntimeException.class, () -> signer.sign(artifact, tempDir));
+            assertThatThrownBy(() -> signer.sign(artifact, tempDir)).isInstanceOf(RuntimeException.class);
 
             long tempFiles = Files.list(tempDir).filter(p -> p.toString().contains("sig-")).count();
-            assertEquals(0, tempFiles, "temp files should be cleaned up after failure");
+            assertThat(tempFiles).as("temp files should be cleaned up after failure").isEqualTo(0);
         }
 
         @Test
@@ -160,10 +162,10 @@ class SignerTest {
 
             Path artifact = createArtifact("test.jar");
 
-            assertThrows(RuntimeException.class, () -> signer.sign(artifact, tempDir));
+            assertThatThrownBy(() -> signer.sign(artifact, tempDir)).isInstanceOf(RuntimeException.class);
 
             long tempFiles = Files.list(tempDir).filter(p -> p.toString().contains("sig-")).count();
-            assertEquals(0, tempFiles, "temp files should be cleaned up after combine failure");
+            assertThat(tempFiles).as("temp files should be cleaned up after combine failure").isEqualTo(0);
         }
     }
 

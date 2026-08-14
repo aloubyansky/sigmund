@@ -1,7 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -23,7 +22,7 @@ class CredentialMatchingTest {
                         "AB01CD23EF45678901234AEE18F83AFDEB23")),
                 "openpgp");
 
-        assertTrue(matchesAny(signer, evidence));
+        assertThat(matchesAny(signer, evidence)).isTrue();
     }
 
     @Test
@@ -39,7 +38,7 @@ class CredentialMatchingTest {
                 new EmailCredential("alice@example.com")),
                 "sigstore");
 
-        assertTrue(matchesAny(signer, evidence));
+        assertThat(matchesAny(signer, evidence)).isTrue();
     }
 
     @Test
@@ -57,7 +56,7 @@ class CredentialMatchingTest {
                         .build()),
                 "sigstore");
 
-        assertTrue(matchesAny(signer, evidence));
+        assertThat(matchesAny(signer, evidence)).isTrue();
     }
 
     @Test
@@ -75,7 +74,7 @@ class CredentialMatchingTest {
                         .build()),
                 "sigstore");
 
-        assertFalse(matchesAny(signer, evidence));
+        assertThat(matchesAny(signer, evidence)).isFalse();
     }
 
     @Test
@@ -87,7 +86,7 @@ class CredentialMatchingTest {
                 new EmailCredential("alice@example.com")),
                 "sigstore");
 
-        assertFalse(matchesAny(signer, evidence));
+        assertThat(matchesAny(signer, evidence)).isFalse();
     }
 
     @Test
@@ -101,7 +100,7 @@ class CredentialMatchingTest {
                 new FingerprintCredential("openpgp6", "ABCD1234ABCD1234")),
                 "openpgp");
 
-        assertTrue(matchesAny(signer, evidence));
+        assertThat(matchesAny(signer, evidence)).isTrue();
     }
 
     @Test
@@ -111,7 +110,7 @@ class CredentialMatchingTest {
                 new EmailCredential("alice@example.com")),
                 "sigstore");
 
-        assertFalse(matchesAny(signer, evidence));
+        assertThat(matchesAny(signer, evidence)).isFalse();
     }
 
     private static boolean matchesAny(SignerIdentity signer, EvidenceResult evidence) {

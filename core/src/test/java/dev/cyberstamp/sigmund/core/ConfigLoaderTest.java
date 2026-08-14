@@ -1,10 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -27,29 +24,30 @@ class ConfigLoaderTest {
         Files.writeString(configFile, MINIMAL_CONFIG);
 
         SigmundConfig config = ConfigLoader.load(configFile);
-        assertNotNull(config);
-        assertEquals(1, config.version());
-        assertNotNull(config.signers().get("alice"));
+        assertThat(config).isNotNull();
+        assertThat(config.version()).isEqualTo(1);
+        assertThat(config.signers().get("alice")).isNotNull();
     }
 
     @Test
     void explicitPathMissing(@TempDir Path tempDir) {
         Path missing = tempDir.resolve("nonexistent.yaml");
-        assertThrows(PolicyConfigException.class, () -> ConfigLoader.load(missing));
+        assertThatThrownBy(() -> ConfigLoader.load(missing))
+                .isInstanceOf(PolicyConfigException.class);
     }
 
     @Test
     void defaultConfigValues(@TempDir Path tempDir) {
         Path missing = tempDir.resolve("nonexistent.yaml");
         // Use locate to verify no file, then check default config shape
-        assertNull(ConfigLoader.locate(null, missing));
+        assertThat(ConfigLoader.locate(null, missing)).isNull();
 
         SigmundConfig config = ConfigLoader.load(null, missing);
-        assertNotNull(config);
-        assertEquals(1, config.version());
-        assertTrue(config.signers().isEmpty());
-        assertEquals(SigningConfig.DEFAULT, config.signingConfig());
-        assertTrue(config.toolsConfig().isEmpty());
+        assertThat(config).isNotNull();
+        assertThat(config.version()).isEqualTo(1);
+        assertThat(config.signers().isEmpty()).isTrue();
+        assertThat(config.signingConfig()).isEqualTo(SigningConfig.DEFAULT);
+        assertThat(config.toolsConfig().isEmpty()).isTrue();
     }
 
     @Test
@@ -58,13 +56,14 @@ class ConfigLoaderTest {
         Files.writeString(configFile, MINIMAL_CONFIG);
 
         Path located = ConfigLoader.locate(configFile);
-        assertEquals(configFile, located);
+        assertThat(located).isEqualTo(configFile);
     }
 
     @Test
     void locateExplicitPathMissing(@TempDir Path tempDir) {
         Path missing = tempDir.resolve("nonexistent.yaml");
-        assertThrows(PolicyConfigException.class, () -> ConfigLoader.locate(missing));
+        assertThatThrownBy(() -> ConfigLoader.locate(missing))
+                .isInstanceOf(PolicyConfigException.class);
     }
 
     @Test
@@ -73,11 +72,11 @@ class ConfigLoaderTest {
         Files.writeString(configFile, MINIMAL_CONFIG);
 
         Path located = ConfigLoader.locate(null, tempDir);
-        assertEquals(configFile, located);
+        assertThat(located).isEqualTo(configFile);
     }
 
     @Test
     void locateReturnsNullWhenDirHasNoConfig(@TempDir Path tempDir) {
-        assertNull(ConfigLoader.locate(null, tempDir));
+        assertThat(ConfigLoader.locate(null, tempDir)).isNull();
     }
 }

@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -26,11 +26,11 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(1, results.size());
-            assertEquals(Verdict.PASS, results.get(0).verdict());
-            assertEquals(1, results.get(0).provenCredentials().size());
-            assertEquals("openpgp4", results.get(0).provenCredentials().get(0).type());
-            assertEquals("openpgp", results.get(0).provider());
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).verdict()).isEqualTo(Verdict.PASS);
+            assertThat(results.get(0).provenCredentials()).hasSize(1);
+            assertThat(results.get(0).provenCredentials().get(0).type()).isEqualTo("openpgp4");
+            assertThat(results.get(0).provider()).isEqualTo("openpgp");
         }
 
         @Test
@@ -40,9 +40,9 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(1, results.size());
-            assertEquals(Verdict.SKIPPED, results.get(0).verdict());
-            assertTrue(results.get(0).provenCredentials().isEmpty());
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).verdict()).isEqualTo(Verdict.SKIPPED);
+            assertThat(results.get(0).provenCredentials()).isEmpty();
         }
 
         @Test
@@ -56,9 +56,9 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(1, results.size());
-            assertEquals(Verdict.PASS, results.get(0).verdict());
-            assertEquals(1, results.get(0).provenCredentials().size());
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).verdict()).isEqualTo(Verdict.PASS);
+            assertThat(results.get(0).provenCredentials()).hasSize(1);
         }
 
         @Test
@@ -73,8 +73,8 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(1, results.size());
-            assertEquals(Verdict.SKIPPED, results.get(0).verdict());
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).verdict()).isEqualTo(Verdict.SKIPPED);
         }
 
         @Test
@@ -89,9 +89,9 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(2, results.size());
-            assertEquals("openpgp4", results.get(0).provenCredentials().get(0).type());
-            assertEquals("openpgp6", results.get(1).provenCredentials().get(0).type());
+            assertThat(results).hasSize(2);
+            assertThat(results.get(0).provenCredentials().get(0).type()).isEqualTo("openpgp4");
+            assertThat(results.get(1).provenCredentials().get(0).type()).isEqualTo("openpgp6");
         }
     }
 
@@ -102,26 +102,26 @@ class SignatureEvidenceAdapterTest {
         void availableWhenAnyToolAvailable() {
             var tool = mockTool("gpg", true, false, null, List.of());
             var adapter = adapterWith(singleUnitFormat(), List.of(tool));
-            assertTrue(adapter.isAvailable());
+            assertThat(adapter.isAvailable()).isTrue();
         }
 
         @Test
         void unavailableWhenNoToolAvailable() {
             var tool = mockTool("gpg", false, false, null, List.of());
             var adapter = adapterWith(singleUnitFormat(), List.of(tool));
-            assertFalse(adapter.isAvailable());
+            assertThat(adapter.isAvailable()).isFalse();
         }
 
         @Test
         void nameDelegatesToFormat() {
             var adapter = adapterWith(singleUnitFormat(), List.of());
-            assertEquals("openpgp", adapter.name());
+            assertThat(adapter.name()).isEqualTo("openpgp");
         }
 
         @Test
         void canHandleDelegatesToFormat() {
             var adapter = adapterWith(singleUnitFormat(), List.of());
-            assertTrue(adapter.canHandle(EVIDENCE));
+            assertThat(adapter.canHandle(EVIDENCE)).isTrue();
         }
     }
 
@@ -135,7 +135,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(Verdict.NO_KEY, results.get(0).verdict());
+            assertThat(results.get(0).verdict()).isEqualTo(Verdict.NO_KEY);
         }
 
         @Test
@@ -145,7 +145,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(Verdict.PASS, results.get(0).verdict());
+            assertThat(results.get(0).verdict()).isEqualTo(Verdict.PASS);
         }
 
         @Test
@@ -155,7 +155,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(Verdict.NO_KEY, results.get(0).verdict());
+            assertThat(results.get(0).verdict()).isEqualTo(Verdict.NO_KEY);
         }
 
         @Test
@@ -166,7 +166,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(Verdict.PASS, results.get(0).verdict());
+            assertThat(results.get(0).verdict()).isEqualTo(Verdict.PASS);
         }
 
         @Test
@@ -177,7 +177,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(Verdict.NO_KEY, results.get(0).verdict());
+            assertThat(results.get(0).verdict()).isEqualTo(Verdict.NO_KEY);
         }
 
         @Test
@@ -189,7 +189,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(Verdict.PASS, results.get(0).verdict());
+            assertThat(results.get(0).verdict()).isEqualTo(Verdict.PASS);
         }
 
         @Test
@@ -200,7 +200,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertEquals(Verdict.FAIL, results.get(0).verdict());
+            assertThat(results.get(0).verdict()).isEqualTo(Verdict.FAIL);
         }
     }
 

@@ -1,9 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -17,8 +15,8 @@ class FingerprintCredentialTest {
         void exactMatch() {
             var a = new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23AB01CD23");
             var b = new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23AB01CD23");
-            assertTrue(a.matches(b));
-            assertTrue(b.matches(a));
+            assertThat(a.matches(b)).isTrue();
+            assertThat(b.matches(a)).isTrue();
         }
 
         @Test
@@ -27,43 +25,43 @@ class FingerprintCredentialTest {
                     "AB01CD23EF45678901234AEE18F83AFDEB230042");
             var shortFp = new FingerprintCredential("openpgp4",
                     "4AEE18F83AFDEB230042");
-            assertTrue(full.matches(shortFp));
-            assertTrue(shortFp.matches(full));
+            assertThat(full.matches(shortFp)).isTrue();
+            assertThat(shortFp.matches(full)).isTrue();
         }
 
         @Test
         void caseInsensitive() {
             var upper = new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23");
             var lower = new FingerprintCredential("openpgp4", "4aee18f83afdeb23");
-            assertTrue(upper.matches(lower));
+            assertThat(upper.matches(lower)).isTrue();
         }
 
         @Test
         void tooShortNoMatch() {
             var a = new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23");
             var b = new FingerprintCredential("openpgp4", "3AFDEB23");
-            assertFalse(a.matches(b));
+            assertThat(a.matches(b)).isFalse();
         }
 
         @Test
         void differentTypeNoMatch() {
             var v4 = new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23");
             var v6 = new FingerprintCredential("openpgp6", "4AEE18F83AFDEB23");
-            assertFalse(v4.matches(v6));
+            assertThat(v4.matches(v6)).isFalse();
         }
 
         @Test
         void differentFingerprintNoMatch() {
             var a = new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23");
             var b = new FingerprintCredential("openpgp4", "AAEE18F83AFDEB23");
-            assertFalse(a.matches(b));
+            assertThat(a.matches(b)).isFalse();
         }
 
         @Test
         void crossTypeNoMatch() {
             var fp = new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23");
             var email = new EmailCredential("alice@example.com");
-            assertFalse(fp.matches(email));
+            assertThat(fp.matches(email)).isFalse();
         }
     }
 
@@ -73,13 +71,13 @@ class FingerprintCredentialTest {
         @Test
         void type() {
             var cred = new FingerprintCredential("openpgp6", "ABCD1234ABCD1234");
-            assertEquals("openpgp6", cred.type());
+            assertThat(cred.type()).isEqualTo("openpgp6");
         }
 
         @Test
         void displayNameReturnsFingerprint() {
             var cred = new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23");
-            assertEquals("4AEE18F83AFDEB23", cred.displayName());
+            assertThat(cred.displayName()).isEqualTo("4AEE18F83AFDEB23");
         }
     }
 
@@ -88,14 +86,14 @@ class FingerprintCredentialTest {
 
         @Test
         void nullTypeThrows() {
-            assertThrows(IllegalArgumentException.class,
-                    () -> new FingerprintCredential(null, "4AEE18F83AFDEB23"));
+            assertThatThrownBy(() -> new FingerprintCredential(null, "4AEE18F83AFDEB23"))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
         void blankFingerprintThrows() {
-            assertThrows(IllegalArgumentException.class,
-                    () -> new FingerprintCredential("openpgp4", "  "));
+            assertThatThrownBy(() -> new FingerprintCredential("openpgp4", "  "))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 }
