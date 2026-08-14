@@ -18,7 +18,7 @@ import org.apache.maven.plugins.annotations.Parameter;
  * Does not require dependency resolution — only needs tool configuration and
  * a signer credential. The credential is specified via Maven properties:
  * {@code sigmund.fingerprint}, {@code sigmund.email}, or
- * {@code sigmund.oidcIssuer} + {@code sigmund.oidcSubject}.
+ * {@code sigmund.sigstoreIssuer} + {@code sigmund.sigstoreSubject}.
  *
  * <p>
  * Output is printed to the Maven logger, grouped into local and remote
@@ -38,11 +38,11 @@ public class InspectSignerMojo extends AbstractSigmundMojo {
     @Parameter(property = "sigmund.email")
     String email;
 
-    @Parameter(property = "sigmund.oidcIssuer")
-    String oidcIssuer;
+    @Parameter(property = "sigmund.sigstoreIssuer")
+    String sigstoreIssuer;
 
-    @Parameter(property = "sigmund.oidcSubject")
-    String oidcSubject;
+    @Parameter(property = "sigmund.sigstoreSubject")
+    String sigstoreSubject;
 
     @Parameter(property = "sigmund.tool")
     String tool;
@@ -77,7 +77,7 @@ public class InspectSignerMojo extends AbstractSigmundMojo {
      * Builds a {@link Credential} from the Maven properties.
      *
      * <p>
-     * Priority: fingerprint → email → OIDC (issuer + subject).
+     * Priority: fingerprint → email → Sigstore (issuer + subject).
      *
      * @return the parsed credential
      * @throws IllegalArgumentException if no credential properties are set
@@ -89,13 +89,13 @@ public class InspectSignerMojo extends AbstractSigmundMojo {
         if (email != null && !email.isBlank()) {
             return CredentialParser.fromEmail(email);
         }
-        if (oidcIssuer != null && !oidcIssuer.isBlank()
-                && oidcSubject != null && !oidcSubject.isBlank()) {
-            return CredentialParser.fromOidc(oidcIssuer, oidcSubject);
+        if (sigstoreIssuer != null && !sigstoreIssuer.isBlank()
+                && sigstoreSubject != null && !sigstoreSubject.isBlank()) {
+            return CredentialParser.fromSigstore(sigstoreIssuer, sigstoreSubject);
         }
         throw new IllegalArgumentException(
                 "At least one of sigmund.fingerprint, sigmund.email, "
-                        + "or sigmund.oidcIssuer+sigmund.oidcSubject is required");
+                        + "or sigmund.sigstoreIssuer+sigmund.sigstoreSubject is required");
     }
 
     private Sigmund createSigmund() throws MojoExecutionException {

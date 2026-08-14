@@ -16,7 +16,7 @@ package dev.cyberstamp.sigmund.core;
  * @see Credential
  * @see FingerprintCredential
  * @see EmailCredential
- * @see OidcCredential
+ * @see SigstoreCredential
  */
 public final class CredentialParser {
 
@@ -65,21 +65,24 @@ public final class CredentialParser {
     }
 
     /**
-     * Creates an {@link OidcCredential} from an issuer URL and subject.
+     * Creates a {@link SigstoreCredential} from an issuer URL and subject.
      *
-     * @param issuer OIDC issuer URL (e.g. {@code "https://token.actions.githubusercontent.com"})
-     * @param subject OIDC subject (e.g. a GitHub Actions workflow reference)
-     * @return an OIDC credential
+     * @param issuer OIDC issuer URL
+     * @param subject SAN subject (workflow URI or email)
+     * @return a Sigstore credential with issuer and subject set
      * @throws IllegalArgumentException if either parameter is null or blank
      */
-    public static OidcCredential fromOidc(String issuer, String subject) {
+    public static SigstoreCredential fromSigstore(String issuer, String subject) {
         if (issuer == null || issuer.isBlank()) {
-            throw new IllegalArgumentException("OIDC issuer must not be empty");
+            throw new IllegalArgumentException("Sigstore issuer must not be empty");
         }
         if (subject == null || subject.isBlank()) {
-            throw new IllegalArgumentException("OIDC subject must not be empty");
+            throw new IllegalArgumentException("Sigstore subject must not be empty");
         }
-        return new OidcCredential(issuer, subject);
+        return new SigstoreCredential.Builder()
+                .issuer(issuer)
+                .subject(subject)
+                .build();
     }
 
     /**

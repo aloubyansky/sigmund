@@ -56,23 +56,24 @@ class CredentialParserTest {
     }
 
     @Test
-    void fromOidc() {
-        var cred = CredentialParser.fromOidc("https://issuer", "subject");
-        assertEquals("oidc", cred.type());
-        assertEquals("https://issuer", cred.issuer());
-        assertEquals("subject", cred.subject());
+    void fromSigstoreWithIssuerAndSubject() {
+        var cred = CredentialParser.fromSigstore("https://token.actions.githubusercontent.com",
+                "https://github.com/org/repo");
+        assertEquals("sigstore", cred.type());
+        assertEquals("https://token.actions.githubusercontent.com", cred.issuer());
+        assertEquals("https://github.com/org/repo", cred.subject());
     }
 
     @Test
-    void fromOidcRejectsBlankIssuer() {
+    void fromSigstoreNullIssuerThrows() {
         assertThrows(IllegalArgumentException.class,
-                () -> CredentialParser.fromOidc("", "subject"));
+                () -> CredentialParser.fromSigstore(null, "subject"));
     }
 
     @Test
-    void fromOidcRejectsBlankSubject() {
+    void fromSigstoreBlankSubjectThrows() {
         assertThrows(IllegalArgumentException.class,
-                () -> CredentialParser.fromOidc("https://issuer", ""));
+                () -> CredentialParser.fromSigstore("https://issuer", "  "));
     }
 
     @Test

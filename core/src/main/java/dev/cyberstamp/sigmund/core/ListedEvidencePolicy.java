@@ -5,7 +5,7 @@ package dev.cyberstamp.sigmund.core;
  * <p>
  * "Listed" evidence is evidence whose format matches a credential type in the
  * expected signer's credential bag (e.g., a {@code .sigstore.json} file is listed
- * evidence when the signer has an {@code oidc} credential).
+ * evidence when the signer has a {@code sigstore} credential).
  */
 public enum ListedEvidencePolicy {
     /** All listed evidence must match an expected signer. */

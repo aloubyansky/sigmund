@@ -16,6 +16,7 @@ The Sigmund CLI provides command-line tools for key management, artifact signing
   - [sigmund signer-info](#sigmund-signer-info)
   - [sigmund sign](#sigmund-sign)
   - [sigmund verify-signature](#sigmund-verify-signature)
+  - [sigmund inspect-signer](#sigmund-inspect-signer)
   - [sigmund export-cert](#sigmund-export-cert)
 - [Configuration File](#configuration-file)
 - [CLI vs Maven Plugin](#cli-vs-maven-plugin)
@@ -227,6 +228,55 @@ Overall: PASS
 Exit codes:
 - `0` — Verification passed
 - `1` — Verification failed
+
+---
+
+### `sigmund inspect-signer`
+
+Inspect a signer identity across all available sources (local keystores and keyservers). Useful for verifying that a signer's key is reachable before configuring trust mappings.
+
+```bash
+sigmund inspect-signer <IDENTIFIER> [options]
+```
+
+The identifier is auto-detected by default: hex strings are treated as fingerprints, strings containing `@` as emails. Use explicit flags to override auto-detection.
+
+**Options:**
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `<identifier>` | No | — | Signer identifier (fingerprint or email, auto-detected) |
+| `--fingerprint` | No | — | Treat identifier as a fingerprint |
+| `--email` | No | — | Treat identifier as an email |
+| `--sigstore-issuer` | No | — | Sigstore certificate OIDC issuer URL |
+| `--sigstore-subject` | No | — | Sigstore certificate SAN subject |
+| `--keyservers` | No | from config | Keyservers to query (comma-separated) |
+| `--tool` | No | all | Restrict inspection to a specific tool (`bc`, `sq`, `gpg`) |
+| `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
+
+Either a positional `<identifier>` or `--sigstore-issuer` + `--sigstore-subject` is required.
+
+**Examples:**
+
+Inspect a fingerprint:
+
+```bash
+sigmund inspect-signer 4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12
+```
+
+Inspect an email:
+
+```bash
+sigmund inspect-signer alice@example.com
+```
+
+Inspect a Sigstore identity:
+
+```bash
+sigmund inspect-signer \
+  --sigstore-issuer "https://token.actions.githubusercontent.com" \
+  --sigstore-subject "https://github.com/org/repo"
+```
 
 ---
 

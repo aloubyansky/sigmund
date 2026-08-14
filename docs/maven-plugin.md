@@ -5,12 +5,14 @@ The Sigmund Maven plugin provides goals for signing artifacts and verifying depe
 ## Contents
 
 - [Plugin Coordinates](#plugin-coordinates)
+- [Enabling Sigstore Support](#enabling-sigstore-support)
 - [Goals](#goals)
   - [sigmund:sign](#sigmundsign)
   - [sigmund:signer-info](#sigmundsigner-info)
   - [sigmund:verify](#sigmundverify)
   - [sigmund:verify-signature](#sigmundverify-signature)
   - [sigmund:dependency-signers](#sigmunddependency-signers)
+  - [sigmund:inspect-signer](#sigmundinspect-signer)
 - [Configuration Precedence](#configuration-precedence)
 - [CI/CD Integration](#cicd-integration)
   - [Passphrases](#passphrases)
@@ -51,6 +53,29 @@ The Sigmund Maven plugin provides goals for signing artifacts and verifying depe
   </executions>
 </plugin>
 ```
+
+## Enabling Sigstore Support
+
+The Maven plugin does not include Sigstore support by default. To enable it, add `sigmund-sigstore` as a plugin dependency:
+
+```xml
+<plugin>
+  <groupId>dev.cyberstamp.sigmund</groupId>
+  <artifactId>sigmund-maven-plugin</artifactId>
+  <version>${sigmund.version}</version>
+  <dependencies>
+    <dependency>
+      <groupId>dev.cyberstamp.sigmund</groupId>
+      <artifactId>sigmund-sigstore</artifactId>
+      <version>${sigmund.version}</version>
+    </dependency>
+  </dependencies>
+</plugin>
+```
+
+Once on the classpath, `SigstoreToolFactory` is discovered automatically via `ServiceLoader`. No additional configuration is needed — Sigstore signing and verification are available to all plugin goals.
+
+For the CLI, Sigstore support is bundled automatically.
 
 ## Goals
 
@@ -251,6 +276,42 @@ Use `-Dsigmund.generateTrustConfig=true` to create an initial `sigmund.yaml` fro
 
 Use `-Dsigmund.updateTrustConfig=true` to add new dependency signers to an existing `sigmund.yaml`. This is useful after adding new dependencies — existing content including comments and formatting is preserved, and new entries are inserted at the end of each section. Review the changes with `git diff`.
 
+### sigmund:inspect-signer
+
+**Default Phase:** none (standalone goal)
+
+Inspects a signer identity across all available sources (local keystores and keyservers). Does not require a project — only needs tool configuration and a signer credential.
+
+**Parameters:**
+
+| Property | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `sigmund.fingerprint` | No | — | Signer fingerprint to inspect |
+| `sigmund.email` | No | — | Signer email to inspect |
+| `sigmund.sigstoreIssuer` | No | — | Sigstore certificate OIDC issuer URL |
+| `sigmund.sigstoreSubject` | No | — | Sigstore certificate SAN subject |
+| `sigmund.tool` | No | all | Restrict inspection to a specific tool (`bc`, `sq`, `gpg`) |
+| `sigmund.keyservers` | No | `hkps://keys.openpgp.org` | Comma-separated keyserver list |
+| `sigmund.resolveSigners` | No | `true` | Fetch keys from keyservers |
+| `sigmund.skip` | No | `false` | Skip this goal |
+
+At least one of `sigmund.fingerprint`, `sigmund.email`, or `sigmund.sigstoreIssuer` + `sigmund.sigstoreSubject` is required.
+
+**Examples:**
+
+```bash
+# Inspect a fingerprint
+mvn sigmund:inspect-signer -Dsigmund.fingerprint=4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12
+
+# Inspect an email
+mvn sigmund:inspect-signer -Dsigmund.email=alice@example.com
+
+# Inspect a Sigstore identity
+mvn sigmund:inspect-signer \
+  -Dsigmund.sigstoreIssuer=https://token.actions.githubusercontent.com \
+  -Dsigmund.sigstoreSubject=https://github.com/org/repo
+```
+
 ## Configuration Precedence
 
 Maven properties (`-Dsigmund.*`) override `sigmund.yaml` values, which override defaults.
@@ -282,6 +343,7 @@ Each backend checks a default environment variable — no `sigmund.yaml` configu
 |---------|----------------|----------|
 | BC | `SIGMUND_BC_PASSPHRASE` | Interactive console prompt |
 | GPG | `SIGMUND_GPG_PASSPHRASE` | `gpg-agent` |
+| Sigstore | `SIGSTORE_JAVA_ID_TOKEN` (optional) | Ambient OIDC (env var or GitHub Actions) or interactive browser login |
 
 ```bash
 export SIGMUND_BC_PASSPHRASE="your-passphrase"

@@ -42,12 +42,15 @@ Sigmund supports three OpenPGP backends, each with distinct capabilities:
 | **BC** | Always (pure Java) | Sign, verify | Sign, verify (classic algos) | Phase 2 planned | None |
 | **sq** | Optional | Verify | Sign, verify | Sign, verify (RFC 9980) | Sequoia CLI |
 | **gpg** | Optional | Sign, verify | None | None | GnuPG CLI |
+| **sigstore** | Optional (pure Java) | N/A | N/A | N/A | None |
 
 **BC (Bouncy Castle)** is the default first-choice tool. It requires no external process dependencies and works on any JVM. BC generates v6 keys for Ed25519, Ed448, and RSA using Bouncy Castle 1.85's `BcOpenPGPApi`. ECDSA keys (P-256, P-384, P-521) use a JCA-based fallback and produce v4 keys.
 
 **sq (Sequoia)** is used for PQC hybrid signing when available. Version 1.4.0+ implements RFC 9980 and can generate and verify ML-DSA composite signatures.
 
 **gpg (GnuPG)** provides compatibility with existing GPG-based workflows and reads GPG keyrings. GnuPG follows LibrePGP and does not support v6 keys.
+
+**sigstore** provides OIDC-based keyless signing and verification via the `sigmund-sigstore` module. It uses `dev.sigstore:sigstore-java` for both signing (Fulcio + Rekor) and verification (KeylessVerifier). It is pure Java, requires no external CLI binary, and is ServiceLoader-discovered — adding `sigmund-sigstore` to the classpath is sufficient. The `SigstoreToolFactory` implements the `SignatureToolFactory` SPI.
 
 ## Toolchain and Routing
 
@@ -296,6 +299,11 @@ Sigmund supports multiple credential types:
   - Matches: exact fingerprint match, same credential type
 - `EmailCredential(email)` — email address extracted from user ID
   - Matches: case-insensitive email match
+- `SigstoreCredential` — Sigstore certificate extension fields (issuer, subject, source-repository-uri, etc.)
+  - Type: `"sigstore"`
+  - Built via `SigstoreCredential.Builder` with nullable fields
+  - Matches: every non-null field in the configured credential must equal the corresponding field in the extracted credential. Null fields are wildcards. This enables flexible trust policies — matching on `issuer` + `source-repository-uri` trusts all releases from a repository without pinning to a specific workflow ref.
+  - Extracted from Fulcio certificates during Sigstore verification. When the certificate subject is an email (SAN type `rfc822Name`), an `EmailCredential` is also extracted, enabling cross-backend matching.
 
 Identity matching works via credential overlap: a signer identity matches an evidence result if any credential in the signer's credential bag matches any proven credential in the evidence.
 
@@ -351,11 +359,8 @@ PQC algorithm IDs (RFC 9980):
 ## Project Structure
 
 ```
-core/           Core signing and verification library (pure Java, no CLI dependencies)
-cli/            Command-line interface (picocli)
-maven-plugin/   Maven plugin for build integration
+core/              Core signing and verification library (pure Java, no CLI dependencies)
+cli/               Command-line interface (picocli)
+maven-plugin/      Maven plugin for build integration
+sigstore/          Sigstore signing/verification backend (dev.sigstore:sigstore-java)
 ```
-
-- **`core`** contains the `Sigmund` facade, the three tool backends (BC, sq, gpg), the identity verification layer, and configuration parsing.
-- **`cli`** provides standalone commands for key generation, signing, verification, and certificate export.
-- **`maven-plugin`** integrates signing and trust verification into the Maven build lifecycle.

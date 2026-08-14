@@ -53,7 +53,7 @@ public class SignMojo extends AbstractSigningMojo {
             for (SigningInfo info : signer.signingInfo()) {
                 getLog().info(info.display());
             }
-            List<FileToSign> filesToSign = collectFilesToSign();
+            List<FileToSign> filesToSign = collectFilesToSign(sigmund.signatureFileExtensions());
 
             getLog().info("Signing " + filesToSign.size() + " artifact(s)...");
 
@@ -70,13 +70,13 @@ public class SignMojo extends AbstractSigningMojo {
         }
     }
 
-    private List<FileToSign> collectFilesToSign() {
+    private List<FileToSign> collectFilesToSign(Set<String> sigExtensions) {
         List<FileToSign> files = new ArrayList<>();
 
         Artifact mainArtifact = project.getArtifact();
         File mainFile = mainArtifact.getFile();
-        if (mainFile != null && mainFile.exists() && !isSignatureFile(mainFile.getName())) {
-            String extension = getExtension(mainFile);
+        if (mainFile != null && mainFile.exists() && !isSignatureFile(mainFile.getName(), sigExtensions)) {
+            String extension = mainArtifact.getArtifactHandler().getExtension();
             files.add(new FileToSign(mainFile, extension, null));
             getLog().debug("Added main artifact: " + mainFile.getName());
         }
@@ -89,8 +89,8 @@ public class SignMojo extends AbstractSigningMojo {
 
         for (Artifact artifact : project.getAttachedArtifacts()) {
             File file = artifact.getFile();
-            if (file != null && file.exists() && !isSignatureFile(file.getName())) {
-                String extension = getExtension(file);
+            if (file != null && file.exists() && !isSignatureFile(file.getName(), sigExtensions)) {
+                String extension = artifact.getArtifactHandler().getExtension();
                 String classifier = getClassifier(artifact);
                 files.add(new FileToSign(file, extension, classifier));
                 getLog().debug("Added attached artifact: " + file.getName() +
@@ -109,12 +109,10 @@ public class SignMojo extends AbstractSigningMojo {
         getLog().info("Signing: " + file.getName());
 
         try {
-            SigningOutput output = signer.sign(artifactPath,
-                    Path.of(project.getBuild().getDirectory()));
+            SigningOutput output = signer.sign(artifactPath, Path.of(project.getBuild().getDirectory()));
             for (SignedFile sf : output.files()) {
                 String attachExtension = fileToSign.extension + sf.fileExtension();
-                projectHelper.attachArtifact(project, attachExtension,
-                        fileToSign.classifier, sf.path().toFile());
+                projectHelper.attachArtifact(project, attachExtension, fileToSign.classifier, sf.path().toFile());
                 getLog().debug("Attached signature: " + sf.path().getFileName()
                         + (fileToSign.classifier != null
                                 ? " (classifier=" + fileToSign.classifier + ")"
@@ -130,27 +128,15 @@ public class SignMojo extends AbstractSigningMojo {
         return (classifier != null && !classifier.isEmpty()) ? classifier : null;
     }
 
-    private String getExtension(File file) {
-        String name = file.getName();
-        int lastDot = name.lastIndexOf('.');
-        return (lastDot >= 0) ? name.substring(lastDot + 1) : name;
-    }
-
-    /**
-     * Known signature file extensions used to exclude already-signed files
-     * from the signing pass.
-     */
-    private static final Set<String> KNOWN_SIGNATURE_EXTENSIONS = Set.of(
-            ".asc", ".sigstore.json");
-
     /**
      * Checks whether the given file name has a known signature extension.
      *
      * @param fileName the file name to check
+     * @param sigExtensions the set of signature file extensions from registered formats
      * @return {@code true} if the name ends with a known signature extension
      */
-    private static boolean isSignatureFile(String fileName) {
-        for (String ext : KNOWN_SIGNATURE_EXTENSIONS) {
+    private static boolean isSignatureFile(String fileName, Set<String> sigExtensions) {
+        for (String ext : sigExtensions) {
             if (fileName.endsWith(ext)) {
                 return true;
             }

@@ -1,5 +1,6 @@
 package dev.cyberstamp.sigmund.plugin;
 
+import dev.cyberstamp.sigmund.core.Algorithms;
 import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.FileSignatureReport;
 import dev.cyberstamp.sigmund.core.KeyImporter;
@@ -36,7 +37,8 @@ class SignatureInspector implements AutoCloseable {
     private SignatureInspector(Builder builder) {
         this.log = builder.log;
         this.fileResolver = new ArtifactFileResolver(
-                builder.repoSystem, builder.repoSession, builder.remoteRepos, builder.log);
+                builder.repoSystem, builder.repoSession, builder.remoteRepos, builder.log,
+                builder.sigmund.signatureFileExtensions());
         this.sigmund = builder.sigmund;
         this.keyImporter = sigmund.findTool(KeyImporter.class);
     }
@@ -95,7 +97,7 @@ class SignatureInspector implements AutoCloseable {
     }
 
     static String versionLabel(int version) {
-        return dev.cyberstamp.sigmund.core.Algorithms.versionLabel(version);
+        return Algorithms.versionLabel(version);
     }
 
     List<SignedArtifact> inspectAll(Collection<ArtifactCoords> artifacts) {
@@ -115,48 +117,63 @@ class SignatureInspector implements AutoCloseable {
         }
 
         List<RemoteRepository> sigRepos = fileResolver.signatureRepos(resolved.sourceRepo());
-        ArtifactFileResolver.ResolvedSignature sigResult = fileResolver.resolveSignature(
-                coords, ".asc", sigRepos);
-        if (sigResult == null) {
+        List<ArtifactFileResolver.ResolvedSignature> sigResults = resolveAllSignatures(coords, sigRepos);
+        if (sigResults.isEmpty()) {
             return List.of(new SignedArtifact(coordsStr, null, Verdict.SKIPPED));
         }
 
-        String repoId = sigResult.repoId();
-        Path ascFile = sigResult.signatureFile();
-
-        SignatureVerificationReport report;
-        try {
-            report = sigmund.verify(resolved.artifactFile(), ascFile);
-        } catch (Exception e) {
-            log.warn("Verification failed for " + coordsStr + ": " + e.getMessage());
-            return List.of(new SignedArtifact(coordsStr, repoId, Verdict.FAIL));
-        }
-
-        if (report.files().isEmpty()) {
-            return List.of(new SignedArtifact(coordsStr, repoId, Verdict.SKIPPED));
-        }
-
         List<SignedArtifact> entries = new ArrayList<>();
-        for (FileSignatureReport fileReport : report.files()) {
-            if (fileReport.results().isEmpty()) {
+        for (ArtifactFileResolver.ResolvedSignature sigResult : sigResults) {
+            String repoId = sigResult.repoId();
+            Path sigFile = sigResult.signatureFile();
+
+            SignatureVerificationReport report;
+            try {
+                report = sigmund.verify(resolved.artifactFile(), sigFile);
+            } catch (Exception e) {
+                log.warn("Verification failed for " + coordsStr + ": " + e.getMessage());
+                entries.add(new SignedArtifact(coordsStr, repoId, Verdict.FAIL));
+                continue;
+            }
+
+            if (report.files().isEmpty()) {
                 entries.add(new SignedArtifact(coordsStr, repoId, Verdict.SKIPPED));
                 continue;
             }
-            for (VerifyResult vr : fileReport.results()) {
-                SignedArtifact entry = new SignedArtifact(coordsStr, repoId, vr,
-                        resolved.artifactFile(), ascFile);
-                SignedArtifact fetched;
-                try {
-                    fetched = fetchSignerInfoIfMissing(entry);
-                } catch (Exception e) {
-                    log.debug("Signer info fetch failed for " + coordsStr + ": " + e.getMessage());
-                    fetched = entry;
+
+            for (FileSignatureReport fileReport : report.files()) {
+                if (fileReport.results().isEmpty()) {
+                    entries.add(new SignedArtifact(coordsStr, repoId, Verdict.SKIPPED));
+                    continue;
                 }
-                entries.add(fetched);
+                for (VerifyResult vr : fileReport.results()) {
+                    SignedArtifact entry = new SignedArtifact(coordsStr, repoId, vr,
+                            resolved.artifactFile(), sigFile);
+                    SignedArtifact fetched;
+                    try {
+                        fetched = fetchSignerInfoIfMissing(entry);
+                    } catch (Exception e) {
+                        log.debug("Signer info fetch failed for " + coordsStr + ": " + e.getMessage());
+                        fetched = entry;
+                    }
+                    entries.add(fetched);
+                }
             }
         }
 
         return entries;
+    }
+
+    private List<ArtifactFileResolver.ResolvedSignature> resolveAllSignatures(
+            ArtifactCoords coords, List<RemoteRepository> sigRepos) {
+        List<ArtifactFileResolver.ResolvedSignature> results = new ArrayList<>(sigRepos.size());
+        for (String ext : sigmund.signatureFileExtensions()) {
+            ArtifactFileResolver.ResolvedSignature sig = fileResolver.resolveSignature(coords, ext, sigRepos);
+            if (sig != null) {
+                results.add(sig);
+            }
+        }
+        return results;
     }
 
     SignedArtifact fetchSignerInfoIfMissing(SignedArtifact entry) {
@@ -178,8 +195,7 @@ class SignatureInspector implements AutoCloseable {
             return entry;
         }
         try {
-            SignatureVerificationReport report = sigmund.verify(
-                    entry.artifactFile(), entry.signatureFile());
+            SignatureVerificationReport report = sigmund.verify(entry.artifactFile(), entry.signatureFile());
             if (report.files().isEmpty()) {
                 return entry;
             }

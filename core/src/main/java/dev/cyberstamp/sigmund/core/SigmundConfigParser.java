@@ -22,7 +22,7 @@ import java.util.Map;
  * <li>{@code openpgp4} / {@code pgp4} → {@link FingerprintCredential}("openpgp4", ...)</li>
  * <li>{@code openpgp6} / {@code pgp6} → {@link FingerprintCredential}("openpgp6", ...)</li>
  * <li>{@code email} → {@link EmailCredential}</li>
- * <li>{@code oidc} → {@link OidcCredential}(issuer, subject)</li>
+ * <li>{@code sigstore} → {@link SigstoreCredential}(issuer, subject)</li>
  * </ul>
  */
 class SigmundConfigParser {
@@ -126,7 +126,7 @@ class SigmundConfigParser {
      * <p>
      * Supports three forms:
      * <ul>
-     * <li><b>Single-key signer</b> — credentials (pgp4, pgp6, email, oidc) at the top level</li>
+     * <li><b>Single-key signer</b> — credentials (pgp4, pgp6, email, sigstore) at the top level</li>
      * <li><b>Organization with members</b> — a {@code members} array where each element
      * carries its own credentials, all aggregated into one signer identity</li>
      * <li><b>Mixed</b> — top-level credentials and {@code members} combined</li>
@@ -147,14 +147,14 @@ class SigmundConfigParser {
 
         if (credentials.isEmpty()) {
             throw new PolicyConfigException(
-                    "Signer '" + id + "' must have at least one credential (pgp4, pgp6, email, or oidc)");
+                    "Signer '" + id + "' must have at least one credential (pgp4, pgp6, email, or sigstore)");
         }
 
         return new SignerIdentity(id, displayName != null ? displayName : id, credentials);
     }
 
     /**
-     * Extracts all credential fields (pgp4, pgp6, email, oidc) from a single YAML node
+     * Extracts all credential fields (pgp4, pgp6, email, sigstore) from a single YAML node
      * and appends them to the given list.
      *
      * @param credentials the list to append extracted credentials to
@@ -166,7 +166,7 @@ class SigmundConfigParser {
         addFingerprintCredential(credentials, node, Credential.TYPE_OPENPGP_V6, Credential.TYPE_OPENPGP_V6);
         addFingerprintCredential(credentials, node, "pgp6", Credential.TYPE_OPENPGP_V6);
         addEmailCredential(credentials, node);
-        addOidcCredential(credentials, node);
+        addSigstoreCredential(credentials, node);
     }
 
     /**
@@ -219,17 +219,78 @@ class SigmundConfigParser {
         }
     }
 
-    private static void addOidcCredential(List<Credential> creds, JsonNode node) {
-        JsonNode oidcNode = node.get("oidc");
-        if (oidcNode == null || oidcNode.isNull()) {
+    private static final List<String> KNOWN_SIGSTORE_FIELDS = List.of(
+            "issuer", "subject", "source-repository-uri", "source-repository-owner-uri",
+            "build-trigger", "build-config-uri", "runner-environment");
+
+    private static void addSigstoreCredential(List<Credential> creds, JsonNode node) {
+        JsonNode sigstoreNode = node.get("sigstore");
+        if (sigstoreNode == null || sigstoreNode.isNull()) {
             return;
         }
-        if (oidcNode.isObject()) {
-            String issuer = textField(oidcNode, "issuer");
-            String subject = textField(oidcNode, "subject");
-            if (issuer != null && subject != null) {
-                creds.add(new OidcCredential(issuer, subject));
+        if (!sigstoreNode.isObject()) {
+            return;
+        }
+        List<String> unknown = new ArrayList<>();
+        sigstoreNode.fieldNames().forEachRemaining(field -> {
+            if (!KNOWN_SIGSTORE_FIELDS.contains(field)) {
+                unknown.add(field);
             }
+        });
+        if (!unknown.isEmpty()) {
+            throw new PolicyConfigException(
+                    "Unknown field(s) in 'sigstore' credential: "
+                            + String.join(", ", unknown)
+                            + ". Expected: "
+                            + String.join(", ", KNOWN_SIGSTORE_FIELDS));
+        }
+        var builder = new SigstoreCredential.Builder();
+        boolean hasField = false;
+
+        String issuer = textField(sigstoreNode, "issuer");
+        if (issuer != null) {
+            builder.issuer(issuer);
+            hasField = true;
+        }
+
+        String subject = textField(sigstoreNode, "subject");
+        if (subject != null) {
+            builder.subject(subject);
+            hasField = true;
+        }
+
+        String sourceRepositoryUri = textField(sigstoreNode, "source-repository-uri");
+        if (sourceRepositoryUri != null) {
+            builder.sourceRepositoryUri(sourceRepositoryUri);
+            hasField = true;
+        }
+
+        String sourceRepositoryOwnerUri = textField(sigstoreNode, "source-repository-owner-uri");
+        if (sourceRepositoryOwnerUri != null) {
+            builder.sourceRepositoryOwnerUri(sourceRepositoryOwnerUri);
+            hasField = true;
+        }
+
+        String buildTrigger = textField(sigstoreNode, "build-trigger");
+        if (buildTrigger != null) {
+            builder.buildTrigger(buildTrigger);
+            hasField = true;
+        }
+
+        String buildConfigUri = textField(sigstoreNode, "build-config-uri");
+        if (buildConfigUri != null) {
+            builder.buildConfigUri(buildConfigUri);
+            hasField = true;
+        }
+
+        String runnerEnvironment = textField(sigstoreNode, "runner-environment");
+        if (runnerEnvironment != null) {
+            builder.runnerEnvironment(runnerEnvironment);
+            hasField = true;
+        }
+
+        if (hasField) {
+            creds.add(builder.build());
         }
     }
 

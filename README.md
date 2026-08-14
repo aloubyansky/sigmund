@@ -1,12 +1,12 @@
 # Sigmund — Artifact Signing and Trust Verification for Maven
 
-A Maven plugin and CLI for signing artifacts, verifying signatures, and enforcing dependency trust policies. Supports classic OpenPGP (GPG or pure-Java Bouncy Castle) and post-quantum hybrid signing (RFC 9980 via Sequoia).
+A Maven plugin and CLI for signing artifacts, verifying signatures, and enforcing dependency trust policies. Supports classic OpenPGP (GPG or pure-Java Bouncy Castle), post-quantum hybrid signing (RFC 9980 via Sequoia), and Sigstore keyless signing.
 
 ## Overview
 
 Sigmund is a general-purpose signing and trust verification tool for Maven that brings dependency signature verification to the Maven ecosystem — a capability no other tool provides. It can verify who signed each dependency in your project and enforce trust policies based on signer identity, giving you visibility into and control over your software supply chain.
 
-Sigmund is also a drop-in replacement for `maven-gpg-plugin` with hybrid post-quantum cryptography (PQC) support. Hybrid `.asc` files contain both a classic signature (RSA/EdDSA, backward-compatible with all existing tools) and a PQC v6 signature (ML-DSA-87+Ed448 via Sequoia, quantum-resistant, CNSA 2.0 compliant per RFC 9980). A pure-Java Bouncy Castle backend handles classic OpenPGP with zero external tool dependencies.
+Sigmund is also a drop-in replacement for `maven-gpg-plugin` and `sigstore-maven-plugin`. It supports hybrid post-quantum cryptography (PQC) — `.asc` files containing both a classic signature (RSA/EdDSA) and a PQC v6 signature (ML-DSA-87+Ed448 via Sequoia, RFC 9980). A pure-Java Bouncy Castle backend handles classic OpenPGP with zero external tool dependencies. The Sigstore backend provides keyless signing via OIDC — no long-lived keys to manage — producing `.sigstore.json` bundles alongside or instead of OpenPGP signatures.
 
 ## Try It Now
 
@@ -78,9 +78,10 @@ mvn sigmund:verify
 
 - **Dependency signature verification and trust enforcement** — Verify signatures on all project dependencies and enforce policies based on signer identity. No alternative tool offers this capability today.
 - **Drop-in replacement for maven-gpg-plugin** — Use existing GPG keys or Bouncy Castle's pure-Java backend for classic OpenPGP with no external dependencies.
+- **Sigstore keyless signing** — OIDC-based signing with no long-lived keys to generate, store, or rotate. Produces `.sigstore.json` bundles. Identity-validated: configure expected OIDC identities and catch mismatches before artifacts are signed. CI-tuned defaults (ambient GitHub Actions OIDC, no browser popups).
 - **Hybrid PQC + classic signing** — ML-DSA-87+Ed448 and Ed25519/RSA in one `.asc` file (RFC 9980). Existing tools see only the classic signature; PQC-aware tools verify both.
-- **Pure-Java Bouncy Castle backend** — Classic OpenPGP signing and verification with zero external tool dependencies. No `gpg` or `sq` installation required.
-- **Three OpenPGP backends** — BC (pure Java, always available), Sequoia sq (PQC support), and GnuPG (legacy compatibility). Configurable priority for maximum flexibility.
+- **Multi-format signing** — Produce both `.asc` (OpenPGP) and `.sigstore.json` (Sigstore) in a single build. Cross-backend identity matching lets a signer configured with just an `email` credential match both OpenPGP and Sigstore signatures.
+- **Four signing backends** — BC (pure Java, always available), Sequoia sq (PQC support), GnuPG (legacy compatibility), and Sigstore (keyless OIDC). Configurable priority and toolchain selection.
 - **CLI for key management and custom workflows** — Generate keys, sign artifacts, verify signatures, and export certificates outside Maven.
 
 ## Quick Signing Example
@@ -143,6 +144,7 @@ Run `mvn sigmund:sign` to sign with both — classic signature first, PQC signat
 - [Getting Started](docs/getting-started.md) — Quick start guide for dependency trust verification
 - [Migration from maven-gpg-plugin](docs/migrating-from-gpg-plugin.md) — How to migrate from maven-gpg-plugin
 - [Migration from sign-maven-plugin](docs/migrating-from-sign-maven-plugin.md) — How to migrate from sign-maven-plugin (s4u)
+- [Migration from sigstore-maven-plugin](docs/migrating-from-sigstore-maven-plugin.md) — How to migrate from sigstore-maven-plugin
 - [Signing Guide](docs/signing.md) — Signing artifacts with GPG, BC, or hybrid PQC
 - [Signature Verification](docs/verification.md) — How signature verification works
 - [Trust Verification](docs/trust-verification.md) — Enforcing dependency trust policies

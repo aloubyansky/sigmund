@@ -42,15 +42,15 @@ class InspectSignerMojoTest {
     }
 
     @Test
-    void buildCredentialFromOidc() {
+    void buildCredentialFromSigstore() {
         var mojo = new InspectSignerMojo();
-        mojo.oidcIssuer = "https://issuer.example.com";
-        mojo.oidcSubject = "https://github.com/org/repo";
+        mojo.sigstoreIssuer = "https://issuer.example.com";
+        mojo.sigstoreSubject = "https://github.com/org/repo";
 
         var credential = mojo.buildCredential();
 
         assertInstanceOf(
-                dev.cyberstamp.sigmund.core.OidcCredential.class, credential);
+                dev.cyberstamp.sigmund.core.SigstoreCredential.class, credential);
     }
 
     @Test

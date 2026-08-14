@@ -112,16 +112,16 @@ Sigmund supports four credential types:
 | OpenPGP v4 | `openpgp4` or `pgp4` | 40-character v4 fingerprint | `4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12` |
 | OpenPGP v6 | `openpgp6` or `pgp6` | 64-character v6 fingerprint | `D62AAB339E45E5EA2FD036872B01D46A517A2991...` |
 | Email | `email` | Email address | `dev@example.com` |
-| OIDC | `oidc` | Object with `issuer` and `subject` | (see below) |
+| Sigstore | `sigstore` | Object with matchable certificate fields | (see below) |
 
-**OIDC credentials** (for Sigstore-signed artifacts):
+**Sigstore credentials** (for Sigstore-signed artifacts):
 ```yaml
 signers:
   github-actions:
     name: "My GitHub Actions"
-    oidc:
+    sigstore:
       issuer: "https://token.actions.githubusercontent.com"
-      subject: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/heads/main"
+      source-repository-uri: "https://github.com/myorg/myrepo"
 ```
 
 **Multiple credentials per signer:**
@@ -248,7 +248,7 @@ signers:
   # Minimal form: email string
   jackson-dev: "tatu@fasterxml.com"
   
-  # Multiple credentials (hybrid v4 + v6)
+  # Multiple credentials (PGP + Sigstore)
   alice:
     name: "Alice Developer"
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"

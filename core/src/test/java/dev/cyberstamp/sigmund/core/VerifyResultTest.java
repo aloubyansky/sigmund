@@ -87,10 +87,14 @@ class VerifyResultTest {
         }
 
         @Test
-        void sigstoreReturnsNull() {
+        void sigstoreReturnsOidcSubject() {
+            var sc = new SigstoreCredential.Builder()
+                    .issuer("https://accounts.google.com")
+                    .subject("alice@example.com")
+                    .build();
             var result = new SigstoreVerifyResult(Verdict.PASS, "alice@example.com", "ECDSA",
-                    "https://accounts.google.com", "12345");
-            assertNull(result.signerIdentifier());
+                    sc, "12345", 1);
+            assertEquals("alice@example.com", result.signerIdentifier());
         }
 
         @Test

@@ -8,10 +8,10 @@ package dev.cyberstamp.sigmund.core;
  * Sigstore email-based subjects.
  * <p>
  * For cases where the issuer must be verified (CI pipelines, service accounts),
- * use {@link OidcCredential} instead.
+ * use {@link SigstoreCredential} instead.
  *
  * @param email the email address
- * @see OidcCredential
+ * @see SigstoreCredential
  */
 public record EmailCredential(String email) implements Credential {
 

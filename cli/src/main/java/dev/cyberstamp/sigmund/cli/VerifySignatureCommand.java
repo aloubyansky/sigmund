@@ -28,7 +28,7 @@ public class VerifySignatureCommand implements Callable<Integer> {
     @CommandLine.Option(names = { "--file" }, required = true, description = "Artifact file to verify")
     private String file;
 
-    @CommandLine.Option(names = { "--signature" }, required = true, description = "Signature file (.asc)")
+    @CommandLine.Option(names = { "--signature" }, required = true, description = "Signature file (.asc or .sigstore.json)")
     private String signature;
 
     @CommandLine.Mixin

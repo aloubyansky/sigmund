@@ -1,6 +1,6 @@
 # Signing Guide
 
-This guide covers artifact signing with Sigmund's three OpenPGP backends: GPG (simplest, existing keys), Bouncy Castle (zero external dependencies), and Sequoia sq (post-quantum hybrid signing).
+This guide covers artifact signing with Sigmund's backends: GPG (simplest, existing keys), Bouncy Castle (zero external dependencies), Sequoia sq (post-quantum hybrid signing), and Sigstore (OIDC keyless signing).
 
 ## Contents
 
@@ -18,6 +18,11 @@ This guide covers artifact signing with Sigmund's three OpenPGP backends: GPG (s
   - [Generating a PQC Key](#generating-a-pqc-key)
   - [Signing with PQC](#signing-with-pqc)
   - [PQC Signature Sizes](#pqc-signature-sizes)
+- [Signing with Sigstore](#signing-with-sigstore)
+  - [OIDC Authentication](#oidc-authentication)
+  - [CI Configuration (GitHub Actions)](#ci-configuration-github-actions)
+  - [Desktop Interactive Signing](#desktop-interactive-signing)
+  - [Sigstore Output Format](#sigstore-output-format)
 - [Signing Profiles](#signing-profiles)
 - [Signing Pipeline](#signing-pipeline)
 - [Backward Compatibility](#backward-compatibility)
@@ -385,6 +390,122 @@ With the default `mldsa87-ed448` cipher suite, the PQC signature adds approximat
 **Per artifact:** ~4.6 KB for ML-DSA-87, ~3.3 KB for ML-DSA-65
 
 **Typical Maven module** (JAR, POM, sources, javadoc): ~18 KB for ML-DSA-87, ~13 KB for ML-DSA-65
+
+## Signing with Sigstore
+
+Sigstore provides keyless signing using short-lived certificates obtained via OIDC authentication. No long-lived keys to generate, store, or rotate. The `sigmund-sigstore` module uses `sigstore-java` and is pure Java — no external CLI binary required.
+
+### Configuration
+
+The default configuration is tuned for CI-based signing — only ambient OIDC providers (GitHub Actions) are used, and signing fails with a clear error if no ambient token is available. No browser window is opened.
+
+Minimal `sigmund.yaml` for CI:
+
+```yaml
+signing:
+  toolchain: [sigstore]
+```
+
+For desktop use, enable the browser-based OIDC login:
+
+```yaml
+tools:
+  sigstore:
+    interactive: true
+
+signing:
+  toolchain: [sigstore]
+```
+
+See the [configuration guide](configuration.md) for all Sigstore tool settings (`staging`, `trusted-root`, `interactive`).
+
+### Maven Plugin Setup
+
+Add `sigmund-sigstore` as a plugin dependency to enable the Sigstore backend:
+
+```xml
+<plugin>
+  <groupId>dev.cyberstamp.sigmund</groupId>
+  <artifactId>sigmund-maven-plugin</artifactId>
+  <version>${sigmund.version}</version>
+  <dependencies>
+    <dependency>
+      <groupId>dev.cyberstamp.sigmund</groupId>
+      <artifactId>sigmund-sigstore</artifactId>
+      <version>${sigmund.version}</version>
+    </dependency>
+  </dependencies>
+  <executions>
+    <execution>
+      <id>sign</id>
+      <phase>verify</phase>
+      <goals>
+        <goal>sign</goal>
+      </goals>
+    </execution>
+  </executions>
+</plugin>
+```
+
+### CLI Usage
+
+The CLI bundles Sigstore support — no extra dependency needed:
+
+```bash
+# Sign an artifact (produces artifact.jar.sigstore.json)
+sigmund sign --file artifact.jar
+
+# Verify a Sigstore bundle
+sigmund verify-signature --file artifact.jar --signature artifact.jar.sigstore.json
+```
+
+When signing produces multiple files (e.g., both `.asc` and `.sigstore.json` with a hybrid toolchain), all output files are listed. The `--output` flag is only valid when a single signature file is produced.
+
+### OIDC Authentication
+
+Sigstore signing uses the OIDC keyless flow:
+
+1. An ephemeral signing key pair is generated in memory
+2. An OIDC identity token is obtained (ambient or interactive)
+3. The token is exchanged for a short-lived Fulcio certificate binding the ephemeral key to the OIDC identity
+4. The artifact is signed with the ephemeral key
+5. The signature is recorded in the Rekor transparency log
+6. A Sigstore bundle (`.sigstore.json`) is produced containing the signature, certificate, and log entry
+
+**Ambient credentials (GitHub Actions):** When the workflow has `id-token: write` permission, GitHub Actions sets `ACTIONS_ID_TOKEN_REQUEST_TOKEN` and `ACTIONS_ID_TOKEN_REQUEST_URL` environment variables. sigstore-java's `GithubActionsOidcClient` detects these and obtains an OIDC token automatically — no Sigmund configuration needed. The resulting identity is the workflow URI (e.g., `https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0`), not a personal email. Without this permission, signing fails with a clear error.
+
+**Environment variable token:** Set `SIGSTORE_JAVA_ID_TOKEN` to an OIDC identity token. This is tried before GitHub Actions ambient credentials and enables Sigstore signing on any CI system (GitLab CI, Jenkins, CircleCI, etc.) without the browser flow.
+
+**Interactive credentials:** Require `interactive: true` in `sigmund.yaml`. Opens a browser for authentication via Google, GitHub, or Microsoft. The identity from the OIDC token (typically an email address) becomes the signer identity.
+
+> **Identity validation timing:** When a signer is configured with both `subject` and `issuer`, the OIDC token is validated at signing time — a mismatched identity is rejected before requesting a Fulcio certificate. Other Sigstore credential fields (`source-repository-uri`, `build-trigger`, etc.) are Fulcio certificate extensions that don't exist in the OIDC token, so they are matched at verification time only. For CI pipelines, `issuer` + `source-repository-uri` gives stable verification-time matching without needing to update the `subject` (which includes the git ref) on every release.
+
+### CI Configuration (GitHub Actions)
+
+Add `id-token: write` to the workflow permissions to enable ambient OIDC:
+
+```yaml
+permissions:
+  id-token: write
+  contents: read
+
+steps:
+  - uses: actions/checkout@v4
+  - name: Build and sign artifacts
+    run: mvn verify
+```
+
+The `sigmund:sign` goal is bound to the `verify` phase, so `mvn verify` builds the project and then signs all produced artifacts.
+
+### Sigstore Output Format
+
+Signing produces a `.sigstore.json` bundle for each artifact, containing:
+
+- The artifact signature
+- The short-lived Fulcio certificate
+- The Rekor transparency log entry
+
+Unlike OpenPGP `.asc` files, Sigstore bundles are self-contained — no keyserver lookup is needed for verification. The bundle format follows the [Sigstore Bundle specification](https://github.com/sigstore/protobuf-specs).
 
 ## Signing Profiles
 

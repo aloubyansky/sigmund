@@ -41,10 +41,13 @@ class BcRunnerSignerInspectionTest {
     }
 
     @Test
-    void cannotInspectOidcCredential() {
+    void cannotInspectSigstoreCredential() {
         BcRunner runner = createRunner(false, List.of());
         assertFalse(runner.canInspect(
-                new OidcCredential("https://issuer", "subject")));
+                new SigstoreCredential.Builder()
+                        .issuer("https://issuer")
+                        .subject("subject")
+                        .build()));
     }
 
     @Test
