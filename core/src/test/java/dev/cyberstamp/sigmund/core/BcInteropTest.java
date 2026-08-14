@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,20 +27,20 @@ class BcInteropTest {
         Path sigFile = tempDir.resolve("artifact.txt.asc");
 
         SignResult signResult = signer.sign(artifact, sigFile);
-        assertNotNull(signResult.algorithm());
-        assertTrue(Files.exists(sigFile));
+        assertThat(signResult.algorithm()).isNotNull();
+        assertThat(Files.exists(sigFile)).isTrue();
 
         String armored = Files.readString(sigFile);
-        assertTrue(armored.contains("-----BEGIN PGP SIGNATURE-----"));
+        assertThat(armored.contains("-----BEGIN PGP SIGNATURE-----")).isTrue();
 
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
-        assertTrue(info.version() > 0);
+        assertThat(info.version() > 0).isTrue();
 
         OpenPgpVerificationUnit unit = new OpenPgpVerificationUnit(
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
 
         VerifyResult result = signer.verify(artifact, unit);
-        assertEquals(Verdict.PASS, result.verdict());
+        assertThat(result.verdict()).isEqualTo(Verdict.PASS);
     }
 
     @ParameterizedTest
@@ -66,7 +66,7 @@ class BcInteropTest {
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
 
         VerifyResult result = signer.verify(artifact, unit);
-        assertEquals(Verdict.FAIL, result.verdict());
+        assertThat(result.verdict()).isEqualTo(Verdict.FAIL);
     }
 
     @ParameterizedTest
@@ -82,7 +82,7 @@ class BcInteropTest {
                 .addTool(signer)
                 .build();
 
-        assertNotNull(sigmund.tool("bc"));
-        assertTrue(sigmund.tool("bc").isAvailable());
+        assertThat(sigmund.tool("bc")).isNotNull();
+        assertThat(sigmund.tool("bc").isAvailable()).isTrue();
     }
 }

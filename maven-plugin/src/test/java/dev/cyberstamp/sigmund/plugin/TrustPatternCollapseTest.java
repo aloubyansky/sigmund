@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.plugin;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 
 class TrustPatternCollapseTest {
 
-    // ── Within-group collapsing ─────────────────────────────
+    // -- Within-group collapsing -----------------------------------------
 
     @Nested
     class WithinGroupTests {
@@ -20,7 +20,7 @@ class TrustPatternCollapseTest {
         void singleArtifactNotCollapsed() {
             var result = TrustPatternCollapse.collapse(input(
                     "com.example:lib", Set.of("alice")));
-            assertEquals(expected("com.example:lib", List.of("alice")), result);
+            assertThat(result).isEqualTo(expected("com.example:lib", List.of("alice")));
         }
 
         @Test
@@ -28,7 +28,7 @@ class TrustPatternCollapseTest {
             var result = TrustPatternCollapse.collapse(input(
                     "com.example:lib-a", Set.of("alice"),
                     "com.example:lib-b", Set.of("alice")));
-            assertEquals(expected("com.example.*", List.of("alice")), result);
+            assertThat(result).isEqualTo(expected("com.example.*", List.of("alice")));
         }
 
         @Test
@@ -37,9 +37,9 @@ class TrustPatternCollapseTest {
                     "com.example:lib-a", Set.of("alice"),
                     "com.example:lib-b", Set.of("alice"),
                     "com.example:lib-c", Set.of("bob")));
-            assertEquals(expected(
+            assertThat(result).isEqualTo(expected(
                     "com.example.*", List.of("alice"),
-                    "com.example:lib-c", List.of("bob")), result);
+                    "com.example:lib-c", List.of("bob")));
         }
 
         @Test
@@ -47,11 +47,11 @@ class TrustPatternCollapseTest {
             var result = TrustPatternCollapse.collapse(input(
                     "com.example:lib-a", Set.of("alice", "bob"),
                     "com.example:lib-b", Set.of("alice", "bob")));
-            assertEquals(1, result.size());
+            assertThat(result.size()).isEqualTo(1);
             var signers = result.get("com.example.*");
-            assertNotNull(signers);
-            assertEquals(2, signers.size());
-            assertTrue(signers.containsAll(List.of("alice", "bob")));
+            assertThat(signers).isNotNull();
+            assertThat(signers.size()).isEqualTo(2);
+            assertThat(signers.containsAll(List.of("alice", "bob"))).isTrue();
         }
 
         @Test
@@ -61,13 +61,13 @@ class TrustPatternCollapseTest {
                     "com.foo:lib-b", Set.of("alice"),
                     "com.bar:lib-x", Set.of("bob"),
                     "com.bar:lib-y", Set.of("bob")));
-            assertEquals(expected(
+            assertThat(result).isEqualTo(expected(
                     "com.foo.*", List.of("alice"),
-                    "com.bar.*", List.of("bob")), result);
+                    "com.bar.*", List.of("bob")));
         }
     }
 
-    // ── Across-group collapsing ─────────────────────────────
+    // -- Across-group collapsing -----------------------------------------
 
     @Nested
     class AcrossGroupTests {
@@ -79,7 +79,7 @@ class TrustPatternCollapseTest {
                     "io.quarkus:rest", Set.of("guillaume"),
                     "io.quarkus.arc:arc-impl", Set.of("guillaume"),
                     "io.quarkus.arc:arc-api", Set.of("guillaume")));
-            assertEquals(expected("io.quarkus.*", List.of("guillaume")), result);
+            assertThat(result).isEqualTo(expected("io.quarkus.*", List.of("guillaume")));
         }
 
         @Test
@@ -91,10 +91,10 @@ class TrustPatternCollapseTest {
                     "io.quarkus.arc:arc", Set.of("guillaume"),
                     "io.quarkus.arc:arc-api", Set.of("guillaume"),
                     "io.quarkus.security:quarkus-security", Set.of("quarkus")));
-            assertEquals(expected(
+            assertThat(result).isEqualTo(expected(
                     "io.quarkus.*", List.of("guillaume"),
                     "io.quarkus:fs-util", List.of("quarkus"),
-                    "io.quarkus.security:quarkus-security", List.of("quarkus")), result);
+                    "io.quarkus.security:quarkus-security", List.of("quarkus")));
         }
 
         @Test
@@ -104,9 +104,9 @@ class TrustPatternCollapseTest {
                     "io.quarkus:rest", Set.of("guillaume"),
                     "io.quarkus.security:sec-a", Set.of("other"),
                     "io.quarkus.security:sec-b", Set.of("other")));
-            assertEquals(expected(
+            assertThat(result).isEqualTo(expected(
                     "io.quarkus.*", List.of("guillaume"),
-                    "io.quarkus.security.*", List.of("other")), result);
+                    "io.quarkus.security.*", List.of("other")));
         }
 
         @Test
@@ -118,11 +118,11 @@ class TrustPatternCollapseTest {
                     "org.apache.maven:maven-core", Set.of("apache"),
                     "org.apache.maven.plugins:compiler", Set.of("apache"),
                     "org.apache.maven.plugins:surefire", Set.of("apache")));
-            assertEquals(expected("org.apache.*", List.of("apache")), result);
+            assertThat(result).isEqualTo(expected("org.apache.*", List.of("apache")));
         }
     }
 
-    // ── Edge cases ──────────────────────────────────────────
+    // -- Edge cases ------------------------------------------------------
 
     @Nested
     class EdgeCaseTests {
@@ -130,7 +130,7 @@ class TrustPatternCollapseTest {
         @Test
         void emptyInput() {
             var result = TrustPatternCollapse.collapse(Map.of());
-            assertTrue(result.isEmpty());
+            assertThat(result.isEmpty()).isTrue();
         }
 
         @Test
@@ -138,8 +138,8 @@ class TrustPatternCollapseTest {
             var result = TrustPatternCollapse.collapse(input(
                     "com.example:lib-a", Set.of("alice"),
                     "com.example:lib-b", Set.of("bob")));
-            assertTrue(result.containsKey("com.example.*"));
-            assertEquals(2, result.size());
+            assertThat(result.containsKey("com.example.*")).isTrue();
+            assertThat(result.size()).isEqualTo(2);
         }
 
         @Test
@@ -147,9 +147,9 @@ class TrustPatternCollapseTest {
             var result = TrustPatternCollapse.collapse(input(
                     "com.foo:lib", Set.of("alice"),
                     "org.bar:lib", Set.of("alice")));
-            assertEquals(expected(
+            assertThat(result).isEqualTo(expected(
                     "com.foo:lib", List.of("alice"),
-                    "org.bar:lib", List.of("alice")), result);
+                    "org.bar:lib", List.of("alice")));
         }
     }
 

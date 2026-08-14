@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 
@@ -13,111 +14,111 @@ class CredentialParserTest {
     @Test
     void fromFingerprintV4() {
         var cred = CredentialParser.fromFingerprint(FP40);
-        assertEquals("openpgp4", cred.type());
-        assertEquals(FP40, cred.fingerprint());
+        assertThat(cred.type()).isEqualTo("openpgp4");
+        assertThat(cred.fingerprint()).isEqualTo(FP40);
     }
 
     @Test
     void fromFingerprintV6() {
         var cred = CredentialParser.fromFingerprint(FP64);
-        assertEquals("openpgp6", cred.type());
-        assertEquals(FP64, cred.fingerprint());
+        assertThat(cred.type()).isEqualTo("openpgp6");
+        assertThat(cred.fingerprint()).isEqualTo(FP64);
     }
 
     @Test
     void fromFingerprintNormalizesCase() {
         var cred = CredentialParser.fromFingerprint(FP40.toLowerCase());
-        assertEquals(FP40, cred.fingerprint());
+        assertThat(cred.fingerprint()).isEqualTo(FP40);
     }
 
     @Test
     void fromFingerprintRejectsNonHex() {
-        assertThrows(IllegalArgumentException.class,
-                () -> CredentialParser.fromFingerprint("ZZZZ"));
+        assertThatThrownBy(() -> CredentialParser.fromFingerprint("ZZZZ"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void fromFingerprintRejectsBlank() {
-        assertThrows(IllegalArgumentException.class,
-                () -> CredentialParser.fromFingerprint(""));
+        assertThatThrownBy(() -> CredentialParser.fromFingerprint(""))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void fromEmail() {
         var cred = CredentialParser.fromEmail("user@example.com");
-        assertEquals("email", cred.type());
-        assertEquals("user@example.com", cred.email());
+        assertThat(cred.type()).isEqualTo("email");
+        assertThat(cred.email()).isEqualTo("user@example.com");
     }
 
     @Test
     void fromEmailRejectsBlank() {
-        assertThrows(IllegalArgumentException.class,
-                () -> CredentialParser.fromEmail(""));
+        assertThatThrownBy(() -> CredentialParser.fromEmail(""))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void fromSigstoreWithIssuerAndSubject() {
         var cred = CredentialParser.fromSigstore("https://token.actions.githubusercontent.com",
                 "https://github.com/org/repo");
-        assertEquals("sigstore", cred.type());
-        assertEquals("https://token.actions.githubusercontent.com", cred.issuer());
-        assertEquals("https://github.com/org/repo", cred.subject());
+        assertThat(cred.type()).isEqualTo("sigstore");
+        assertThat(cred.issuer()).isEqualTo("https://token.actions.githubusercontent.com");
+        assertThat(cred.subject()).isEqualTo("https://github.com/org/repo");
     }
 
     @Test
     void fromSigstoreNullIssuerThrows() {
-        assertThrows(IllegalArgumentException.class,
-                () -> CredentialParser.fromSigstore(null, "subject"));
+        assertThatThrownBy(() -> CredentialParser.fromSigstore(null, "subject"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void fromSigstoreBlankSubjectThrows() {
-        assertThrows(IllegalArgumentException.class,
-                () -> CredentialParser.fromSigstore("https://issuer", "  "));
+        assertThatThrownBy(() -> CredentialParser.fromSigstore("https://issuer", "  "))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void parseDetectsEmail() {
         var cred = CredentialParser.parse("user@example.com");
-        assertInstanceOf(EmailCredential.class, cred);
+        assertThat(cred).isInstanceOf(EmailCredential.class);
     }
 
     @Test
     void parseDetectsFingerprint40() {
         var cred = CredentialParser.parse(FP40);
-        assertInstanceOf(FingerprintCredential.class, cred);
-        assertEquals("openpgp4", cred.type());
+        assertThat(cred).isInstanceOf(FingerprintCredential.class);
+        assertThat(cred.type()).isEqualTo("openpgp4");
     }
 
     @Test
     void parseDetectsFingerprint64() {
         var cred = CredentialParser.parse(FP64);
-        assertInstanceOf(FingerprintCredential.class, cred);
-        assertEquals("openpgp6", cred.type());
+        assertThat(cred).isInstanceOf(FingerprintCredential.class);
+        assertThat(cred.type()).isEqualTo("openpgp6");
     }
 
     @Test
     void parseDetectsFingerprint16() {
         var cred = CredentialParser.parse(FP16);
-        assertInstanceOf(FingerprintCredential.class, cred);
-        assertEquals("openpgp4", cred.type());
+        assertThat(cred).isInstanceOf(FingerprintCredential.class);
+        assertThat(cred.type()).isEqualTo("openpgp4");
     }
 
     @Test
     void parseRejectsNonHexNonEmail() {
-        assertThrows(IllegalArgumentException.class,
-                () -> CredentialParser.parse("not-hex-not-email"));
+        assertThatThrownBy(() -> CredentialParser.parse("not-hex-not-email"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void parseRejectsUnrecognizedHexLength() {
-        assertThrows(IllegalArgumentException.class,
-                () -> CredentialParser.parse("AABBCCDD"));
+        assertThatThrownBy(() -> CredentialParser.parse("AABBCCDD"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void parseRejectsBlank() {
-        assertThrows(IllegalArgumentException.class,
-                () -> CredentialParser.parse(""));
+        assertThatThrownBy(() -> CredentialParser.parse(""))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

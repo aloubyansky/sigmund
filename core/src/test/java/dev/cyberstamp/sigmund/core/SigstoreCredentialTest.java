@@ -1,10 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +17,7 @@ class SigstoreCredentialTest {
                 .issuer("https://token.actions.githubusercontent.com")
                 .subject("https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0.0")
                 .build();
-        assertTrue(a.matches(b));
+        assertThat(a.matches(b)).isTrue();
     }
 
     @Test
@@ -35,7 +32,7 @@ class SigstoreCredentialTest {
                 .sourceRepositoryUri("https://github.com/org/repo")
                 .buildTrigger("release")
                 .build();
-        assertTrue(configured.matches(extracted));
+        assertThat(configured.matches(extracted)).isTrue();
     }
 
     @Test
@@ -48,7 +45,7 @@ class SigstoreCredentialTest {
                 .issuer("https://token.actions.githubusercontent.com")
                 .sourceRepositoryUri("https://github.com/org/other-repo")
                 .build();
-        assertFalse(configured.matches(extracted));
+        assertThat(configured.matches(extracted)).isFalse();
     }
 
     @Test
@@ -60,7 +57,7 @@ class SigstoreCredentialTest {
         var extracted = new SigstoreCredential.Builder()
                 .issuer("https://token.actions.githubusercontent.com")
                 .build();
-        assertFalse(configured.matches(extracted));
+        assertThat(configured.matches(extracted)).isFalse();
     }
 
     @Test
@@ -73,7 +70,7 @@ class SigstoreCredentialTest {
                 .issuer("https://issuer2.example.com")
                 .subject("subject")
                 .build();
-        assertFalse(a.matches(b));
+        assertThat(a.matches(b)).isFalse();
     }
 
     @Test
@@ -83,15 +80,14 @@ class SigstoreCredentialTest {
                 .subject("alice@example.com")
                 .build();
         var email = new EmailCredential("alice@example.com");
-        assertFalse(sigstoreCred.matches(email));
+        assertThat(sigstoreCred.matches(email)).isFalse();
     }
 
     @Test
     void typeIsSigstore() {
-        assertEquals("sigstore",
-                new SigstoreCredential.Builder()
-                        .issuer("https://issuer.example.com")
-                        .build().type());
+        assertThat(new SigstoreCredential.Builder()
+                .issuer("https://issuer.example.com")
+                .build().type()).isEqualTo("sigstore");
     }
 
     @Test
@@ -101,20 +97,20 @@ class SigstoreCredentialTest {
                 .subject("alice@example.com")
                 .build();
         String display = cred.displayName();
-        assertTrue(display.contains("issuer"));
-        assertTrue(display.contains("alice@example.com"));
+        assertThat(display.contains("issuer")).isTrue();
+        assertThat(display.contains("alice@example.com")).isTrue();
     }
 
     @Test
     void noFieldsSetThrows() {
-        assertThrows(IllegalArgumentException.class,
-                () -> new SigstoreCredential.Builder().build());
+        assertThatThrownBy(() -> new SigstoreCredential.Builder().build())
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void blankFieldsNormalizedToNull() {
-        assertThrows(IllegalArgumentException.class,
-                () -> new SigstoreCredential.Builder().issuer("  ").build());
+        assertThatThrownBy(() -> new SigstoreCredential.Builder().issuer("  ").build())
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -123,7 +119,7 @@ class SigstoreCredentialTest {
                 .issuer("https://issuer.example.com")
                 .subject("  ")
                 .build();
-        assertNull(cred.subject());
+        assertThat(cred.subject()).isNull();
     }
 
     @Test
@@ -136,8 +132,8 @@ class SigstoreCredentialTest {
                 .issuer("https://issuer.example.com")
                 .subject("alice@example.com")
                 .build();
-        assertEquals(a, b);
-        assertEquals(a.hashCode(), b.hashCode());
+        assertThat(a).isEqualTo(b);
+        assertThat(a.hashCode()).isEqualTo(b.hashCode());
     }
 
     @Test
@@ -148,7 +144,7 @@ class SigstoreCredentialTest {
         var b = new SigstoreCredential.Builder()
                 .issuer("https://issuer2.example.com")
                 .build();
-        assertFalse(a.equals(b));
+        assertThat(a.equals(b)).isFalse();
     }
 
     @Test
@@ -156,13 +152,13 @@ class SigstoreCredentialTest {
         var cred = new SigstoreCredential.Builder()
                 .issuer("https://issuer.example.com")
                 .build();
-        assertEquals("https://issuer.example.com", cred.issuer());
-        assertNull(cred.subject());
-        assertNull(cred.sourceRepositoryUri());
-        assertNull(cred.sourceRepositoryOwnerUri());
-        assertNull(cred.buildTrigger());
-        assertNull(cred.buildConfigUri());
-        assertNull(cred.runnerEnvironment());
+        assertThat(cred.issuer()).isEqualTo("https://issuer.example.com");
+        assertThat(cred.subject()).isNull();
+        assertThat(cred.sourceRepositoryUri()).isNull();
+        assertThat(cred.sourceRepositoryOwnerUri()).isNull();
+        assertThat(cred.buildTrigger()).isNull();
+        assertThat(cred.buildConfigUri()).isNull();
+        assertThat(cred.runnerEnvironment()).isNull();
     }
 
     @Test
@@ -173,7 +169,7 @@ class SigstoreCredentialTest {
         var b = new SigstoreCredential.Builder()
                 .issuer("https://issuer.example.com")
                 .build();
-        assertFalse(a.matches(b));
+        assertThat(a.matches(b)).isFalse();
     }
 
     @Test
@@ -196,6 +192,6 @@ class SigstoreCredentialTest {
                 .buildConfigUri("https://github.com/org/repo/.github/workflows/publish.yml@refs/heads/main")
                 .runnerEnvironment("github-hosted")
                 .build();
-        assertTrue(a.matches(b));
+        assertThat(a.matches(b)).isTrue();
     }
 }

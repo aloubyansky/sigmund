@@ -1,8 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Map;
@@ -20,23 +18,23 @@ class DefaultTrustPolicyTest {
 
         @Test
         void emptyHasAllListedEvidencePolicy() {
-            assertEquals(ListedEvidencePolicy.ALL, DefaultTrustPolicy.EMPTY.listedEvidence());
+            assertThat(DefaultTrustPolicy.EMPTY.listedEvidence()).isEqualTo(ListedEvidencePolicy.ALL);
         }
 
         @Test
         void emptyHasIgnoreUnlistedEvidencePolicy() {
-            assertEquals(UnlistedEvidencePolicy.IGNORE, DefaultTrustPolicy.EMPTY.unlistedEvidence());
+            assertThat(DefaultTrustPolicy.EMPTY.unlistedEvidence()).isEqualTo(UnlistedEvidencePolicy.IGNORE);
         }
 
         @Test
         void emptyHasFailUntrustedPolicy() {
-            assertEquals(UntrustedPolicy.FAIL, DefaultTrustPolicy.EMPTY.onUntrusted());
+            assertThat(DefaultTrustPolicy.EMPTY.onUntrusted()).isEqualTo(UntrustedPolicy.FAIL);
         }
 
         @Test
         void emptyReturnsNoExpectedSigners() {
             var artifact = testArtifact("org.example", "lib", "1.0");
-            assertTrue(DefaultTrustPolicy.EMPTY.expectedSigners(artifact).isEmpty());
+            assertThat(DefaultTrustPolicy.EMPTY.expectedSigners(artifact).isEmpty()).isTrue();
         }
     }
 
@@ -48,7 +46,7 @@ class DefaultTrustPolicyTest {
             var policy = new DefaultTrustPolicy(
                     Map.of(), List.of(), ListedEvidencePolicy.ALL,
                     UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
-            assertEquals(ListedEvidencePolicy.ALL, policy.listedEvidence());
+            assertThat(policy.listedEvidence()).isEqualTo(ListedEvidencePolicy.ALL);
         }
 
         @Test
@@ -56,7 +54,7 @@ class DefaultTrustPolicyTest {
             var policy = new DefaultTrustPolicy(
                     Map.of(), List.of(), ListedEvidencePolicy.ANY,
                     UnlistedEvidencePolicy.WARN, UntrustedPolicy.FAIL);
-            assertEquals(UnlistedEvidencePolicy.WARN, policy.unlistedEvidence());
+            assertThat(policy.unlistedEvidence()).isEqualTo(UnlistedEvidencePolicy.WARN);
         }
 
         @Test
@@ -64,7 +62,7 @@ class DefaultTrustPolicyTest {
             var policy = new DefaultTrustPolicy(
                     Map.of(), List.of(), ListedEvidencePolicy.ANY,
                     UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.WARN);
-            assertEquals(UntrustedPolicy.WARN, policy.onUntrusted());
+            assertThat(policy.onUntrusted()).isEqualTo(UntrustedPolicy.WARN);
         }
 
         @Test
@@ -72,9 +70,9 @@ class DefaultTrustPolicyTest {
             var policy = new DefaultTrustPolicy(
                     Map.of(), List.of(), ListedEvidencePolicy.ANY,
                     UnlistedEvidencePolicy.REQUIRE, UntrustedPolicy.WARN);
-            assertEquals(ListedEvidencePolicy.ANY, policy.listedEvidence());
-            assertEquals(UnlistedEvidencePolicy.REQUIRE, policy.unlistedEvidence());
-            assertEquals(UntrustedPolicy.WARN, policy.onUntrusted());
+            assertThat(policy.listedEvidence()).isEqualTo(ListedEvidencePolicy.ANY);
+            assertThat(policy.unlistedEvidence()).isEqualTo(UnlistedEvidencePolicy.REQUIRE);
+            assertThat(policy.onUntrusted()).isEqualTo(UntrustedPolicy.WARN);
         }
     }
 
@@ -91,7 +89,7 @@ class DefaultTrustPolicyTest {
                     UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
 
             var unmatched = testArtifact("com.other", "lib", "1.0");
-            assertTrue(policy.expectedSigners(unmatched).isEmpty());
+            assertThat(policy.expectedSigners(unmatched).isEmpty()).isTrue();
         }
 
         @Test
@@ -105,9 +103,9 @@ class DefaultTrustPolicyTest {
 
             var matched = testArtifact("org.example", "lib", "1.0");
             var signers = policy.expectedSigners(matched);
-            assertNotNull(signers);
-            assertEquals(1, signers.size());
-            assertEquals("alice", signers.get(0).id());
+            assertThat(signers).isNotNull();
+            assertThat(signers.size()).isEqualTo(1);
+            assertThat(signers.get(0).id()).isEqualTo("alice");
         }
     }
 

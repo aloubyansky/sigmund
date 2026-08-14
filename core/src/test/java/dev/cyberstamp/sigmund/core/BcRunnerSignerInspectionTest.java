@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -30,24 +30,25 @@ class BcRunnerSignerInspectionTest {
     @Test
     void canInspectFingerprintCredential() {
         BcRunner runner = createRunner(false, List.of());
-        assertTrue(runner.canInspect(
-                new FingerprintCredential("openpgp4", "AABB")));
+        assertThat(runner.canInspect(
+                new FingerprintCredential("openpgp4", "AABB"))).isTrue();
     }
 
     @Test
     void canInspectEmailCredential() {
         BcRunner runner = createRunner(false, List.of());
-        assertTrue(runner.canInspect(new EmailCredential("a@b.com")));
+        assertThat(runner.canInspect(new EmailCredential("a@b.com"))).isTrue();
     }
 
     @Test
     void cannotInspectSigstoreCredential() {
         BcRunner runner = createRunner(false, List.of());
-        assertFalse(runner.canInspect(
+        assertThat(runner.canInspect(
                 new SigstoreCredential.Builder()
                         .issuer("https://issuer")
                         .subject("subject")
-                        .build()));
+                        .build()))
+                .isFalse();
     }
 
     @Test
@@ -56,8 +57,8 @@ class BcRunnerSignerInspectionTest {
         var results = runner.inspect(
                 new FingerprintCredential("openpgp4",
                         "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"));
-        assertFalse(results.isEmpty());
-        assertTrue(results.stream().allMatch(r -> !r.found()));
-        assertTrue(results.stream().anyMatch(r -> "cert-d store".equals(r.sourceLabel())));
+        assertThat(results.isEmpty()).isFalse();
+        assertThat(results.stream().allMatch(r -> !r.found())).isTrue();
+        assertThat(results.stream().anyMatch(r -> "cert-d store".equals(r.sourceLabel()))).isTrue();
     }
 }

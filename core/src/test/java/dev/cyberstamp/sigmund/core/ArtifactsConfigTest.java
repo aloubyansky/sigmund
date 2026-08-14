@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Map;
@@ -17,9 +17,9 @@ class ArtifactsConfigTest {
                     "apache-stack", List.of("org.apache.maven.*", "org.apache.commons.*")));
             var raw = Map.of("apache-stack", List.of("apache"));
             var expanded = config.expandTrustMappings(raw);
-            assertTrue(expanded.containsKey("org.apache.maven.*"));
-            assertTrue(expanded.containsKey("org.apache.commons.*"));
-            assertFalse(expanded.containsKey("apache-stack"));
+            assertThat(expanded.containsKey("org.apache.maven.*")).isTrue();
+            assertThat(expanded.containsKey("org.apache.commons.*")).isTrue();
+            assertThat(expanded.containsKey("apache-stack")).isFalse();
         }
 
         @Test
@@ -27,7 +27,7 @@ class ArtifactsConfigTest {
             var config = new ArtifactsConfig(Map.of());
             var raw = Map.of("com.example:mylib", List.of("alice"));
             var expanded = config.expandTrustMappings(raw);
-            assertTrue(expanded.containsKey("com.example:mylib"));
+            assertThat(expanded.containsKey("com.example:mylib")).isTrue();
         }
 
         @Test
@@ -35,14 +35,14 @@ class ArtifactsConfigTest {
             var config = new ArtifactsConfig(Map.of(
                     "internal", List.of("com.internal.*", "com.internal2.*")));
             var expanded = config.expandPatterns(List.of("internal", "com.other.*"));
-            assertEquals(3, expanded.size());
-            assertTrue(expanded.contains("com.internal.*"));
-            assertTrue(expanded.contains("com.other.*"));
+            assertThat(expanded.size()).isEqualTo(3);
+            assertThat(expanded.contains("com.internal.*")).isTrue();
+            assertThat(expanded.contains("com.other.*")).isTrue();
         }
 
         @Test
         void emptyConfig() {
-            assertTrue(ArtifactsConfig.EMPTY.isEmpty());
+            assertThat(ArtifactsConfig.EMPTY.isEmpty()).isTrue();
         }
     }
 }

@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -32,10 +32,10 @@ class SqRunnerTest {
                            UserID: Alexey Loubyansky <olubyans@redhat.com>
                 """;
         SqRunner.CertInfo info = SqRunner.parseCertInfo(output, null);
-        assertNotNull(info);
-        assertEquals("RSA", info.algorithm());
-        assertEquals("Alexey Loubyansky <olubyans@redhat.com>", info.userId());
-        assertNull(info.certFile());
+        assertThat(info).isNotNull();
+        assertThat(info.algorithm()).isEqualTo("RSA");
+        assertThat(info.userId()).isEqualTo("Alexey Loubyansky <olubyans@redhat.com>");
+        assertThat(info.certFile()).isNull();
     }
 
     @Test
@@ -57,10 +57,10 @@ class SqRunnerTest {
                 """;
         java.nio.file.Path certFile = java.nio.file.Path.of("/some/cert.pgp");
         SqRunner.CertInfo info = SqRunner.parseCertInfo(output, certFile);
-        assertNotNull(info);
-        assertEquals("ML-DSA-65+Ed25519", info.algorithm());
-        assertEquals("Alexey Loubyansky <olubyans@redhat.com>", info.userId());
-        assertEquals(certFile, info.certFile());
+        assertThat(info).isNotNull();
+        assertThat(info.algorithm()).isEqualTo("ML-DSA-65+Ed25519");
+        assertThat(info.userId()).isEqualTo("Alexey Loubyansky <olubyans@redhat.com>");
+        assertThat(info.certFile()).isEqualTo(certFile);
     }
 
     @Test
@@ -73,24 +73,24 @@ class SqRunnerTest {
                     Creation time: 2025-01-15 10:00:00 UTC
                 """;
         SqRunner.CertInfo info = SqRunner.parseCertInfo(output, null);
-        assertNotNull(info);
-        assertEquals("ML-DSA-87+Ed448", info.algorithm());
-        assertNull(info.userId());
+        assertThat(info).isNotNull();
+        assertThat(info.algorithm()).isEqualTo("ML-DSA-87+Ed448");
+        assertThat(info.userId()).isNull();
     }
 
     @Test
     void parseCertInfoNullInput() {
-        assertNull(SqRunner.parseCertInfo(null, null));
+        assertThat(SqRunner.parseCertInfo(null, null)).isNull();
     }
 
     @Test
     void parseCertInfoEmptyInput() {
-        assertNull(SqRunner.parseCertInfo("", null));
+        assertThat(SqRunner.parseCertInfo("", null)).isNull();
     }
 
     @Test
     void parseCertInfoNoMatchingFields() {
-        assertNull(SqRunner.parseCertInfo("some random output\n", null));
+        assertThat(SqRunner.parseCertInfo("some random output\n", null)).isNull();
     }
 
     @Nested
@@ -99,61 +99,61 @@ class SqRunnerTest {
         @Test
         void validV6Fingerprint() {
             String output = "sign.signer-self.0 = \"ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890\"\n";
-            assertEquals("ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890",
-                    SqRunner.parseSignerSelfOutput(output));
+            assertThat(SqRunner.parseSignerSelfOutput(output))
+                    .isEqualTo("ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890");
         }
 
         @Test
         void validV4Fingerprint() {
             String output = "sign.signer-self.0 = \"41A2197725BD63EB00D071D46A7F5DB1C68BDB81\"\n";
-            assertEquals("41A2197725BD63EB00D071D46A7F5DB1C68BDB81",
-                    SqRunner.parseSignerSelfOutput(output));
+            assertThat(SqRunner.parseSignerSelfOutput(output))
+                    .isEqualTo("41A2197725BD63EB00D071D46A7F5DB1C68BDB81");
         }
 
         @Test
         void lowercaseFingerprintNormalized() {
             String output = "sign.signer-self.0 = \"abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890\"\n";
-            assertEquals("ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890",
-                    SqRunner.parseSignerSelfOutput(output));
+            assertThat(SqRunner.parseSignerSelfOutput(output))
+                    .isEqualTo("ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890");
         }
 
         @Test
         void placeholderTextRejected() {
             String output = "sign.signer-self.0 = \"fingerprint of your key\"\n";
-            assertNull(SqRunner.parseSignerSelfOutput(output));
+            assertThat(SqRunner.parseSignerSelfOutput(output)).isNull();
         }
 
         @Test
         void emptyValueRejected() {
             String output = "sign.signer-self.0 = \"\"\n";
-            assertNull(SqRunner.parseSignerSelfOutput(output));
+            assertThat(SqRunner.parseSignerSelfOutput(output)).isNull();
         }
 
         @Test
         void nullInput() {
-            assertNull(SqRunner.parseSignerSelfOutput(null));
+            assertThat(SqRunner.parseSignerSelfOutput(null)).isNull();
         }
 
         @Test
         void emptyInput() {
-            assertNull(SqRunner.parseSignerSelfOutput(""));
+            assertThat(SqRunner.parseSignerSelfOutput("")).isNull();
         }
 
         @Test
         void noEqualsSign() {
-            assertNull(SqRunner.parseSignerSelfOutput("some random output"));
+            assertThat(SqRunner.parseSignerSelfOutput("some random output")).isNull();
         }
 
         @Test
         void tooShortHexRejected() {
             String output = "sign.signer-self.0 = \"ABCDEF1234\"\n";
-            assertNull(SqRunner.parseSignerSelfOutput(output));
+            assertThat(SqRunner.parseSignerSelfOutput(output)).isNull();
         }
 
         @Test
         void nonHexRejected() {
             String output = "sign.signer-self.0 = \"GHIJKL1234567890ABCDEF1234567890ABCDEF1234\"\n";
-            assertNull(SqRunner.parseSignerSelfOutput(output));
+            assertThat(SqRunner.parseSignerSelfOutput(output)).isNull();
         }
     }
 
@@ -167,13 +167,13 @@ class SqRunnerTest {
         void canSignWithDefaultSignerFingerprint() {
             String fp = "ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890";
             SqRunner sq = new SqRunner("sq", tempDir, null, fp);
-            assertTrue(sq.canSign());
+            assertThat(sq.canSign()).isTrue();
         }
 
         @Test
         void cannotSignWithNullDefaultSigner() {
             SqRunner sq = new SqRunner("sq", tempDir, null, null);
-            assertFalse(sq.canSign());
+            assertThat(sq.canSign()).isFalse();
         }
 
         @Test
@@ -181,10 +181,10 @@ class SqRunnerTest {
             String explicit = "1111111111111111111111111111111111111111111111111111111111111111";
             String defaultFp = "2222222222222222222222222222222222222222222222222222222222222222";
             SqRunner sq = new SqRunner("sq", tempDir, explicit, defaultFp);
-            assertTrue(sq.canSign());
+            assertThat(sq.canSign()).isTrue();
             List<SigningInfo> info = sq.signingInfo();
-            assertEquals(1, info.size());
-            assertEquals(explicit, info.get(0).fingerprint());
+            assertThat(info.size()).isEqualTo(1);
+            assertThat(info.get(0).fingerprint()).isEqualTo(explicit);
         }
     }
 
@@ -205,8 +205,8 @@ class SqRunnerTest {
                      - key store
                        - /home/user/.local/share/sequoia/keystore
                     """;
-            assertEquals(Path.of("/home/user/.local/share/pgp.cert.d"),
-                    SqRunner.parseCertStorePath(output));
+            assertThat(SqRunner.parseCertStorePath(output))
+                    .isEqualTo(Path.of("/home/user/.local/share/pgp.cert.d"));
         }
 
         @Test
@@ -216,15 +216,15 @@ class SqRunnerTest {
                        - /tmp/sq-home/data/pgp.cert.d
                        - This holds all the certificates.
                     """;
-            assertEquals(Path.of("/tmp/sq-home/data/pgp.cert.d"),
-                    SqRunner.parseCertStorePath(output));
+            assertThat(SqRunner.parseCertStorePath(output))
+                    .isEqualTo(Path.of("/tmp/sq-home/data/pgp.cert.d"));
         }
 
         @Test
         void trailingWhitespace() {
             String output = " - certificate store  \n   - /some/path/pgp.cert.d   \n";
-            assertEquals(Path.of("/some/path/pgp.cert.d"),
-                    SqRunner.parseCertStorePath(output));
+            assertThat(SqRunner.parseCertStorePath(output))
+                    .isEqualTo(Path.of("/some/path/pgp.cert.d"));
         }
 
         @Test
@@ -236,17 +236,17 @@ class SqRunnerTest {
                      - key store
                        - /home/user/.local/share/sequoia/keystore
                     """;
-            assertNull(SqRunner.parseCertStorePath(output));
+            assertThat(SqRunner.parseCertStorePath(output)).isNull();
         }
 
         @Test
         void nullInput() {
-            assertNull(SqRunner.parseCertStorePath(null));
+            assertThat(SqRunner.parseCertStorePath(null)).isNull();
         }
 
         @Test
         void emptyInput() {
-            assertNull(SqRunner.parseCertStorePath(""));
+            assertThat(SqRunner.parseCertStorePath("")).isNull();
         }
     }
 
@@ -267,8 +267,8 @@ class SqRunnerTest {
 
             SqRunner sq = new SqRunner(tempDir);
             Path result = sq.findCertFile(fingerprint);
-            assertNotNull(result);
-            assertEquals(certFile, result);
+            assertThat(result).isNotNull();
+            assertThat(result).isEqualTo(certFile);
         }
 
         @Test
@@ -276,19 +276,19 @@ class SqRunnerTest {
             String fingerprint = "ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890";
             SqRunner sq = new SqRunner(tempDir);
             Path result = sq.findCertFile(fingerprint);
-            assertNull(result);
+            assertThat(result).isNull();
         }
 
         @Test
         void nullFingerprintReturnsNull() {
             SqRunner sq = new SqRunner(tempDir);
-            assertNull(sq.findCertFile(null));
+            assertThat(sq.findCertFile(null)).isNull();
         }
 
         @Test
         void emptyFingerprintReturnsNull() {
             SqRunner sq = new SqRunner(tempDir);
-            assertNull(sq.findCertFile(""));
+            assertThat(sq.findCertFile("")).isNull();
         }
     }
 }

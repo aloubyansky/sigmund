@@ -42,6 +42,7 @@
         <formatter-plugin.version>2.29.0</formatter-plugin.version>
         <impsort-plugin.version>1.13.0</impsort-plugin.version>
         <templating-plugin.version>3.1.0</templating-plugin.version>
+        <assertj.version>3.27.7</assertj.version>
         <junit.version>6.1.3</junit.version>
         <maven-invoker-plugin.version>3.10.1</maven-invoker-plugin.version>
         <maven-jar-plugin.version>3.5.1</maven-jar-plugin.version>
@@ -75,7 +76,11 @@
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
                 <version>${junit.version}</version>
-                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>${assertj.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.sigstore</groupId>

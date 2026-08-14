@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
@@ -96,11 +96,11 @@ class EphemeralSigningKeyTest {
         Files.createDirectories(workDir);
 
         int exitCode = fork(armoredKey, workDir, "exclusive");
-        assertEquals(0, exitCode, "Child process failed");
+        assertThat(exitCode).as("Child process failed").isEqualTo(0);
 
-        assertEquals("bc", Files.readString(workDir.resolve("tool-names")));
-        assertEquals("bc", Files.readString(workDir.resolve("signed-tools")));
-        assertEquals(expectedFp, Files.readString(workDir.resolve("fingerprint-bc")));
+        assertThat(Files.readString(workDir.resolve("tool-names"))).isEqualTo("bc");
+        assertThat(Files.readString(workDir.resolve("signed-tools"))).isEqualTo("bc");
+        assertThat(Files.readString(workDir.resolve("fingerprint-bc"))).isEqualTo(expectedFp);
     }
 
     @EnabledIf("gpgAvailable")
@@ -113,18 +113,18 @@ class EphemeralSigningKeyTest {
         Files.createDirectories(workDir);
 
         int exitCode = fork(armoredKey, workDir, "key-provider");
-        assertEquals(0, exitCode, "Child process failed");
+        assertThat(exitCode).as("Child process failed").isEqualTo(0);
 
         String toolNames = Files.readString(workDir.resolve("tool-names"));
         List<String> tools = Arrays.asList(toolNames.split(","));
-        assertTrue(tools.contains("bc"), "BC should be a signer");
-        assertTrue(tools.contains("gpg"), "GPG should be a signer");
+        assertThat(tools.contains("bc")).as("BC should be a signer").isTrue();
+        assertThat(tools.contains("gpg")).as("GPG should be a signer").isTrue();
 
-        assertEquals(expectedFp, Files.readString(workDir.resolve("fingerprint-bc")));
+        assertThat(Files.readString(workDir.resolve("fingerprint-bc"))).isEqualTo(expectedFp);
 
         String signedTools = Files.readString(workDir.resolve("signed-tools"));
-        assertTrue(signedTools.contains("bc"), "BC should have signed");
-        assertTrue(signedTools.contains("gpg"), "GPG should have signed");
+        assertThat(signedTools.contains("bc")).as("BC should have signed").isTrue();
+        assertThat(signedTools.contains("gpg")).as("GPG should have signed").isTrue();
     }
 
     static boolean gpgAvailable() {

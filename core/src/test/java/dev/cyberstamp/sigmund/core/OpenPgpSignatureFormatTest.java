@@ -1,9 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -22,17 +19,17 @@ class OpenPgpSignatureFormatTest {
 
         @Test
         void name() {
-            assertEquals("openpgp", format.name());
+            assertThat(format.name()).isEqualTo("openpgp");
         }
 
         @Test
         void fileExtension() {
-            assertEquals(".asc", format.fileExtension());
+            assertThat(format.fileExtension()).isEqualTo(".asc");
         }
 
         @Test
         void supportsCombining() {
-            assertTrue(format.supportsCombining());
+            assertThat(format.supportsCombining()).isTrue();
         }
     }
 
@@ -43,21 +40,21 @@ class OpenPgpSignatureFormatTest {
         void validAscFile(@TempDir Path tmp) throws IOException {
             Path file = tmp.resolve("sig.asc");
             Files.writeString(file, "-----BEGIN PGP SIGNATURE-----\ndata\n-----END PGP SIGNATURE-----\n");
-            assertTrue(format.canHandle(file));
+            assertThat(format.canHandle(file)).isTrue();
         }
 
         @Test
         void nonPgpFile(@TempDir Path tmp) throws IOException {
             Path file = tmp.resolve("bundle.json");
             Files.writeString(file, "{\"mediaType\": \"application/vnd.dev.sigstore.bundle.v0.3+json\"}");
-            assertFalse(format.canHandle(file));
+            assertThat(format.canHandle(file)).isFalse();
         }
 
         @Test
         void missingFile(@TempDir Path tmp) {
             Path file = tmp.resolve("nonexistent.asc");
             // Extension-first detection returns true for .asc files regardless of existence
-            assertTrue(format.canHandle(file));
+            assertThat(format.canHandle(file)).isTrue();
         }
     }
 
@@ -68,20 +65,20 @@ class OpenPgpSignatureFormatTest {
         void returnsTrueForValidPgpContent(@TempDir Path tmp) throws IOException {
             Path file = tmp.resolve("sig.bin");
             Files.writeString(file, "-----BEGIN PGP SIGNATURE-----\ndata\n-----END PGP SIGNATURE-----\n");
-            assertTrue(format.canHandleByContent(file));
+            assertThat(format.canHandleByContent(file)).isTrue();
         }
 
         @Test
         void returnsFalseForNonPgpContent(@TempDir Path tmp) throws IOException {
             Path file = tmp.resolve("data.bin");
             Files.writeString(file, "This is not a PGP signature file.");
-            assertFalse(format.canHandleByContent(file));
+            assertThat(format.canHandleByContent(file)).isFalse();
         }
 
         @Test
         void returnsFalseForMissingFile(@TempDir Path tmp) {
             Path file = tmp.resolve("missing.bin");
-            assertFalse(format.canHandleByContent(file));
+            assertThat(format.canHandleByContent(file)).isFalse();
         }
     }
 
@@ -95,8 +92,8 @@ class OpenPgpSignatureFormatTest {
             Files.writeString(file, block);
 
             List<VerificationUnit> units = format.parse(file);
-            assertEquals(1, units.size());
-            assertInstanceOf(OpenPgpVerificationUnit.class, units.get(0));
+            assertThat(units).hasSize(1);
+            assertThat(units.get(0)).isInstanceOf(OpenPgpVerificationUnit.class);
         }
 
         @Test
@@ -107,7 +104,7 @@ class OpenPgpSignatureFormatTest {
             Files.writeString(file, block1 + block2);
 
             List<VerificationUnit> units = format.parse(file);
-            assertEquals(2, units.size());
+            assertThat(units).hasSize(2);
         }
 
         @Test
@@ -117,7 +114,7 @@ class OpenPgpSignatureFormatTest {
             Files.writeString(file, block);
 
             OpenPgpVerificationUnit unit = (OpenPgpVerificationUnit) format.parse(file).get(0);
-            assertTrue(unit.armoredBlock().contains("BEGIN PGP SIGNATURE"));
+            assertThat(unit.armoredBlock()).contains("BEGIN PGP SIGNATURE");
         }
     }
 
@@ -135,8 +132,8 @@ class OpenPgpSignatureFormatTest {
             format.combine(List.of(sig1, sig2), output);
 
             String result = Files.readString(output);
-            assertTrue(result.contains("block1"));
-            assertTrue(result.contains("block2"));
+            assertThat(result).contains("block1");
+            assertThat(result).contains("block2");
         }
     }
 }

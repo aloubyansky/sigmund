@@ -1,7 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -121,8 +120,8 @@ class RoundTripIntegrationTest {
         SigningOutput output = signer.sign(artifact, tempDir);
 
         // Assert: Algorithms are detected correctly from the produced signatures
-        assertEquals(1, output.files().size());
-        assertEquals("RSA+ML-DSA-87+Ed448", output.files().get(0).algorithm());
+        assertThat(output.files().size()).isEqualTo(1);
+        assertThat(output.files().get(0).algorithm()).isEqualTo("RSA+ML-DSA-87+Ed448");
 
         Path signature = output.files().get(0).path();
 
@@ -130,13 +129,13 @@ class RoundTripIntegrationTest {
         SignatureVerificationReport report = sigmund.verify(artifact, signature);
 
         // Assert: All signatures should pass
-        assertEquals(2, report.files().get(0).results().size(),
-                "Should have classic and PQC signatures");
-        assertTrue(report.isPass(),
-                "Strict verification (all signatures) should pass");
+        assertThat(report.files().get(0).results().size())
+                .as("Should have classic and PQC signatures").isEqualTo(2);
+        assertThat(report.isPass())
+                .as("Strict verification (all signatures) should pass").isTrue();
         for (VerifyResult r : report.files().get(0).results()) {
-            assertEquals(Verdict.PASS, r.verdict(),
-                    "Signature (" + r.algorithm() + ") should be valid");
+            assertThat(r.verdict())
+                    .as("Signature (" + r.algorithm() + ") should be valid").isEqualTo(Verdict.PASS);
         }
 
         // Print the report for manual inspection
@@ -181,10 +180,11 @@ class RoundTripIntegrationTest {
         // Assert: GPG should successfully verify despite v6 PQC packet.
         // GPG may return exit code 2 (warnings) due to the unknown v6 packet,
         // but the classic signature is still verified ("Good signature").
-        assertTrue(result.exitCode() == 0
-                || (result.exitCode() == 2 && result.stderr().contains("Good signature")),
-                "GPG should verify the combined .asc file (backward compatible). "
-                        + "Exit: " + result.exitCode() + " stderr: " + result.stderr());
+        assertThat(result.exitCode() == 0
+                || (result.exitCode() == 2 && result.stderr().contains("Good signature")))
+                .as("GPG should verify the combined .asc file (backward compatible). "
+                        + "Exit: " + result.exitCode() + " stderr: " + result.stderr())
+                .isTrue();
 
         System.out.println("=== Backward Compatibility Test ===");
         System.out.println("GPG verified hybrid signature successfully");
@@ -230,8 +230,9 @@ class RoundTripIntegrationTest {
 
         // Assert: All signatures should fail due to tampering
         for (VerifyResult r : report.files().get(0).results()) {
-            assertEquals(Verdict.FAIL, r.verdict(),
-                    "Signature (" + r.algorithm() + ") should fail for tampered artifact");
+            assertThat(r.verdict())
+                    .as("Signature (" + r.algorithm() + ") should fail for tampered artifact")
+                    .isEqualTo(Verdict.FAIL);
         }
 
         System.out.println("=== Tampered Artifact Verification Report ===");

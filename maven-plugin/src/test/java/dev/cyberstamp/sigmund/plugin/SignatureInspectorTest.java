@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.plugin;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.junit.jupiter.api.Nested;
@@ -13,32 +13,32 @@ class SignatureInspectorTest {
 
         @Test
         void v4ReturnsPGP4() {
-            assertEquals("PGP4", SignatureInspector.versionLabel(4));
+            assertThat(SignatureInspector.versionLabel(4)).isEqualTo("PGP4");
         }
 
         @Test
         void v6ReturnsPGP6() {
-            assertEquals("PGP6", SignatureInspector.versionLabel(6));
+            assertThat(SignatureInspector.versionLabel(6)).isEqualTo("PGP6");
         }
 
         @Test
         void v3ReturnsPGP3() {
-            assertEquals("PGP3", SignatureInspector.versionLabel(3));
+            assertThat(SignatureInspector.versionLabel(3)).isEqualTo("PGP3");
         }
 
         @Test
         void v5ReturnsPGP5() {
-            assertEquals("PGP5", SignatureInspector.versionLabel(5));
+            assertThat(SignatureInspector.versionLabel(5)).isEqualTo("PGP5");
         }
 
         @Test
         void zeroReturnsDash() {
-            assertEquals("-", SignatureInspector.versionLabel(0));
+            assertThat(SignatureInspector.versionLabel(0)).isEqualTo("-");
         }
 
         @Test
         void negativeReturnsDash() {
-            assertEquals("-", SignatureInspector.versionLabel(-1));
+            assertThat(SignatureInspector.versionLabel(-1)).isEqualTo("-");
         }
     }
 
@@ -47,34 +47,33 @@ class SignatureInspectorTest {
 
         @Test
         void singleServer() {
-            assertEquals(List.of("hkps://keys.openpgp.org"),
-                    SignatureInspector.parseKeyservers("hkps://keys.openpgp.org"));
+            assertThat(SignatureInspector.parseKeyservers("hkps://keys.openpgp.org"))
+                    .isEqualTo(List.of("hkps://keys.openpgp.org"));
         }
 
         @Test
         void multipleServers() {
-            assertEquals(
-                    List.of("hkps://keyserver.ubuntu.com", "hkps://keys.openpgp.org"),
-                    SignatureInspector.parseKeyservers(
-                            "hkps://keyserver.ubuntu.com,hkps://keys.openpgp.org"));
+            assertThat(SignatureInspector.parseKeyservers(
+                    "hkps://keyserver.ubuntu.com,hkps://keys.openpgp.org"))
+                    .isEqualTo(List.of("hkps://keyserver.ubuntu.com", "hkps://keys.openpgp.org"));
         }
 
         @Test
         void withWhitespaceTrimmed() {
-            assertEquals(
-                    List.of("hkps://a.com", "hkps://b.com"),
-                    SignatureInspector.parseKeyservers("  hkps://a.com , hkps://b.com  "));
+            assertThat(SignatureInspector.parseKeyservers("  hkps://a.com , hkps://b.com  "))
+                    .isEqualTo(List.of("hkps://a.com", "hkps://b.com"));
         }
 
         @Test
         void emptySegmentsFiltered() {
-            assertEquals(List.of("hkps://a.com"),
-                    SignatureInspector.parseKeyservers("hkps://a.com,,, "));
+            assertThat(SignatureInspector.parseKeyservers("hkps://a.com,,, "))
+                    .isEqualTo(List.of("hkps://a.com"));
         }
 
         @Test
         void allEmptyReturnsEmptyList() {
-            assertEquals(List.of(), SignatureInspector.parseKeyservers(",,,"));
+            assertThat(SignatureInspector.parseKeyservers(",,,"))
+                    .isEqualTo(List.of());
         }
     }
 }

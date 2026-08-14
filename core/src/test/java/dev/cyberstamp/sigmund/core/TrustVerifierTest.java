@@ -1,7 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -28,8 +27,8 @@ class TrustVerifierTest {
                     Path.of("lib.jar"),
                     List.of(Path.of("lib.jar.asc")));
 
-            assertEquals(TrustVerdict.TRUSTED, result.verdict());
-            assertEquals(1, result.matchedEvidence().size());
+            assertThat(result.verdict()).isEqualTo(TrustVerdict.TRUSTED);
+            assertThat(result.matchedEvidence().size()).isEqualTo(1);
         }
 
         @Test
@@ -44,7 +43,7 @@ class TrustVerifierTest {
                     Path.of("lib.jar"),
                     List.of(Path.of("lib.jar.asc")));
 
-            assertEquals(TrustVerdict.UNTRUSTED, result.verdict());
+            assertThat(result.verdict()).isEqualTo(TrustVerdict.UNTRUSTED);
         }
 
         @Test
@@ -57,7 +56,7 @@ class TrustVerifierTest {
                     Path.of("lib.jar"),
                     List.of());
 
-            assertEquals(TrustVerdict.UNSIGNED, result.verdict());
+            assertThat(result.verdict()).isEqualTo(TrustVerdict.UNSIGNED);
         }
 
         @Test
@@ -70,7 +69,7 @@ class TrustVerifierTest {
                     Path.of("lib.jar"),
                     List.of());
 
-            assertEquals(TrustVerdict.NOT_CONFIGURED, result.verdict());
+            assertThat(result.verdict()).isEqualTo(TrustVerdict.NOT_CONFIGURED);
         }
 
         @Test
@@ -84,7 +83,7 @@ class TrustVerifierTest {
                     Path.of("lib.jar"),
                     List.of(Path.of("lib.jar.asc")));
 
-            assertEquals(TrustVerdict.VERIFICATION_FAILED, result.verdict());
+            assertThat(result.verdict()).isEqualTo(TrustVerdict.VERIFICATION_FAILED);
         }
     }
 
@@ -109,7 +108,7 @@ class TrustVerifierTest {
                     Path.of("lib.jar"),
                     List.of(Path.of("lib.jar.asc")));
 
-            assertEquals(TrustVerdict.UNTRUSTED, result.verdict());
+            assertThat(result.verdict()).isEqualTo(TrustVerdict.UNTRUSTED);
         }
 
         @Test
@@ -129,8 +128,8 @@ class TrustVerifierTest {
                     Path.of("lib.jar"),
                     List.of(Path.of("lib.jar.asc")));
 
-            assertEquals(TrustVerdict.TRUSTED, result.verdict());
-            assertEquals(1, result.unmatchedEvidence().size());
+            assertThat(result.verdict()).isEqualTo(TrustVerdict.TRUSTED);
+            assertThat(result.unmatchedEvidence().size()).isEqualTo(1);
         }
     }
 
@@ -153,9 +152,9 @@ class TrustVerifierTest {
                     Path.of("lib.jar"),
                     List.of(Path.of("lib.jar.asc")));
 
-            assertEquals(TrustVerdict.UNTRUSTED, result.verdict());
-            assertEquals(1, result.unmatchedEvidence().size());
-            assertEquals(Verdict.NO_KEY, result.unmatchedEvidence().get(0).verdict());
+            assertThat(result.verdict()).isEqualTo(TrustVerdict.UNTRUSTED);
+            assertThat(result.unmatchedEvidence().size()).isEqualTo(1);
+            assertThat(result.unmatchedEvidence().get(0).verdict()).isEqualTo(Verdict.NO_KEY);
         }
 
         @Test
@@ -169,8 +168,8 @@ class TrustVerifierTest {
                     Path.of("lib.jar"),
                     List.of(Path.of("lib.jar.asc")));
 
-            assertEquals(TrustVerdict.NOT_CONFIGURED, result.verdict());
-            assertFalse(result.unmatchedEvidence().isEmpty());
+            assertThat(result.verdict()).isEqualTo(TrustVerdict.NOT_CONFIGURED);
+            assertThat(result.unmatchedEvidence().isEmpty()).isFalse();
         }
     }
 
@@ -186,7 +185,7 @@ class TrustVerifierTest {
                     new AssessmentRequest(artifact("a", "b", "1"), Path.of("b.jar"), List.of()),
                     new AssessmentRequest(artifact("c", "d", "2"), Path.of("d.jar"), List.of())));
 
-            assertEquals(2, results.size());
+            assertThat(results.size()).isEqualTo(2);
         }
     }
 

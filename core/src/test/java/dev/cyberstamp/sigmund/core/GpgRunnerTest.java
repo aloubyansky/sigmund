@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -18,7 +18,7 @@ class GpgRunnerTest {
                 gpg:                using RSA key 4AEE18F83AFDEB23
                 gpg: Good signature from "User <user@example.com>" [ultimate]
                 """;
-        assertEquals("4AEE18F83AFDEB23", GpgRunner.extractGpgKeyId(stderr));
+        assertThat(GpgRunner.extractGpgKeyId(stderr)).isEqualTo("4AEE18F83AFDEB23");
     }
 
     @Test
@@ -28,17 +28,17 @@ class GpgRunnerTest {
                 gpg:                using RSA key ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234
                 gpg: Good signature from "User <user@example.com>" [ultimate]
                 """;
-        assertEquals("ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234", GpgRunner.extractGpgKeyId(stderr));
+        assertThat(GpgRunner.extractGpgKeyId(stderr)).isEqualTo("ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
     }
 
     @Test
     void extractGpgKeyIdNotFound() {
-        assertNull(GpgRunner.extractGpgKeyId("gpg: some other output\n"));
+        assertThat(GpgRunner.extractGpgKeyId("gpg: some other output\n")).isNull();
     }
 
     @Test
     void extractGpgKeyIdNullInput() {
-        assertNull(GpgRunner.extractGpgKeyId(null));
+        assertThat(GpgRunner.extractGpgKeyId(null)).isNull();
     }
 
     // --- extractSignerUserId ---
@@ -50,7 +50,7 @@ class GpgRunnerTest {
                 gpg:                using RSA key 4AEE18F83AFDEB23
                 gpg: Good signature from "User Name <user@example.com>" [ultimate]
                 """;
-        assertEquals("User Name <user@example.com>", GpgRunner.extractSignerUserId(stderr));
+        assertThat(GpgRunner.extractSignerUserId(stderr)).isEqualTo("User Name <user@example.com>");
     }
 
     @Test
@@ -60,12 +60,12 @@ class GpgRunnerTest {
                 gpg:                using RSA key 4AEE18F83AFDEB23
                 gpg: Can't check signature: No public key
                 """;
-        assertNull(GpgRunner.extractSignerUserId(stderr));
+        assertThat(GpgRunner.extractSignerUserId(stderr)).isNull();
     }
 
     @Test
     void extractSignerUserIdNullInput() {
-        assertNull(GpgRunner.extractSignerUserId(null));
+        assertThat(GpgRunner.extractSignerUserId(null)).isNull();
     }
 
     // --- extractAlgorithm ---
@@ -77,7 +77,7 @@ class GpgRunnerTest {
                 gpg:                using RSA key 4AEE18F83AFDEB23
                 gpg: Good signature from "User <user@example.com>" [ultimate]
                 """;
-        assertEquals("RSA", GpgRunner.extractAlgorithm(stderr));
+        assertThat(GpgRunner.extractAlgorithm(stderr)).isEqualTo("RSA");
     }
 
     @Test
@@ -87,17 +87,17 @@ class GpgRunnerTest {
                 gpg:                using EDDSA key ABCD1234ABCD1234
                 gpg: Good signature from "User <user@example.com>" [ultimate]
                 """;
-        assertEquals("EDDSA", GpgRunner.extractAlgorithm(stderr));
+        assertThat(GpgRunner.extractAlgorithm(stderr)).isEqualTo("EDDSA");
     }
 
     @Test
     void extractAlgorithmNullInput() {
-        assertNull(GpgRunner.extractAlgorithm(null));
+        assertThat(GpgRunner.extractAlgorithm(null)).isNull();
     }
 
     @Test
     void extractAlgorithmNotFound() {
-        assertNull(GpgRunner.extractAlgorithm("gpg: some other output\n"));
+        assertThat(GpgRunner.extractAlgorithm("gpg: some other output\n")).isNull();
     }
 
     // --- parseColonsSigningInfo ---
@@ -111,10 +111,10 @@ class GpgRunnerTest {
                 sub:u:4096:1:84EFABB1BAFB7050:1669154062::::::e::::::23:
                 """;
         SigningInfo info = GpgRunner.parseColonsSigningInfo(output);
-        assertEquals("gpg", info.toolName());
-        assertEquals("41A2197725BD63EB00D071D46A7F5DB1C68BDB81", info.fingerprint());
-        assertEquals("RSA", info.algorithm());
-        assertEquals("Alice <alice@example.com>", info.userId());
+        assertThat(info.toolName()).isEqualTo("gpg");
+        assertThat(info.fingerprint()).isEqualTo("41A2197725BD63EB00D071D46A7F5DB1C68BDB81");
+        assertThat(info.algorithm()).isEqualTo("RSA");
+        assertThat(info.userId()).isEqualTo("Alice <alice@example.com>");
     }
 
     @Test
@@ -125,9 +125,9 @@ class GpgRunnerTest {
                 uid:u::::1669154062::HASH::Bob <bob@example.com>::::::::::0:
                 """;
         SigningInfo info = GpgRunner.parseColonsSigningInfo(output);
-        assertEquals("41A2197725BD63EB00D071D46A7F5DB1C68BDB81", info.fingerprint());
-        assertEquals("RSA", info.algorithm());
-        assertEquals("Bob <bob@example.com>", info.userId());
+        assertThat(info.fingerprint()).isEqualTo("41A2197725BD63EB00D071D46A7F5DB1C68BDB81");
+        assertThat(info.algorithm()).isEqualTo("RSA");
+        assertThat(info.userId()).isEqualTo("Bob <bob@example.com>");
     }
 
     @Test
@@ -138,18 +138,18 @@ class GpgRunnerTest {
                 uid:u::::1700000000::HASH::Ed User <ed@example.com>::::::::::0:
                 """;
         SigningInfo info = GpgRunner.parseColonsSigningInfo(output);
-        assertEquals("AABBCCDD11223344AABBCCDD11223344AABBCCDD", info.fingerprint());
-        assertEquals("EdDSA", info.algorithm());
-        assertEquals("Ed User <ed@example.com>", info.userId());
+        assertThat(info.fingerprint()).isEqualTo("AABBCCDD11223344AABBCCDD11223344AABBCCDD");
+        assertThat(info.algorithm()).isEqualTo("EdDSA");
+        assertThat(info.userId()).isEqualTo("Ed User <ed@example.com>");
     }
 
     @Test
     void parseColonsEmptyOutput() {
         SigningInfo info = GpgRunner.parseColonsSigningInfo("");
-        assertEquals("gpg", info.toolName());
-        assertNull(info.fingerprint());
-        assertNull(info.algorithm());
-        assertNull(info.userId());
+        assertThat(info.toolName()).isEqualTo("gpg");
+        assertThat(info.fingerprint()).isNull();
+        assertThat(info.algorithm()).isNull();
+        assertThat(info.userId()).isNull();
     }
 
     @Test
@@ -159,9 +159,9 @@ class GpgRunnerTest {
                 fpr:::::::::41A2197725BD63EB00D071D46A7F5DB1C68BDB81:
                 """;
         SigningInfo info = GpgRunner.parseColonsSigningInfo(output);
-        assertEquals("41A2197725BD63EB00D071D46A7F5DB1C68BDB81", info.fingerprint());
-        assertEquals("RSA", info.algorithm());
-        assertNull(info.userId());
+        assertThat(info.fingerprint()).isEqualTo("41A2197725BD63EB00D071D46A7F5DB1C68BDB81");
+        assertThat(info.algorithm()).isEqualTo("RSA");
+        assertThat(info.userId()).isNull();
     }
 
     // --- canSign ---
@@ -170,20 +170,20 @@ class GpgRunnerTest {
     void signingCapableRunnerCanSign() {
         var runner = new GpgRunner("gpg", null, null,
                 null, true, false, false, List.of());
-        assertTrue(runner.canSign());
+        assertThat(runner.canSign()).isTrue();
     }
 
     @Test
     void verifyOnlyRunnerCannotSign() {
         var runner = new GpgRunner("gpg", null, null,
                 null, false, false, false, List.of());
-        assertFalse(runner.canSign());
+        assertThat(runner.canSign()).isFalse();
     }
 
     @Test
     void defaultConstructorCanSign() {
         var runner = new GpgRunner();
-        assertTrue(runner.canSign());
+        assertThat(runner.canSign()).isTrue();
     }
 
     // --- parseDefaultKey ---
@@ -195,7 +195,7 @@ class GpgRunnerTest {
     void parseDefaultKeyFound() throws IOException {
         Path conf = tempDir.resolve("gpg.conf");
         Files.writeString(conf, "default-key ABCD1234ABCD1234\n");
-        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
+        assertThat(GpgRunner.parseDefaultKey(conf)).isEqualTo("ABCD1234ABCD1234");
     }
 
     @Test
@@ -208,7 +208,7 @@ class GpgRunnerTest {
                 # default-key OLD_KEY
                 default-key 41A2197725BD63EB00D071D46A7F5DB1C68BDB81
                 """);
-        assertEquals("41A2197725BD63EB00D071D46A7F5DB1C68BDB81", GpgRunner.parseDefaultKey(conf));
+        assertThat(GpgRunner.parseDefaultKey(conf)).isEqualTo("41A2197725BD63EB00D071D46A7F5DB1C68BDB81");
     }
 
     @Test
@@ -218,7 +218,7 @@ class GpgRunnerTest {
                 default-key FIRST_KEY
                 default-key SECOND_KEY
                 """);
-        assertEquals("SECOND_KEY", GpgRunner.parseDefaultKey(conf));
+        assertThat(GpgRunner.parseDefaultKey(conf)).isEqualTo("SECOND_KEY");
     }
 
     @Test
@@ -228,51 +228,51 @@ class GpgRunnerTest {
                 keyserver hkps://keys.openpgp.org
                 auto-key-locate local,wkd
                 """);
-        assertNull(GpgRunner.parseDefaultKey(conf));
+        assertThat(GpgRunner.parseDefaultKey(conf)).isNull();
     }
 
     @Test
     void parseDefaultKeyFileNotFound() {
-        assertNull(GpgRunner.parseDefaultKey(tempDir.resolve("nonexistent.conf")));
+        assertThat(GpgRunner.parseDefaultKey(tempDir.resolve("nonexistent.conf"))).isNull();
     }
 
     @Test
     void parseDefaultKeyNullPath() {
-        assertNull(GpgRunner.parseDefaultKey(null));
+        assertThat(GpgRunner.parseDefaultKey(null)).isNull();
     }
 
     @Test
     void parseDefaultKeyQuoted() throws IOException {
         Path conf = tempDir.resolve("gpg.conf");
         Files.writeString(conf, "default-key \"ABCD1234ABCD1234\"\n");
-        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
+        assertThat(GpgRunner.parseDefaultKey(conf)).isEqualTo("ABCD1234ABCD1234");
     }
 
     @Test
     void parseDefaultKeyHexPrefix() throws IOException {
         Path conf = tempDir.resolve("gpg.conf");
         Files.writeString(conf, "default-key 0xABCD1234ABCD1234\n");
-        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
+        assertThat(GpgRunner.parseDefaultKey(conf)).isEqualTo("ABCD1234ABCD1234");
     }
 
     @Test
     void parseDefaultKeyExactSubkeyMarker() throws IOException {
         Path conf = tempDir.resolve("gpg.conf");
         Files.writeString(conf, "default-key ABCD1234ABCD1234!\n");
-        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
+        assertThat(GpgRunner.parseDefaultKey(conf)).isEqualTo("ABCD1234ABCD1234");
     }
 
     @Test
     void parseDefaultKeyQuotedHexPrefixAndExclamation() throws IOException {
         Path conf = tempDir.resolve("gpg.conf");
         Files.writeString(conf, "default-key \"0xABCD1234ABCD1234!\"\n");
-        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
+        assertThat(GpgRunner.parseDefaultKey(conf)).isEqualTo("ABCD1234ABCD1234");
     }
 
     @Test
     void parseDefaultKeyTabDelimiter() throws IOException {
         Path conf = tempDir.resolve("gpg.conf");
         Files.writeString(conf, "default-key\tABCD1234ABCD1234\n");
-        assertEquals("ABCD1234ABCD1234", GpgRunner.parseDefaultKey(conf));
+        assertThat(GpgRunner.parseDefaultKey(conf)).isEqualTo("ABCD1234ABCD1234");
     }
 }

@@ -1,6 +1,8 @@
 package dev.cyberstamp.sigmund.sigstore;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.EmailCredential;
@@ -31,32 +33,32 @@ class SigstoreToolTest {
     class Properties {
         @Test
         void name() {
-            assertEquals("sigstore", metadataOnlyTool().name());
+            assertThat(metadataOnlyTool().name()).isEqualTo("sigstore");
         }
 
         @Test
         void isAlwaysAvailable() {
-            assertTrue(metadataOnlyTool().isAvailable());
+            assertThat(metadataOnlyTool().isAvailable()).isTrue();
         }
 
         @Test
         void cannotSignWithoutSigner() {
-            assertFalse(metadataOnlyTool().canSign());
+            assertThat(metadataOnlyTool().canSign()).isFalse();
         }
 
         @Test
         void signatureFormat() {
-            assertSame(format, metadataOnlyTool().signatureFormat());
+            assertThat(metadataOnlyTool().signatureFormat()).isSameAs(format);
         }
 
         @Test
         void supportedCredentialTypes() {
-            assertEquals(Set.of("sigstore"), metadataOnlyTool().supportedCredentialTypes());
+            assertThat(metadataOnlyTool().supportedCredentialTypes()).isEqualTo(Set.of("sigstore"));
         }
 
         @Test
         void signingInfoEmptyWhenVerifyOnly() {
-            assertTrue(metadataOnlyTool().signingInfo().isEmpty());
+            assertThat(metadataOnlyTool().signingInfo().isEmpty()).isTrue();
         }
     }
 
@@ -64,14 +66,14 @@ class SigstoreToolTest {
     class CanVerify {
         @Test
         void acceptsSigstoreUnit() {
-            assertTrue(metadataOnlyTool().canVerify(
-                    new SigstoreVerificationUnit("{}")));
+            assertThat(metadataOnlyTool().canVerify(
+                    new SigstoreVerificationUnit("{}"))).isTrue();
         }
 
         @Test
         void rejectsOpenPgpUnit() {
-            assertFalse(metadataOnlyTool().canVerify(
-                    new OpenPgpVerificationUnit("block", 4, null, 0)));
+            assertThat(metadataOnlyTool().canVerify(
+                    new OpenPgpVerificationUnit("block", 4, null, 0))).isFalse();
         }
     }
 
@@ -89,16 +91,16 @@ class SigstoreToolTest {
 
             List<Credential> credentials = metadataOnlyTool().extractCredentials(result);
 
-            assertEquals(2, credentials.size());
-            assertInstanceOf(SigstoreCredential.class, credentials.get(0));
-            assertInstanceOf(EmailCredential.class, credentials.get(1));
+            assertThat(credentials.size()).isEqualTo(2);
+            assertThat(credentials.get(0)).isInstanceOf(SigstoreCredential.class);
+            assertThat(credentials.get(1)).isInstanceOf(EmailCredential.class);
 
             SigstoreCredential extracted = (SigstoreCredential) credentials.get(0);
-            assertEquals("https://accounts.google.com", extracted.issuer());
-            assertEquals("alice@example.com", extracted.subject());
+            assertThat(extracted.issuer()).isEqualTo("https://accounts.google.com");
+            assertThat(extracted.subject()).isEqualTo("alice@example.com");
 
             EmailCredential email = (EmailCredential) credentials.get(1);
-            assertEquals("alice@example.com", email.email());
+            assertThat(email.email()).isEqualTo("alice@example.com");
         }
 
         @Test
@@ -116,16 +118,17 @@ class SigstoreToolTest {
 
             List<Credential> credentials = metadataOnlyTool().extractCredentials(result);
 
-            assertEquals(1, credentials.size());
-            SigstoreCredential extracted = assertInstanceOf(SigstoreCredential.class, credentials.get(0));
-            assertEquals("https://github.com/org/repo", extracted.sourceRepositoryUri());
+            assertThat(credentials.size()).isEqualTo(1);
+            assertThat(credentials.get(0)).isInstanceOf(SigstoreCredential.class);
+            SigstoreCredential extracted = (SigstoreCredential) credentials.get(0);
+            assertThat(extracted.sourceRepositoryUri()).isEqualTo("https://github.com/org/repo");
         }
 
         @Test
         void failedVerificationProducesNoCredentials() {
             var result = new SigstoreVerifyResult(
                     Verdict.FAIL, null, null, null, null, -1);
-            assertTrue(metadataOnlyTool().extractCredentials(result).isEmpty());
+            assertThat(metadataOnlyTool().extractCredentials(result).isEmpty()).isTrue();
         }
 
         @Test
@@ -139,9 +142,9 @@ class SigstoreToolTest {
 
             List<Credential> credentials = metadataOnlyTool().extractCredentials(result);
 
-            assertEquals(2, credentials.size());
-            assertInstanceOf(SigstoreCredential.class, credentials.get(0));
-            assertInstanceOf(EmailCredential.class, credentials.get(1));
+            assertThat(credentials.size()).isEqualTo(2);
+            assertThat(credentials.get(0)).isInstanceOf(SigstoreCredential.class);
+            assertThat(credentials.get(1)).isInstanceOf(EmailCredential.class);
         }
 
         @Test
@@ -150,7 +153,7 @@ class SigstoreToolTest {
                     Verdict.PASS, null, "EC",
                     null, "12345", -1);
 
-            assertTrue(metadataOnlyTool().extractCredentials(result).isEmpty());
+            assertThat(metadataOnlyTool().extractCredentials(result).isEmpty()).isTrue();
         }
     }
 
@@ -158,19 +161,19 @@ class SigstoreToolTest {
     class Lifecycle {
         @Test
         void closeIsNoOpForVerifyOnly() {
-            assertDoesNotThrow(() -> metadataOnlyTool().close());
+            assertThatCode(() -> metadataOnlyTool().close()).doesNotThrowAnyException();
         }
 
         @Test
         void signThrowsWithoutSigner() {
-            assertThrows(IllegalStateException.class,
-                    () -> metadataOnlyTool().sign(null, null));
+            assertThatThrownBy(() -> metadataOnlyTool().sign(null, null))
+                    .isInstanceOf(IllegalStateException.class);
         }
 
         @Test
         void verifyThrowsWithoutVerifier() {
-            assertThrows(IllegalStateException.class,
-                    () -> metadataOnlyTool().verify(null, new SigstoreVerificationUnit("{}")));
+            assertThatThrownBy(() -> metadataOnlyTool().verify(null, new SigstoreVerificationUnit("{}")))
+                    .isInstanceOf(IllegalStateException.class);
         }
     }
 }

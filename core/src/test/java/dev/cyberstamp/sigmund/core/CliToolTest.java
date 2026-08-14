@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 
@@ -16,8 +16,8 @@ class CliToolTest {
     void runCapturesStdout() {
         CliTool.Result result = CliTool.run("echo", "hello");
 
-        assertEquals(0, result.exitCode(), "Exit code should be 0");
-        assertEquals("hello", result.stdout().trim(), "Stdout should contain 'hello'");
+        assertThat(result.exitCode()).as("Exit code should be 0").isEqualTo(0);
+        assertThat(result.stdout().trim()).as("Stdout should contain 'hello'").isEqualTo("hello");
     }
 
     /**
@@ -27,8 +27,8 @@ class CliToolTest {
     void runCapturesStderr() {
         CliTool.Result result = CliTool.run("sh", "-c", "echo err >&2");
 
-        assertEquals(0, result.exitCode(), "Exit code should be 0");
-        assertEquals("err", result.stderr().trim(), "Stderr should contain 'err'");
+        assertThat(result.exitCode()).as("Exit code should be 0").isEqualTo(0);
+        assertThat(result.stderr().trim()).as("Stderr should contain 'err'").isEqualTo("err");
     }
 
     /**
@@ -38,7 +38,7 @@ class CliToolTest {
     void runNonZeroExitDoesNotThrow() {
         CliTool.Result result = CliTool.run("sh", "-c", "exit 42");
 
-        assertEquals(42, result.exitCode(), "Exit code should be 42");
+        assertThat(result.exitCode()).as("Exit code should be 42").isEqualTo(42);
     }
 
 }

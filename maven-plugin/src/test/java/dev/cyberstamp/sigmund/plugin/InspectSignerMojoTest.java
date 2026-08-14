@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.plugin;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 
@@ -13,9 +14,9 @@ class InspectSignerMojoTest {
 
         var credential = mojo.buildCredential();
 
-        assertInstanceOf(
-                dev.cyberstamp.sigmund.core.FingerprintCredential.class, credential);
-        assertEquals("openpgp4", credential.type());
+        assertThat(credential).isInstanceOf(
+                dev.cyberstamp.sigmund.core.FingerprintCredential.class);
+        assertThat(credential.type()).isEqualTo("openpgp4");
     }
 
     @Test
@@ -25,9 +26,9 @@ class InspectSignerMojoTest {
 
         var credential = mojo.buildCredential();
 
-        assertInstanceOf(
-                dev.cyberstamp.sigmund.core.FingerprintCredential.class, credential);
-        assertEquals("openpgp6", credential.type());
+        assertThat(credential).isInstanceOf(
+                dev.cyberstamp.sigmund.core.FingerprintCredential.class);
+        assertThat(credential.type()).isEqualTo("openpgp6");
     }
 
     @Test
@@ -37,8 +38,8 @@ class InspectSignerMojoTest {
 
         var credential = mojo.buildCredential();
 
-        assertInstanceOf(
-                dev.cyberstamp.sigmund.core.EmailCredential.class, credential);
+        assertThat(credential).isInstanceOf(
+                dev.cyberstamp.sigmund.core.EmailCredential.class);
     }
 
     @Test
@@ -49,14 +50,15 @@ class InspectSignerMojoTest {
 
         var credential = mojo.buildCredential();
 
-        assertInstanceOf(
-                dev.cyberstamp.sigmund.core.SigstoreCredential.class, credential);
+        assertThat(credential).isInstanceOf(
+                dev.cyberstamp.sigmund.core.SigstoreCredential.class);
     }
 
     @Test
     void buildCredentialThrowsWhenNoInput() {
         var mojo = new InspectSignerMojo();
 
-        assertThrows(IllegalArgumentException.class, mojo::buildCredential);
+        assertThatThrownBy(mojo::buildCredential)
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 
@@ -35,16 +35,16 @@ class AscCombinerTest {
     void separateBlocksPreservesTwoArmoredBlocks() {
         String combined = AscCombiner.combine(ARMORED_BLOCK_1, ARMORED_BLOCK_2);
 
-        assertEquals(2, countOccurrences(combined, "-----BEGIN PGP"));
-        assertEquals(2, countOccurrences(combined, "-----END PGP"));
+        assertThat(countOccurrences(combined, "-----BEGIN PGP")).isEqualTo(2);
+        assertThat(countOccurrences(combined, "-----END PGP")).isEqualTo(2);
     }
 
     @Test
     void separateBlocksClassicBlockComesFirst() {
         String combined = AscCombiner.combine(ARMORED_BLOCK_1, ARMORED_BLOCK_2);
 
-        assertTrue(combined.startsWith(ARMORED_BLOCK_1.stripTrailing()),
-                "Combined output should start with the classic block");
+        assertThat(combined.startsWith(ARMORED_BLOCK_1.stripTrailing()))
+                .as("Combined output should start with the classic block").isTrue();
     }
 
     // --- extractBlock ---
@@ -54,9 +54,9 @@ class AscCombinerTest {
         String combined = AscCombiner.combine(ARMORED_BLOCK_1, ARMORED_BLOCK_2);
 
         String first = AscCombiner.extractBlock(combined, 0);
-        assertNotNull(first);
-        assertEquals(1, countOccurrences(first, "-----BEGIN PGP"));
-        assertArrayEquals(AscCombiner.dearmor(ARMORED_BLOCK_1), AscCombiner.dearmor(first));
+        assertThat(first).isNotNull();
+        assertThat(countOccurrences(first, "-----BEGIN PGP")).isEqualTo(1);
+        assertThat(AscCombiner.dearmor(first)).isEqualTo(AscCombiner.dearmor(ARMORED_BLOCK_1));
     }
 
     @Test
@@ -64,21 +64,21 @@ class AscCombinerTest {
         String combined = AscCombiner.combine(ARMORED_BLOCK_1, ARMORED_BLOCK_2);
 
         String second = AscCombiner.extractBlock(combined, 1);
-        assertNotNull(second);
-        assertEquals(1, countOccurrences(second, "-----BEGIN PGP"));
-        assertArrayEquals(AscCombiner.dearmor(ARMORED_BLOCK_2), AscCombiner.dearmor(second));
+        assertThat(second).isNotNull();
+        assertThat(countOccurrences(second, "-----BEGIN PGP")).isEqualTo(1);
+        assertThat(AscCombiner.dearmor(second)).isEqualTo(AscCombiner.dearmor(ARMORED_BLOCK_2));
     }
 
     @Test
     void extractBlockReturnsNullForOutOfRange() {
         String combined = AscCombiner.combine(ARMORED_BLOCK_1, ARMORED_BLOCK_2);
 
-        assertNull(AscCombiner.extractBlock(combined, 2));
+        assertThat(AscCombiner.extractBlock(combined, 2)).isNull();
     }
 
     @Test
     void extractBlockReturnsNullFromSingleBlockForIndex1() {
-        assertNull(AscCombiner.extractBlock(ARMORED_BLOCK_1, 1));
+        assertThat(AscCombiner.extractBlock(ARMORED_BLOCK_1, 1)).isNull();
     }
 
     // --- dearmor ---
@@ -87,8 +87,8 @@ class AscCombinerTest {
     void dearmorExtractsRawBytes() {
         byte[] raw = AscCombiner.dearmor(ARMORED_BLOCK_1);
 
-        assertNotNull(raw, "Dearmored result should not be null");
-        assertTrue(raw.length > 0, "Dearmored result should not be empty");
+        assertThat(raw).as("Dearmored result should not be null").isNotNull();
+        assertThat(raw.length > 0).as("Dearmored result should not be empty").isTrue();
     }
 
     // --- extractAllBlocks ---
@@ -97,15 +97,15 @@ class AscCombinerTest {
     void extractAllBlocksTwoBlocks() {
         String combined = AscCombiner.combine(ARMORED_BLOCK_1, ARMORED_BLOCK_2);
         var blocks = AscCombiner.extractAllBlocks(combined);
-        assertEquals(2, blocks.size());
-        assertArrayEquals(AscCombiner.dearmor(ARMORED_BLOCK_1), AscCombiner.dearmor(blocks.get(0)));
-        assertArrayEquals(AscCombiner.dearmor(ARMORED_BLOCK_2), AscCombiner.dearmor(blocks.get(1)));
+        assertThat(blocks.size()).isEqualTo(2);
+        assertThat(AscCombiner.dearmor(blocks.get(0))).isEqualTo(AscCombiner.dearmor(ARMORED_BLOCK_1));
+        assertThat(AscCombiner.dearmor(blocks.get(1))).isEqualTo(AscCombiner.dearmor(ARMORED_BLOCK_2));
     }
 
     @Test
     void extractAllBlocksSingleBlock() {
         var blocks = AscCombiner.extractAllBlocks(ARMORED_BLOCK_1);
-        assertEquals(1, blocks.size());
+        assertThat(blocks.size()).isEqualTo(1);
     }
 
     // --- inspectSignaturePacket version detection ---
@@ -114,7 +114,7 @@ class AscCombinerTest {
     void inspectSignaturePacketV4() {
         // ARMORED_BLOCK_1 has packet bytes starting with 0x88 0x5E 0x04
         // old format tag 2, 1-byte length, version 4
-        assertEquals(4, AscCombiner.inspectSignaturePacket(ARMORED_BLOCK_1).version());
+        assertThat(AscCombiner.inspectSignaturePacket(ARMORED_BLOCK_1).version()).isEqualTo(4);
     }
 
     @Test
@@ -125,7 +125,7 @@ class AscCombinerTest {
                 0x05, 0x02, 0x61, 0x74, 0x00, 0x09, 0x00, 0x0A, 0x09, 0x10
         };
         String armored = AscCombiner.armor(v6Data);
-        assertEquals(6, AscCombiner.inspectSignaturePacket(armored).version());
+        assertThat(AscCombiner.inspectSignaturePacket(armored).version()).isEqualTo(6);
     }
 
     @Test
@@ -136,7 +136,7 @@ class AscCombinerTest {
                 0x05, 0x02, 0x61, 0x74, 0x00, 0x09, 0x00, 0x0A, 0x09, 0x10
         };
         String armored = AscCombiner.armor(newFormatData);
-        assertEquals(4, AscCombiner.inspectSignaturePacket(armored).version());
+        assertThat(AscCombiner.inspectSignaturePacket(armored).version()).isEqualTo(4);
     }
 
     @Test
@@ -152,7 +152,7 @@ class AscCombinerTest {
                 0x05, 0x02, 0x61, 0x74, 0x00, 0x09, 0x00, 0x0A, 0x09, 0x10
         };
         String armored = AscCombiner.armor(compressedWrapped);
-        assertEquals(4, AscCombiner.inspectSignaturePacket(armored).version());
+        assertThat(AscCombiner.inspectSignaturePacket(armored).version()).isEqualTo(4);
     }
 
     @Test
@@ -183,12 +183,12 @@ class AscCombinerTest {
         System.arraycopy(fingerprint, 0, v6Sig, 16, 32);
         String armored = AscCombiner.armor(v6Sig);
         String expected = "0102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F20";
-        assertEquals(expected, AscCombiner.inspectSignaturePacket(armored).issuerFingerprint());
+        assertThat(AscCombiner.inspectSignaturePacket(armored).issuerFingerprint()).isEqualTo(expected);
     }
 
     @Test
     void issuerFingerprintV4WithoutSubpacketReturnsNull() {
-        assertNull(AscCombiner.inspectSignaturePacket(ARMORED_BLOCK_1).issuerFingerprint());
+        assertThat(AscCombiner.inspectSignaturePacket(ARMORED_BLOCK_1).issuerFingerprint()).isNull();
     }
 
     @Test
@@ -202,14 +202,14 @@ class AscCombinerTest {
                 0x05, 0x02, 0x61, 0x74, 0x00, 0x09, 0x00, 0x0A, 0x09, 0x10
         };
         String armored = AscCombiner.armor(compressedWrapped);
-        assertEquals(6, AscCombiner.inspectSignaturePacket(armored).version());
+        assertThat(AscCombiner.inspectSignaturePacket(armored).version()).isEqualTo(6);
     }
 
     @Test
     void extractPublicKeyAlgorithmIdV4() {
         // ARMORED_BLOCK_1 packet bytes: 0x88 0x5E 0x04 0x00 0x11 ...
         // bodyOffset=2, version=0x04, sigType=0x00, pubkeyAlgo=0x11 (17=DSA)
-        assertEquals(0x11, AscCombiner.inspectSignaturePacket(ARMORED_BLOCK_1).algorithmId());
+        assertThat(AscCombiner.inspectSignaturePacket(ARMORED_BLOCK_1).algorithmId()).isEqualTo(0x11);
     }
 
     @Test
@@ -219,7 +219,7 @@ class AscCombinerTest {
                 0x05, 0x02, 0x61, 0x74, 0x00, 0x09, 0x00, 0x0A, 0x09, 0x10
         };
         String armored = AscCombiner.armor(v6Data);
-        assertEquals(0x1F, AscCombiner.inspectSignaturePacket(armored).algorithmId());
+        assertThat(AscCombiner.inspectSignaturePacket(armored).algorithmId()).isEqualTo(0x1F);
     }
 
     @Test
@@ -242,8 +242,8 @@ class AscCombinerTest {
         };
         String armored = AscCombiner.armor(v3Data);
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
-        assertEquals(3, info.version());
-        assertEquals(1, info.algorithmId()); // RSA
+        assertThat(info.version()).isEqualTo(3);
+        assertThat(info.algorithmId()).isEqualTo(1); // RSA
     }
 
     private int countOccurrences(String text, String pattern) {

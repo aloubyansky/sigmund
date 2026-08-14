@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.sigstore;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.cyberstamp.sigmund.core.SignatureToolFactory;
 import dev.cyberstamp.sigmund.core.SigstoreCredential;
@@ -22,13 +23,13 @@ class SigstoreToolFactoryTest {
     class Properties {
         @Test
         void toolName() {
-            assertEquals("sigstore", factory.toolName());
+            assertThat(factory.toolName()).isEqualTo("sigstore");
         }
 
         @Test
         void supportedCredentialTypes() {
-            assertTrue(factory.supportedCredentialTypes().contains("sigstore"));
-            assertEquals(1, factory.supportedCredentialTypes().size());
+            assertThat(factory.supportedCredentialTypes().contains("sigstore")).isTrue();
+            assertThat(factory.supportedCredentialTypes().size()).isEqualTo(1);
         }
     }
 
@@ -39,8 +40,9 @@ class SigstoreToolFactoryTest {
             boolean found = ServiceLoader.load(SignatureToolFactory.class)
                     .stream()
                     .anyMatch(p -> p.get() instanceof SigstoreToolFactory);
-            assertTrue(found,
-                    "SigstoreToolFactory should be discoverable via ServiceLoader");
+            assertThat(found)
+                    .as("SigstoreToolFactory should be discoverable via ServiceLoader")
+                    .isTrue();
         }
     }
 
@@ -49,18 +51,18 @@ class SigstoreToolFactoryTest {
         @Test
         void failsWithInvalidTrustedRoot(@TempDir Path tempDir) {
             Path badRoot = tempDir.resolve("bad-root.json");
-            assertThrows(ToolExecutionException.class,
-                    () -> factory.createVerifyOnly(
-                            Map.of("trusted-root", badRoot.toString())));
+            assertThatThrownBy(() -> factory.createVerifyOnly(
+                    Map.of("trusted-root", badRoot.toString())))
+                    .isInstanceOf(ToolExecutionException.class);
         }
 
         @Test
         void failsWithMalformedTrustedRoot(@TempDir Path tempDir) throws IOException {
             Path badRoot = tempDir.resolve("bad-root.json");
             Files.writeString(badRoot, "not valid json");
-            assertThrows(ToolExecutionException.class,
-                    () -> factory.createVerifyOnly(
-                            Map.of("trusted-root", badRoot.toString())));
+            assertThatThrownBy(() -> factory.createVerifyOnly(
+                    Map.of("trusted-root", badRoot.toString())))
+                    .isInstanceOf(ToolExecutionException.class);
         }
     }
 
@@ -70,9 +72,9 @@ class SigstoreToolFactoryTest {
         void acceptsNullCredential() throws Exception {
             try (var tool = (SigstoreTool) factory.createSigning(
                     null, Map.of("staging", "true"))) {
-                assertTrue(tool.canSign());
-                assertEquals("sigstore", tool.name());
-                assertTrue(tool.signingInfo().get(0).userId() == null);
+                assertThat(tool.canSign()).isTrue();
+                assertThat(tool.name()).isEqualTo("sigstore");
+                assertThat(tool.signingInfo().get(0).userId() == null).isTrue();
             }
         }
 
@@ -84,9 +86,9 @@ class SigstoreToolFactoryTest {
                     .build();
             try (var tool = (SigstoreTool) factory.createSigning(
                     sc, Map.of("staging", "true"))) {
-                assertTrue(tool.canSign());
-                assertEquals("alice@example.com",
-                        tool.signingInfo().get(0).userId());
+                assertThat(tool.canSign()).isTrue();
+                assertThat(tool.signingInfo().get(0).userId())
+                        .isEqualTo("alice@example.com");
             }
         }
     }

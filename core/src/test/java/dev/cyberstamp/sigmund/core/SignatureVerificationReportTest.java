@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -15,62 +16,62 @@ class SignatureVerificationReportTest {
         @Test
         void allPass() {
             var report = reportWith(passResult(), passResult());
-            assertEquals(ReportVerdict.ALL_PASS, report.verdict());
-            assertTrue(report.isPass());
-            assertTrue(report.isLenientPass());
+            assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+            assertThat(report.isPass()).isTrue();
+            assertThat(report.isLenientPass()).isTrue();
         }
 
         @Test
         void passWithSkipped() {
             var report = reportWith(passResult(), skippedResult());
-            assertEquals(ReportVerdict.PASS_WITH_SKIPS, report.verdict());
-            assertFalse(report.isPass());
-            assertTrue(report.isLenientPass());
+            assertThat(report.verdict()).isEqualTo(ReportVerdict.PASS_WITH_SKIPS);
+            assertThat(report.isPass()).isFalse();
+            assertThat(report.isLenientPass()).isTrue();
         }
 
         @Test
         void passWithNoKey() {
             var report = reportWith(passResult(), noKeyResult());
-            assertEquals(ReportVerdict.PASS_WITH_SKIPS, report.verdict());
-            assertFalse(report.isPass());
-            assertTrue(report.isLenientPass());
+            assertThat(report.verdict()).isEqualTo(ReportVerdict.PASS_WITH_SKIPS);
+            assertThat(report.isPass()).isFalse();
+            assertThat(report.isLenientPass()).isTrue();
         }
 
         @Test
         void passWithFailures() {
             var report = reportWith(passResult(), failResult());
-            assertEquals(ReportVerdict.PASS_WITH_FAILURES, report.verdict());
-            assertFalse(report.isPass());
-            assertFalse(report.isLenientPass());
+            assertThat(report.verdict()).isEqualTo(ReportVerdict.PASS_WITH_FAILURES);
+            assertThat(report.isPass()).isFalse();
+            assertThat(report.isLenientPass()).isFalse();
         }
 
         @Test
         void allFail() {
             var report = reportWith(failResult(), failResult());
-            assertEquals(ReportVerdict.NONE_PASSED, report.verdict());
-            assertFalse(report.isPass());
-            assertFalse(report.isLenientPass());
+            assertThat(report.verdict()).isEqualTo(ReportVerdict.NONE_PASSED);
+            assertThat(report.isPass()).isFalse();
+            assertThat(report.isLenientPass()).isFalse();
         }
 
         @Test
         void allSkipped() {
             var report = reportWith(skippedResult());
-            assertEquals(ReportVerdict.NONE_PASSED, report.verdict());
+            assertThat(report.verdict()).isEqualTo(ReportVerdict.NONE_PASSED);
         }
 
         @Test
         void emptyReport() {
             var report = new SignatureVerificationReport(List.of());
-            assertEquals(ReportVerdict.NONE_PASSED, report.verdict());
-            assertFalse(report.isPass());
-            assertFalse(report.isLenientPass());
+            assertThat(report.verdict()).isEqualTo(ReportVerdict.NONE_PASSED);
+            assertThat(report.isPass()).isFalse();
+            assertThat(report.isLenientPass()).isFalse();
         }
 
         @Test
         void emptyFileReport() {
             var report = new SignatureVerificationReport(
                     List.of(new FileSignatureReport(Path.of("test.asc"), "openpgp", List.of())));
-            assertEquals(ReportVerdict.NONE_PASSED, report.verdict());
+            assertThat(report.verdict()).isEqualTo(ReportVerdict.NONE_PASSED);
         }
     }
 
@@ -82,13 +83,14 @@ class SignatureVerificationReportTest {
             var file1 = new FileSignatureReport(Path.of("a.asc"), "openpgp", List.of(passResult()));
             var file2 = new FileSignatureReport(Path.of("b.asc"), "openpgp", List.of(failResult()));
             var report = new SignatureVerificationReport(List.of(file1, file2));
-            assertEquals(ReportVerdict.PASS_WITH_FAILURES, report.verdict());
+            assertThat(report.verdict()).isEqualTo(ReportVerdict.PASS_WITH_FAILURES);
         }
 
         @Test
         void filesListIsUnmodifiable() {
             var report = reportWith(passResult());
-            assertThrows(UnsupportedOperationException.class, () -> report.files().add(null));
+            assertThatThrownBy(() -> report.files().add(null))
+                    .isInstanceOf(UnsupportedOperationException.class);
         }
     }
 
@@ -99,10 +101,10 @@ class SignatureVerificationReportTest {
         void formatContainsResultsAndOutcome() {
             var report = reportWith(passResult());
             String formatted = report.format();
-            assertTrue(formatted.contains("Signature Verification Report:"));
-            assertTrue(formatted.contains("[1]"));
-            assertTrue(formatted.contains("PASS"));
-            assertTrue(formatted.contains("Overall: ALL_PASS"));
+            assertThat(formatted).contains("Signature Verification Report:");
+            assertThat(formatted).contains("[1]");
+            assertThat(formatted).contains("PASS");
+            assertThat(formatted).contains("Overall: ALL_PASS");
         }
 
         @Test
@@ -111,7 +113,7 @@ class SignatureVerificationReportTest {
                     "Alice", "RSA", 4, "ABCD1234", "FULL_FP");
             var report = reportWith(result);
             String formatted = report.format();
-            assertTrue(formatted.contains("(RSA)"));
+            assertThat(formatted).contains("(RSA)");
         }
 
         @Test
@@ -120,7 +122,7 @@ class SignatureVerificationReportTest {
                     null, null, 4, "ABCD1234", "FULL_FP");
             var report = reportWith(result);
             String formatted = report.format();
-            assertTrue(formatted.contains("[key: ABCD1234]"));
+            assertThat(formatted).contains("[key: ABCD1234]");
         }
 
         @Test
@@ -129,7 +131,7 @@ class SignatureVerificationReportTest {
                     "Alice <alice@example.com>", "RSA", 4, null, null);
             var report = reportWith(result);
             String formatted = report.format();
-            assertTrue(formatted.contains("[signer: Alice <alice@example.com>]"));
+            assertThat(formatted).contains("[signer: Alice <alice@example.com>]");
         }
     }
 

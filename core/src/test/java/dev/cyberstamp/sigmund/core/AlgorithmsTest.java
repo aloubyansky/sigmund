@@ -1,9 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -15,27 +12,27 @@ class AlgorithmsTest {
 
         @Test
         void rsa() {
-            assertEquals("RSA", Algorithms.algorithmName(1));
-            assertEquals("RSA", Algorithms.algorithmName(2));
-            assertEquals("RSA", Algorithms.algorithmName(3));
+            assertThat(Algorithms.algorithmName(1)).isEqualTo("RSA");
+            assertThat(Algorithms.algorithmName(2)).isEqualTo("RSA");
+            assertThat(Algorithms.algorithmName(3)).isEqualTo("RSA");
         }
 
         @Test
         void edDsa() {
-            assertEquals("EdDSA", Algorithms.algorithmName(22));
+            assertThat(Algorithms.algorithmName(22)).isEqualTo("EdDSA");
         }
 
         @Test
         void pqcComposites() {
-            assertEquals("ML-DSA-65+Ed25519", Algorithms.algorithmName(30));
-            assertEquals("ML-DSA-87+Ed448", Algorithms.algorithmName(31));
-            assertEquals("SLH-DSA-SHAKE-128s", Algorithms.algorithmName(32));
+            assertThat(Algorithms.algorithmName(30)).isEqualTo("ML-DSA-65+Ed25519");
+            assertThat(Algorithms.algorithmName(31)).isEqualTo("ML-DSA-87+Ed448");
+            assertThat(Algorithms.algorithmName(32)).isEqualTo("SLH-DSA-SHAKE-128s");
         }
 
         @Test
         void unknownIdReturnsNull() {
-            assertNull(Algorithms.algorithmName(99));
-            assertNull(Algorithms.algorithmName(-1));
+            assertThat(Algorithms.algorithmName(99)).isNull();
+            assertThat(Algorithms.algorithmName(-1)).isNull();
         }
     }
 
@@ -44,22 +41,22 @@ class AlgorithmsTest {
 
         @Test
         void pqcRange() {
-            assertTrue(Algorithms.isPqcAlgorithm(30));
-            assertTrue(Algorithms.isPqcAlgorithm(36));
-            assertTrue(Algorithms.isPqcAlgorithm(33));
+            assertThat(Algorithms.isPqcAlgorithm(30)).isTrue();
+            assertThat(Algorithms.isPqcAlgorithm(36)).isTrue();
+            assertThat(Algorithms.isPqcAlgorithm(33)).isTrue();
         }
 
         @Test
         void classicalRange() {
-            assertFalse(Algorithms.isPqcAlgorithm(1));
-            assertFalse(Algorithms.isPqcAlgorithm(22));
-            assertFalse(Algorithms.isPqcAlgorithm(29));
+            assertThat(Algorithms.isPqcAlgorithm(1)).isFalse();
+            assertThat(Algorithms.isPqcAlgorithm(22)).isFalse();
+            assertThat(Algorithms.isPqcAlgorithm(29)).isFalse();
         }
 
         @Test
         void outsideRange() {
-            assertFalse(Algorithms.isPqcAlgorithm(37));
-            assertFalse(Algorithms.isPqcAlgorithm(-1));
+            assertThat(Algorithms.isPqcAlgorithm(37)).isFalse();
+            assertThat(Algorithms.isPqcAlgorithm(-1)).isFalse();
         }
     }
 
@@ -68,27 +65,27 @@ class AlgorithmsTest {
 
         @Test
         void pqcNames() {
-            assertTrue(Algorithms.isPqcAlgorithmName("ML-DSA-65+Ed25519"));
-            assertTrue(Algorithms.isPqcAlgorithmName("ML-DSA-87+Ed448"));
-            assertTrue(Algorithms.isPqcAlgorithmName("SLH-DSA-SHAKE-128s"));
-            assertTrue(Algorithms.isPqcAlgorithmName("ML-KEM-768+X25519"));
+            assertThat(Algorithms.isPqcAlgorithmName("ML-DSA-65+Ed25519")).isTrue();
+            assertThat(Algorithms.isPqcAlgorithmName("ML-DSA-87+Ed448")).isTrue();
+            assertThat(Algorithms.isPqcAlgorithmName("SLH-DSA-SHAKE-128s")).isTrue();
+            assertThat(Algorithms.isPqcAlgorithmName("ML-KEM-768+X25519")).isTrue();
         }
 
         @Test
         void classicalNames() {
-            assertFalse(Algorithms.isPqcAlgorithmName("RSA"));
-            assertFalse(Algorithms.isPqcAlgorithmName("EdDSA"));
-            assertFalse(Algorithms.isPqcAlgorithmName("ECDSA"));
+            assertThat(Algorithms.isPqcAlgorithmName("RSA")).isFalse();
+            assertThat(Algorithms.isPqcAlgorithmName("EdDSA")).isFalse();
+            assertThat(Algorithms.isPqcAlgorithmName("ECDSA")).isFalse();
         }
 
         @Test
         void unknownName() {
-            assertFalse(Algorithms.isPqcAlgorithmName("UNKNOWN"));
+            assertThat(Algorithms.isPqcAlgorithmName("UNKNOWN")).isFalse();
         }
 
         @Test
         void nullName() {
-            assertFalse(Algorithms.isPqcAlgorithmName(null));
+            assertThat(Algorithms.isPqcAlgorithmName(null)).isFalse();
         }
     }
 
@@ -97,28 +94,28 @@ class AlgorithmsTest {
 
         @Test
         void v4() {
-            assertEquals("PGP4", Algorithms.versionLabel(4));
+            assertThat(Algorithms.versionLabel(4)).isEqualTo("PGP4");
         }
 
         @Test
         void v6() {
-            assertEquals("PGP6", Algorithms.versionLabel(6));
+            assertThat(Algorithms.versionLabel(6)).isEqualTo("PGP6");
         }
 
         @Test
         void otherPositive() {
-            assertEquals("PGP3", Algorithms.versionLabel(3));
-            assertEquals("PGP5", Algorithms.versionLabel(5));
+            assertThat(Algorithms.versionLabel(3)).isEqualTo("PGP3");
+            assertThat(Algorithms.versionLabel(5)).isEqualTo("PGP5");
         }
 
         @Test
         void zeroReturnsDash() {
-            assertEquals("-", Algorithms.versionLabel(0));
+            assertThat(Algorithms.versionLabel(0)).isEqualTo("-");
         }
 
         @Test
         void negativeReturnsDash() {
-            assertEquals("-", Algorithms.versionLabel(-1));
+            assertThat(Algorithms.versionLabel(-1)).isEqualTo("-");
         }
     }
 }

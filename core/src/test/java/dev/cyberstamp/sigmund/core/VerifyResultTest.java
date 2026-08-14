@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import org.junit.jupiter.api.Nested;
@@ -13,8 +14,8 @@ class VerifyResultTest {
 
         @Test
         void nullVerifyResultThrows() {
-            assertThrows(IllegalArgumentException.class,
-                    () -> new EvidenceResult(null, List.of(), "test"));
+            assertThatThrownBy(() -> new EvidenceResult(null, List.of(), "test"))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 
@@ -24,28 +25,28 @@ class VerifyResultTest {
         @Test
         void skippedVerdict() {
             var result = new UnverifiedResult(Verdict.SKIPPED);
-            assertEquals(Verdict.SKIPPED, result.verdict());
-            assertNull(result.signerDisplayName());
-            assertNull(result.algorithm());
-            assertNull(result.signerIdentifier());
+            assertThat(result.verdict()).isEqualTo(Verdict.SKIPPED);
+            assertThat(result.signerDisplayName()).isNull();
+            assertThat(result.algorithm()).isNull();
+            assertThat(result.signerIdentifier()).isNull();
         }
 
         @Test
         void failVerdict() {
             var result = new UnverifiedResult(Verdict.FAIL);
-            assertEquals(Verdict.FAIL, result.verdict());
+            assertThat(result.verdict()).isEqualTo(Verdict.FAIL);
         }
 
         @Test
         void noKeyVerdict() {
             var result = new UnverifiedResult(Verdict.NO_KEY);
-            assertEquals(Verdict.NO_KEY, result.verdict());
+            assertThat(result.verdict()).isEqualTo(Verdict.NO_KEY);
         }
 
         @Test
         void passVerdictThrows() {
-            assertThrows(IllegalArgumentException.class,
-                    () -> new UnverifiedResult(Verdict.PASS));
+            assertThatThrownBy(() -> new UnverifiedResult(Verdict.PASS))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 
@@ -55,19 +56,19 @@ class VerifyResultTest {
         @Test
         void prefersFingerprint() {
             var result = new OpenPgpVerifyResult(Verdict.PASS, null, null, 4, "SHORT", "FULL_FP");
-            assertEquals("FULL_FP", result.preferredKeyId());
+            assertThat(result.preferredKeyId()).isEqualTo("FULL_FP");
         }
 
         @Test
         void fallsBackToKeyId() {
             var result = new OpenPgpVerifyResult(Verdict.PASS, null, null, 4, "SHORT", null);
-            assertEquals("SHORT", result.preferredKeyId());
+            assertThat(result.preferredKeyId()).isEqualTo("SHORT");
         }
 
         @Test
         void nullWhenBothNull() {
             var result = new OpenPgpVerifyResult(Verdict.PASS, null, null, 4, null, null);
-            assertNull(result.preferredKeyId());
+            assertThat(result.preferredKeyId()).isNull();
         }
     }
 
@@ -77,13 +78,13 @@ class VerifyResultTest {
         @Test
         void openPgpReturnsPreferredKeyId() {
             var result = new OpenPgpVerifyResult(Verdict.PASS, null, null, 4, "SHORT", "FULL_FP");
-            assertEquals("FULL_FP", result.signerIdentifier());
+            assertThat(result.signerIdentifier()).isEqualTo("FULL_FP");
         }
 
         @Test
         void openPgpFallsBackToKeyId() {
             var result = new OpenPgpVerifyResult(Verdict.PASS, null, null, 6, "SHORT", null);
-            assertEquals("SHORT", result.signerIdentifier());
+            assertThat(result.signerIdentifier()).isEqualTo("SHORT");
         }
 
         @Test
@@ -94,13 +95,13 @@ class VerifyResultTest {
                     .build();
             var result = new SigstoreVerifyResult(Verdict.PASS, "alice@example.com", "ECDSA",
                     sc, "12345", 1);
-            assertEquals("alice@example.com", result.signerIdentifier());
+            assertThat(result.signerIdentifier()).isEqualTo("alice@example.com");
         }
 
         @Test
         void unverifiedReturnsNull() {
             var result = new UnverifiedResult(Verdict.SKIPPED);
-            assertNull(result.signerIdentifier());
+            assertThat(result.signerIdentifier()).isNull();
         }
     }
 }
