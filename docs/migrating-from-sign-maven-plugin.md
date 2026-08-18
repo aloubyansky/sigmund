@@ -25,14 +25,14 @@ This guide helps you migrate from `sign-maven-plugin` (org.simplify4u.plugins) t
 >     <plugin>
 >       <groupId>dev.cyberstamp.sigmund</groupId>
 >       <artifactId>sigmund-maven-plugin</artifactId>
->       <version>0.0.1</version>
+>       <version>0.0.2</version>
 >     </plugin>
 >   </plugins>
 > </pluginManagement>
 > ```
 >
 > Alternatively, replace `sigmund` with the full plugin coordinates, e.g.:
-> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1:sign`
+> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.2:sign`
 
 ## Why migrate
 
@@ -97,7 +97,7 @@ Both plugins support injecting the signing key from an environment variable for 
 <plugin>
   <groupId>dev.cyberstamp.sigmund</groupId>
   <artifactId>sigmund-maven-plugin</artifactId>
-  <version>0.0.1</version>
+  <version>0.0.2</version>
   <executions>
     <execution>
       <goals>

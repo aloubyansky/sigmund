@@ -30,14 +30,14 @@ This guide helps you migrate from `maven-gpg-plugin` to Sigmund's Maven plugin. 
 >     <plugin>
 >       <groupId>dev.cyberstamp.sigmund</groupId>
 >       <artifactId>sigmund-maven-plugin</artifactId>
->       <version>0.0.1</version>
+>       <version>0.0.2</version>
 >     </plugin>
 >   </plugins>
 > </pluginManagement>
 > ```
 >
 > Alternatively, replace `sigmund` with the full plugin coordinates, e.g.:
-> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1:sign`
+> `mvn dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.2:sign`
 
 ## Why migrate
 
@@ -104,7 +104,7 @@ When using the GPG backend, the signing security model is identical to `maven-gp
 <plugin>
   <groupId>dev.cyberstamp.sigmund</groupId>
   <artifactId>sigmund-maven-plugin</artifactId>
-  <version>0.0.1</version>
+  <version>0.0.2</version>
   <executions>
     <execution>
       <id>sign-artifacts</id>
