@@ -52,13 +52,13 @@ public class SigstoreSignatureFormat implements SignatureFormat {
     /**
      * Detects Sigstore bundles by checking for the Sigstore media type in the JSON content.
      * <p>
-     * Files that do not start with {@code \{} are rejected immediately.
+     * Files that do not start with {@code \} are rejected immediately.
      * For files that are JSON, checks for a {@code "mediaType"} field
      * with a value starting with {@code "application/vnd.dev.sigstore.bundle"}.
      * </p>
      *
      * @param signatureFile the file to check
-     * @return {@code true} if the file appears to be a Sigstore bundle
+     * @return true if the file appears to be a Sigstore bundle
      */
     @Override
     public boolean canHandleByContent(Path signatureFile) {
