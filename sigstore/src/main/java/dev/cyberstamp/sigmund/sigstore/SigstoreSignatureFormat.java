@@ -55,9 +55,9 @@ public class SigstoreSignatureFormat implements SignatureFormat {
      * Files that do not start with {@code \{} are rejected immediately.
      * For files that are JSON, checks for a {@code "mediaType"} field
      * with a value starting with {@code "application/vnd.dev.sigstore.bundle"}.
+     * </p>
      *
      * @param signatureFile the file to check
-     *
      * @return {@code true} if the file appears to be a Sigstore bundle
      */
     @Override
