@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>dev.cyberstamp.sigmund</groupId>
     <artifactId>sigmund-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.2</version>
     <packaging>pom</packaging>
     <name>Sigmund :: Parent</name>
     <description>Sigmund - hybrid PQC signing for Maven artifacts</description>
@@ -18,7 +18,7 @@
         <connection>scm:git:git://github.com/cyberstamp/sigmund.git</connection>
         <developerConnection>scm:git:ssh://github.com/cyberstamp/sigmund.git</developerConnection>
         <url>https://github.com/cyberstamp/sigmund</url>
-        <tag>HEAD</tag>
+        <tag>0.0.2</tag>
     </scm>
     <developers>
         <developer>
