@@ -1,0 +1,1580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sigmund — Artifact Signing &amp; Trust Verification for Maven</title>
+<style>
+  :root {
+    --bg: #0b0d14;
+    --surface: #141722;
+    --surface2: #1a1e2e;
+    --border: #2e3348;
+    --text: #f0f2f8;
+    --text-dim: #a0a6ba;
+    --accent: #7c9aff;
+    --accent2: #b49dfa;
+    --green: #4ade80;
+    --amber: #fcd34d;
+    --red: #fb7185;
+    --cyan: #34d8f0;
+    --pink: #f683c2;
+    --orange: #fb923c;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.8;
+    font-size: 1.1rem;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- Hero ---- */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 4rem 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    width: 800px; height: 800px;
+    background: radial-gradient(circle, rgba(108,138,255,.12) 0%, transparent 70%);
+    top: -200px; left: 50%; transform: translateX(-50%);
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-size: clamp(2.8rem, 5vw, 4.5rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 1rem;
+  }
+  .hero .subtitle {
+    font-size: clamp(1.3rem, 2.5vw, 1.8rem);
+    color: var(--text-dim);
+    max-width: 750px;
+    margin-bottom: 2.5rem;
+  }
+  .hero .badge-row {
+    display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: .5rem;
+    padding: .5rem 1.1rem;
+    border-radius: 999px;
+    font-size: 1rem; font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .badge .dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  .audience-note {
+    margin-top: 3rem;
+    padding: 1.25rem 2.5rem;
+    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 1.1rem;
+  }
+
+  /* ---- Sections ---- */
+  section {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 5rem 3rem;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .section-label {
+    display: inline-block;
+    font-size: .9rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1rem;
+  }
+
+  h2 {
+    font-size: clamp(2.2rem, 4vw, 3.2rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 1.5rem;
+  }
+  h3 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: .75rem;
+    color: var(--text);
+  }
+
+  p, li { color: var(--text-dim); }
+  p { margin-bottom: 1rem; max-width: 860px; font-size: 1.1rem; }
+
+  /* ---- Problem slides (full-viewport) ---- */
+  .problem-slide {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 4rem 2rem;
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+  }
+  .problem-slide::before {
+    content: '';
+    position: absolute;
+    width: 700px; height: 700px;
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    opacity: .6;
+  }
+  .problem-slide.slide-red::before    { background: radial-gradient(circle, rgba(248,113,113,.08) 0%, transparent 65%); }
+  .problem-slide.slide-amber::before  { background: radial-gradient(circle, rgba(251,191,36,.08) 0%, transparent 65%); }
+  .problem-slide.slide-purple::before { background: radial-gradient(circle, rgba(167,139,250,.08) 0%, transparent 65%); }
+  .problem-slide.slide-pink::before   { background: radial-gradient(circle, rgba(244,114,182,.08) 0%, transparent 65%); }
+
+  .problem-slide .slide-icon {
+    width: 96px; height: 96px;
+    border-radius: 24px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 2.5rem;
+  }
+  .problem-slide h2 {
+    margin-bottom: 1.5rem;
+  }
+  .problem-slide .slide-body {
+    max-width: 780px;
+    font-size: 1.35rem;
+    line-height: 1.9;
+    color: var(--text-dim);
+    text-align: center;
+  }
+  .problem-slide .slide-body strong {
+    color: var(--text);
+  }
+  .problem-slide .slide-detail {
+    margin-top: 2.5rem;
+    display: flex;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .problem-slide .detail-chip {
+    padding: .6rem 1.3rem;
+    border-radius: 12px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  /* ---- Comparison section ---- */
+  .comparison-section {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 5rem 3rem;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .compare-intro {
+    max-width: 860px;
+    margin-bottom: 2.5rem;
+  }
+  .compare-table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    overflow-x: auto;
+  }
+  .compare-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 1rem;
+  }
+  .compare-table th, .compare-table td {
+    padding: .9rem 1.1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .compare-table th {
+    font-size: .82rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    background: var(--surface2);
+  }
+  .compare-table th:first-child { border-radius: 10px 0 0 0; }
+  .compare-table th:last-child  { border-radius: 0 10px 0 0; }
+  .compare-table td { color: var(--text); }
+  .compare-table td:first-child {
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .compare-table tbody tr { transition: background .15s; }
+  .compare-table tbody tr:hover { background: var(--surface2); }
+  .compare-table .y { color: var(--green); font-weight: 700; }
+  .compare-table .n { color: var(--text-dim); }
+  .compare-table .p { color: var(--amber); }
+
+  .compare-callout {
+    background: linear-gradient(135deg, rgba(108,138,255,.06), rgba(52,211,153,.04));
+    border: 1px solid rgba(108,138,255,.15);
+    border-radius: 16px;
+    padding: 1.75rem 2rem;
+    margin-top: 2rem;
+  }
+  .compare-callout h3 {
+    color: var(--accent);
+    font-size: 1.3rem;
+    margin-bottom: .5rem;
+  }
+  .compare-callout p { font-size: 1.05rem; margin-bottom: 0; }
+
+  .compare-concepts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+    margin: 2rem 0;
+  }
+  .concept-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+  }
+  .concept-card h4 {
+    font-size: 1.1rem;
+    margin-bottom: .75rem;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .concept-card .code-example {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: .92rem;
+    line-height: 1.6;
+    color: var(--text-dim);
+    overflow-x: auto;
+    white-space: pre;
+  }
+  @media (max-width: 768px) {
+    .compare-concepts { grid-template-columns: 1fr; }
+  }
+
+  /* ---- Approach section ---- */
+  .approach-highlight {
+    background: linear-gradient(135deg, rgba(108,138,255,.08), rgba(167,139,250,.06));
+    border: 1px solid rgba(108,138,255,.2);
+    border-radius: 20px;
+    padding: 2.5rem;
+    margin: 2rem 0;
+  }
+  .approach-highlight h3 {
+    color: var(--accent);
+    font-size: 1.5rem;
+    margin-bottom: .75rem;
+  }
+  .approach-highlight p {
+    font-size: 1.15rem;
+  }
+
+  .comparison-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 2rem;
+    align-items: center;
+    margin: 2.5rem 0;
+  }
+  .comparison-box {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 20px;
+    padding: 2rem;
+    text-align: center;
+  }
+  .comparison-box.old { border-color: rgba(248,113,113,.3); }
+  .comparison-box.new { border-color: rgba(52,211,153,.3); }
+  .comparison-arrow {
+    font-size: 2.5rem;
+    color: var(--text-dim);
+  }
+
+  .feature-list {
+    list-style: none;
+    margin: 1.5rem 0;
+  }
+  .feature-list li {
+    padding: .75rem 0;
+    padding-left: 2rem;
+    position: relative;
+    color: var(--text);
+    font-size: 1.1rem;
+  }
+  .feature-list li::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 1rem;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+
+  /* ---- Architecture diagram ---- */
+  .arch-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2.5rem;
+    margin: 2rem 0;
+    overflow-x: auto;
+  }
+  .arch-diagram h3 {
+    text-align: center;
+    margin-bottom: 2rem;
+    color: var(--accent);
+  }
+
+  .layer-box {
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+    position: relative;
+  }
+  .layer-box.layer1 { border-color: rgba(108,138,255,.4); background: rgba(108,138,255,.04); }
+  .layer-box.layer2 { border-color: rgba(167,139,250,.4); background: rgba(167,139,250,.04); }
+  .layer-box.bridge { border-color: rgba(52,211,153,.4); background: rgba(52,211,153,.04); }
+
+  .layer-tag {
+    position: absolute;
+    top: -12px; left: 20px;
+    background: var(--surface);
+    padding: 0 .85rem;
+    font-size: .9rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .layer1 .layer-tag { color: var(--accent); }
+  .layer2 .layer-tag { color: var(--accent2); }
+  .bridge .layer-tag { color: var(--green); }
+
+  .concept-chips {
+    display: flex; flex-wrap: wrap; gap: .5rem;
+  }
+  .chip {
+    display: inline-flex; align-items: center;
+    padding: .4rem .9rem;
+    border-radius: 8px;
+    font-size: .95rem;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  .layer1 .chip { background: rgba(108,138,255,.12); color: var(--accent); }
+  .layer2 .chip { background: rgba(167,139,250,.12); color: var(--accent2); }
+  .bridge .chip { background: rgba(52,211,153,.12); color: var(--green); }
+
+  /* ---- Backend table ---- */
+  .backend-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 2rem 0;
+    font-size: 1.05rem;
+  }
+  .backend-table th, .backend-table td {
+    padding: 1rem 1.1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .backend-table th {
+    font-size: .85rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    background: var(--surface);
+  }
+  .backend-table th:first-child { border-radius: 10px 0 0 0; }
+  .backend-table th:last-child { border-radius: 0 10px 0 0; }
+  .backend-table td { color: var(--text); }
+  .backend-table tbody tr { transition: background .15s; }
+  .backend-table tbody tr:hover { background: var(--surface2); }
+
+  .tag {
+    display: inline-block;
+    padding: .25rem .65rem;
+    border-radius: 6px;
+    font-size: .88rem;
+    font-weight: 600;
+  }
+  .tag-green { background: rgba(52,211,153,.15); color: var(--green); }
+  .tag-amber { background: rgba(251,191,36,.15); color: var(--amber); }
+  .tag-red   { background: rgba(248,113,113,.15); color: var(--red); }
+  .tag-blue  { background: rgba(108,138,255,.15); color: var(--accent); }
+  .tag-purple{ background: rgba(167,139,250,.15); color: var(--accent2); }
+  .tag-cyan  { background: rgba(34,211,238,.15); color: var(--cyan); }
+
+  /* ---- Flow diagrams ---- */
+  .flow-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3rem;
+    margin: 2rem 0;
+    overflow-x: auto;
+  }
+  .flow-container h3 { text-align: center; margin-bottom: 2rem; font-size: 1.5rem; }
+
+  .flow-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+  }
+  .flow-node {
+    padding: .75rem 1.5rem;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    white-space: nowrap;
+  }
+  .flow-arrow {
+    color: var(--text-dim);
+    font-size: 1.5rem;
+  }
+  .flow-arrow-down {
+    display: block;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 1.8rem;
+    margin: .6rem 0;
+  }
+  .fn-input   { background: rgba(251,191,36,.12); color: var(--amber); border: 1px solid rgba(251,191,36,.25); }
+  .fn-tool    { background: rgba(108,138,255,.12); color: var(--accent); border: 1px solid rgba(108,138,255,.25); }
+  .fn-format  { background: rgba(167,139,250,.12); color: var(--accent2); border: 1px solid rgba(167,139,250,.25); }
+  .fn-output  { background: rgba(52,211,153,.12); color: var(--green); border: 1px solid rgba(52,211,153,.25); }
+  .fn-decision{ background: rgba(34,211,238,.12); color: var(--cyan); border: 1px solid rgba(34,211,238,.25); }
+  .fn-sigstore{ background: rgba(244,114,182,.12); color: var(--pink); border: 1px solid rgba(244,114,182,.25); }
+  .fn-error   { background: rgba(248,113,113,.12); color: var(--red); border: 1px solid rgba(248,113,113,.25); }
+
+  /* ---- Pipeline SVG diagrams ---- */
+  .pipeline-diagram {
+    margin: 2rem 0;
+  }
+  .pipeline-diagram svg {
+    width: 100%;
+    max-width: 900px;
+    display: block;
+    margin: 0 auto;
+  }
+
+  /* ---- Credential model ---- */
+  .cred-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+    margin: 1.5rem 0;
+  }
+  .cred-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+  }
+  .cred-card h4 {
+    font-size: 1.1rem;
+    margin-bottom: .5rem;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  .cred-card p { font-size: 1rem; margin-bottom: .25rem; }
+
+  /* ---- Module structure ---- */
+  .module-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .module-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    text-align: center;
+  }
+  .module-card .module-name {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin-bottom: .5rem;
+  }
+  .module-card p { font-size: 1rem; text-align: center; margin: 0; }
+
+  /* ---- Verification routing ---- */
+  .routing-example {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem 2.5rem;
+    margin: 1.5rem 0;
+    font-size: 1.05rem;
+  }
+  .routing-example h4 {
+    font-size: 1.2rem;
+    margin-bottom: 1.25rem;
+    color: var(--cyan);
+  }
+  .routing-step {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: .75rem 0;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+  .routing-step:last-child { border-bottom: none; }
+  .routing-step .step-label {
+    min-width: 100px;
+    font-weight: 700;
+    font-size: 1rem;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  /* ---- Trust flow ---- */
+  .trust-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 2rem 0;
+    position: relative;
+  }
+  .trust-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    padding: 1rem 0;
+  }
+  .step-num {
+    width: 48px; height: 48px;
+    min-width: 48px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800;
+    font-size: 1.1rem;
+    background: rgba(108,138,255,.15);
+    color: var(--accent);
+    position: relative;
+    z-index: 1;
+  }
+  .step-connector {
+    position: absolute;
+    left: 23px;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: var(--border);
+    z-index: 0;
+  }
+  .step-content h4 {
+    font-size: 1.15rem;
+    margin-bottom: .3rem;
+    color: var(--text);
+  }
+  .step-content p { font-size: 1.05rem; margin: 0; }
+
+  /* ---- Verdict chips ---- */
+  .verdict-row {
+    display: flex; flex-wrap: wrap; gap: .5rem; margin: 1.5rem 0;
+  }
+  .verdict {
+    padding: .5rem 1.1rem;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  .v-trusted   { background: rgba(52,211,153,.12); color: var(--green); border: 1px solid rgba(52,211,153,.25); }
+  .v-untrusted { background: rgba(248,113,113,.12); color: var(--red); border: 1px solid rgba(248,113,113,.25); }
+  .v-unsigned  { background: rgba(251,191,36,.12); color: var(--amber); border: 1px solid rgba(251,191,36,.25); }
+  .v-failed    { background: rgba(244,114,182,.12); color: var(--pink); border: 1px solid rgba(244,114,182,.25); }
+  .v-noconfig  { background: rgba(139,144,160,.12); color: var(--text-dim); border: 1px solid rgba(139,144,160,.25); }
+
+  /* ---- Closing section ---- */
+  .closing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.25rem;
+    margin: 2rem 0;
+  }
+  .closing-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.75rem;
+  }
+  .closing-card h3 {
+    font-size: 1.25rem;
+    margin-bottom: .75rem;
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .closing-card ul {
+    list-style: none;
+    margin: 0;
+  }
+  .closing-card li {
+    padding: .45rem 0;
+    padding-left: 1.4rem;
+    position: relative;
+    font-size: 1.05rem;
+  }
+  .closing-card li::before {
+    content: '\2192';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  /* ---- Code blocks ---- */
+  .code-block {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem 2rem;
+    margin: 1.5rem 0;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 1rem;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre;
+  }
+  .code-block .kw { color: var(--accent2); }
+  .code-block .str { color: var(--green); }
+  .code-block .cmt { color: var(--text-dim); }
+
+  /* ---- Dividers ---- */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0;
+  }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 768px) {
+    section { padding: 3rem 1.5rem; min-height: auto; }
+    .comparison-section { min-height: auto; padding: 3rem 1.5rem; }
+    .comparison-row { grid-template-columns: 1fr; }
+    .comparison-arrow { transform: rotate(90deg); justify-self: center; }
+    .problem-slide { padding: 3rem 1.5rem; }
+  }
+
+  /* ---- Slide Number ---- */
+  .slide-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: rgba(108,138,255,.15);
+    color: var(--accent);
+    font-weight: 800;
+    font-size: 1rem;
+    margin-right: .6rem;
+    vertical-align: middle;
+  }
+
+  /* ---- YAML config ---- */
+  .yaml-section {
+    margin: 1.5rem 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- HERO                                                          -->
+<!-- ============================================================ -->
+<div class="hero">
+  <h1>Sigmund</h1>
+  <p class="subtitle">Artifact Signing &amp; Trust Verification for Maven</p>
+  <div class="badge-row">
+    <span class="badge"><span class="dot" style="background:var(--green)"></span> OpenPGP</span>
+    <span class="badge"><span class="dot" style="background:var(--accent2)"></span> Post-Quantum</span>
+    <span class="badge"><span class="dot" style="background:var(--pink)"></span> Sigstore</span>
+    <span class="badge"><span class="dot" style="background:var(--cyan)"></span> Trust Policies</span>
+  </div>
+  <div class="audience-note">
+    Motivation, architecture, and design of a unified signing<br>
+    and trust verification tool for the Maven ecosystem.
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ============================================================ -->
+<!-- 1. THE PROBLEM — four full-viewport slides                    -->
+<!-- ============================================================ -->
+
+<!-- 1a. Dependency Trust Gap -->
+<div class="problem-slide slide-red">
+  <span class="section-label"><span class="slide-number">1</span> Motivation</span>
+  <div class="slide-icon" style="background:rgba(248,113,113,.12)">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  </div>
+  <h2>The Dependency Trust Gap</h2>
+  <p class="slide-body">
+    Maven Central requires PGP signatures for publishing. Community tools like <strong>pgpverify-maven-plugin</strong> verify signatures and can pin expected fingerprints to artifacts via <em>keysMap</em> &mdash; a real step forward.
+  </p>
+  <p class="slide-body" style="margin-top:.5rem">
+    But fingerprint pinning operates at a lower level than trust. It can confirm <em>which key</em> signed an artifact, but can't answer: <strong>who is behind that key, and do I trust them across different signing systems?</strong> The gap is between cryptographic verification and identity-based trust.
+  </p>
+  <div class="slide-detail">
+    <span class="detail-chip" style="border-color:rgba(248,113,113,.3);color:var(--red)">Fingerprint pinning &ne; identity trust</span>
+    <span class="detail-chip" style="border-color:rgba(248,113,113,.3);color:var(--red)">PGP-only, single paradigm</span>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- 1b. Fragmenting OpenPGP -->
+<div class="problem-slide slide-amber">
+  <span class="section-label"><span class="slide-number">1</span> Motivation</span>
+  <div class="slide-icon" style="background:rgba(251,191,36,.12)">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M21 3l-7 7"/><path d="M3 3l7 7"/><path d="M16 21h5v-5"/><path d="M8 21H3v-5"/><path d="M21 21l-7-7"/><path d="M3 21l7-7"/></svg>
+  </div>
+  <h2>A Fragmenting OpenPGP Ecosystem</h2>
+  <p class="slide-body">
+    GnuPG chose to follow <strong>LibrePGP</strong> rather than the IETF standard. Sequoia PGP implements <strong>RFC 9580</strong>. Both handle v4 keys, but their next-generation formats diverge: LibrePGP defines v5 keys, RFC 9580 defines v6 keys &mdash; the two are <strong>incompatible</strong>.
+  </p>
+  <p class="slide-body" style="margin-top:.5rem">
+    v4 is the common ground, but GnuPG will never support v6 and Sequoia will never support v5. A tool that bridges both ecosystems needs to work with all of them.
+  </p>
+  <div class="slide-detail">
+    <span class="detail-chip" style="border-color:rgba(251,191,36,.3);color:var(--amber)">GnuPG &rarr; LibrePGP (v4 + v5)</span>
+    <span class="detail-chip" style="border-color:rgba(251,191,36,.3);color:var(--amber)">Sequoia &rarr; RFC 9580 (v4 + v6)</span>
+    <span class="detail-chip" style="border-color:rgba(251,191,36,.3);color:var(--amber)">v5 &ne; v6 &mdash; incompatible</span>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- 1c. Post-Quantum Cryptography -->
+<div class="problem-slide slide-purple">
+  <span class="section-label"><span class="slide-number">1</span> Motivation</span>
+  <div class="slide-icon" style="background:rgba(167,139,250,.12)">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+  </div>
+  <h2>Post-Quantum Cryptography Is Arriving</h2>
+  <p class="slide-body">
+    <strong>RFC 9980</strong> defines hybrid PQC+classical signatures &mdash; ML-DSA-87+Ed448 combined in a single OpenPGP packet. Sequoia sq&nbsp;1.4.0+ already implements it. This isn't theoretical.
+  </p>
+  <p class="slide-body" style="margin-top:.5rem">
+    No Maven signing tool is ready for post-quantum cryptography.
+  </p>
+  <div class="slide-detail">
+    <span class="detail-chip" style="border-color:rgba(167,139,250,.3);color:var(--accent2)">ML-DSA-87 + Ed448</span>
+    <span class="detail-chip" style="border-color:rgba(167,139,250,.3);color:var(--accent2)">RFC 9980</span>
+    <span class="detail-chip" style="border-color:rgba(167,139,250,.3);color:var(--accent2)">Sequoia sq 1.4.0+</span>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- 1d. Sigstore -->
+<div class="problem-slide slide-pink">
+  <span class="section-label"><span class="slide-number">1</span> Motivation</span>
+  <div class="slide-icon" style="background:rgba(244,114,182,.12)">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--pink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+  </div>
+  <h2>Sigstore and PGP Need to Coexist</h2>
+  <p class="slide-body">
+    Maven Central now validates <strong>Sigstore alongside PGP</strong>. Some projects sign with PGP, others with Sigstore, many will do both during the transition. Consumers need to verify dependencies regardless of which system the publisher chose.
+  </p>
+  <p class="slide-body" style="margin-top:.5rem">
+    No existing Maven tool <strong>unifies both paradigms</strong> under a single trust model. A project that depends on PGP-signed and Sigstore-signed artifacts needs two separate verification tools with no way to express unified trust policies across them.
+  </p>
+  <div class="slide-detail">
+    <span class="detail-chip" style="border-color:rgba(244,114,182,.3);color:var(--pink)">Mixed ecosystems are the reality</span>
+    <span class="detail-chip" style="border-color:rgba(244,114,182,.3);color:var(--pink)">One trust model for both</span>
+    <span class="detail-chip" style="border-color:rgba(244,114,182,.3);color:var(--pink)">Cross-backend identity matching</span>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ============================================================ -->
+<!-- 1e. COMPARISON WITH EXISTING TOOLS                            -->
+<!-- ============================================================ -->
+<div class="comparison-section">
+  <span class="section-label"><span class="slide-number">1</span> Existing Landscape</span>
+  <h2>Building on What Exists</h2>
+  <div class="compare-intro">
+    <p>The Maven ecosystem already has mature signing and verification tools. Sigmund builds on their foundation &mdash; here's how the capabilities compare.</p>
+  </div>
+
+  <div class="compare-table-wrap">
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th>Capability</th>
+          <th>pgpverify-maven-plugin</th>
+          <th>maven-gpg-plugin</th>
+          <th>sigstore-maven-plugin</th>
+          <th>Sigmund</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>PGP signature verification</td>
+          <td class="y">Yes (BC)</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="y">Yes (BC + sq + gpg)</td>
+        </tr>
+        <tr>
+          <td>Fingerprint pinning (key &rarr; artifact)</td>
+          <td class="y">Yes (keysMap)</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="y">Yes (sigmund.yaml)</td>
+        </tr>
+        <tr>
+          <td>Community key database</td>
+          <td class="y">Yes (pgp-keys-map)</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+        </tr>
+        <tr>
+          <td>Named signer identities</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="y">Yes</td>
+        </tr>
+        <tr>
+          <td>Identity-based trust policies</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="y">Yes (verdicts + policy engine)</td>
+        </tr>
+        <tr>
+          <td>Cross-backend identity matching</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="y">Yes (credential bag overlap)</td>
+        </tr>
+        <tr>
+          <td>Dependency signer discovery</td>
+          <td class="p">Single artifact (show)</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="y">Project-wide + auto-generate config</td>
+        </tr>
+        <tr>
+          <td>PGP signing</td>
+          <td class="n">&mdash;</td>
+          <td class="y">Yes (gpg CLI)</td>
+          <td class="n">&mdash;</td>
+          <td class="y">Yes (BC + gpg + sq)</td>
+        </tr>
+        <tr>
+          <td>Sigstore signing &amp; verification</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="y">Yes</td>
+          <td class="y">Yes</td>
+        </tr>
+        <tr>
+          <td>OpenPGP v6 / RFC 9580</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="n">N/A</td>
+          <td class="y">Yes</td>
+        </tr>
+        <tr>
+          <td>Post-quantum (RFC 9980)</td>
+          <td class="n">&mdash;</td>
+          <td class="n">&mdash;</td>
+          <td class="n">N/A</td>
+          <td class="y">Yes (via Sequoia)</td>
+        </tr>
+        <tr>
+          <td>Pure Java (no CLI deps)</td>
+          <td class="y">Yes</td>
+          <td class="n">Requires gpg</td>
+          <td class="y">Yes</td>
+          <td class="y">Yes (BC backend)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Conceptual difference: keysMap vs sigmund.yaml -->
+  <h3>The Key Difference: Fingerprints vs. Identities</h3>
+  <div class="compare-concepts">
+    <div class="concept-card" style="border-color:rgba(251,191,36,.3)">
+      <h4><span style="color:var(--amber)">&#9670;</span> pgpverify keysMap</h4>
+      <p style="font-size:.88rem;color:var(--text-dim);margin-bottom:.75rem">Maps artifacts to <strong>raw fingerprints</strong>. You need to know and manage key IDs directly. PGP-only &mdash; each signing system requires a separate tool.</p>
+      <div class="code-example"><span style="color:var(--text-dim)"># keysMap.list</span>
+<span style="color:var(--amber)">io.quarkus</span> = 0x4AEE18F83AFDEB23
+<span style="color:var(--amber)">org.apache.maven</span> = 0xBBE7232D7991050B, 0x2D7BAF3C1E9F5A12
+<span style="color:var(--amber)">com.internal:util</span> = noSig</div>
+    </div>
+    <div class="concept-card" style="border-color:rgba(108,138,255,.3)">
+      <h4><span style="color:var(--accent)">&#9670;</span> Sigmund sigmund.yaml</h4>
+      <p style="font-size:.88rem;color:var(--text-dim);margin-bottom:.75rem">Maps artifacts to <strong>named signer identities</strong> with multiple credential types. One config covers PGP, Sigstore, and future backends.</p>
+      <div class="code-example"><span style="color:var(--text-dim)"># sigmund.yaml</span>
+<span style="color:var(--green)">signers:</span>
+  <span style="color:var(--accent)">quarkus-team:</span>
+    name: <span style="color:var(--green)">"Quarkus Team"</span>
+    pgp4: <span style="color:var(--green)">"4AEE18F83AFDEB23..."</span>
+    pgp6: <span style="color:var(--green)">"D62AAB339E45E5EA..."</span>
+    email: <span style="color:var(--green)">"quarkus-dev@..."</span>
+<span style="color:var(--green)">trust:</span>
+  <span style="color:var(--accent)">io.quarkus.*:</span> quarkus-team</div>
+    </div>
+  </div>
+
+  <div class="compare-callout">
+    <h3>Complementary, not competing</h3>
+    <p><strong>pgpverify-maven-plugin</strong> is a solid, mature plugin (10+ years, actively maintained) that fills a real gap in PGP signature verification. Sigmund takes the next step by lifting verification from the fingerprint level to the identity level &mdash; answering not just <em>"was this signed by key X?"</em> but <em>"was this signed by Alice, across any of her keys and signing systems?"</em> &mdash; while also unifying signing and verification across multiple backends.</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ============================================================ -->
+<!-- 2. PURPOSE AND APPROACH                                       -->
+<!-- ============================================================ -->
+<section>
+  <span class="section-label"><span class="slide-number">2</span> Purpose &amp; Approach</span>
+  <h2>Identity-First, Not Signature-First</h2>
+
+  <div class="comparison-row">
+    <div class="comparison-box old">
+      <div style="font-size:2rem;margin-bottom:.5rem">&#10060;</div>
+      <h3 style="color:var(--red);font-size:1rem">Traditional approach</h3>
+      <p style="font-size:.9rem">"Does this signature verify?"</p>
+    </div>
+    <div class="comparison-arrow">&rarr;</div>
+    <div class="comparison-box new">
+      <div style="font-size:2rem;margin-bottom:.5rem">&#9989;</div>
+      <h3 style="color:var(--green);font-size:1rem">Sigmund's approach</h3>
+      <p style="font-size:.9rem">"Is this artifact from someone I trust?"</p>
+    </div>
+  </div>
+
+  <div class="approach-highlight">
+    <h3>Signatures are evidence, not the end goal</h3>
+    <p>A signer is a <strong>named entity</strong> with a <em>credential bag</em> &mdash; fingerprints, emails, OIDC identities, Sigstore certificate fields. Trust policies map artifact patterns to expected signers. Identity matching is type-agnostic: credential overlap works across OpenPGP, Sigstore, and any future backend.</p>
+  </div>
+
+  <h3>What Sigmund replaces &amp; adds</h3>
+  <ul class="feature-list">
+    <li>Replaces <code>maven-gpg-plugin</code>, <code>sign-maven-plugin</code>, and <code>sigstore-maven-plugin</code> &mdash; one plugin for all signing and verification needs</li>
+    <li>Adds identity-based dependency trust verification &mdash; a capability <strong>no other Maven tool offers</strong></li>
+    <li>Hybrid PQC + classic signing in one <code>.asc</code> &mdash; backward-compatible with existing verifiers</li>
+    <li>Multi-format signing: <code>.asc</code> + <code>.sigstore.json</code> in a single build</li>
+    <li>Four backends: BC (pure Java), Sequoia (PQC), GnuPG (legacy), Sigstore (keyless OIDC)</li>
+    <li>Auto-generate trust config, then enforce in CI</li>
+  </ul>
+
+  <h3 style="margin-top:2rem">Try it &mdash; no POM changes needed</h3>
+  <div class="code-block"><span class="cmt"># See who signed your dependencies</span>
+<span class="kw">mvn</span> dev.cyberstamp.sigmund:sigmund-maven-plugin:0.0.1:<span class="str">dependency-signers</span>
+
+<span class="cmt"># Generate trust config from actual signatures</span>
+<span class="kw">mvn</span> sigmund:<span class="str">dependency-signers</span> -Dsigmund.generateTrustConfig=true
+
+<span class="cmt"># Enforce trust policies</span>
+<span class="kw">mvn</span> sigmund:<span class="str">verify</span></div>
+</section>
+
+<hr class="divider">
+
+<!-- ============================================================ -->
+<!-- 3. ARCHITECTURE                                               -->
+<!-- ============================================================ -->
+<section>
+  <span class="section-label"><span class="slide-number">3</span> Architecture</span>
+  <h2>Two-Layer Architecture</h2>
+  <p>Sigmund separates <strong>cryptographic verification</strong> (Layer 2) from <strong>identity-based trust assessment</strong> (Layer 1), bridged by a thin adapter.</p>
+
+  <div class="arch-diagram">
+    <div class="layer-box layer1">
+      <span class="layer-tag">Layer 1 &mdash; Identity Verification (Trust)</span>
+      <p style="font-size:.88rem;margin-bottom:1rem;margin-top:.5rem">Answers: "Is this artifact from someone I trust?"</p>
+      <div class="concept-chips">
+        <span class="chip">ArtifactIdentity</span>
+        <span class="chip">SignerIdentity</span>
+        <span class="chip">Credential</span>
+        <span class="chip">TrustPolicy</span>
+        <span class="chip">EvidenceProvider</span>
+        <span class="chip">EvidenceResult</span>
+        <span class="chip">TrustVerifier</span>
+        <span class="chip">TrustResult</span>
+        <span class="chip">TrustVerdict</span>
+      </div>
+    </div>
+
+    <div class="layer-box bridge">
+      <span class="layer-tag">Bridge</span>
+      <p style="font-size:.88rem;margin-bottom:1rem;margin-top:.5rem">Converts verified signatures into proven credentials.</p>
+      <div class="concept-chips">
+        <span class="chip">SignatureEvidenceAdapter</span>
+      </div>
+    </div>
+
+    <div class="layer-box layer2">
+      <span class="layer-tag">Layer 2 &mdash; Signature Operations (Crypto)</span>
+      <p style="font-size:.88rem;margin-bottom:1rem;margin-top:.5rem">Answers: "Is this signature cryptographically valid?"</p>
+      <div class="concept-chips">
+        <span class="chip">SignatureFormat</span>
+        <span class="chip">VerificationUnit</span>
+        <span class="chip">SignatureTool</span>
+        <span class="chip">VerifyResult</span>
+        <span class="chip">Signer</span>
+        <span class="chip">SignResult</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Module structure -->
+  <h3 style="margin-top:2.5rem">Module Structure</h3>
+  <div class="module-row">
+    <div class="module-card" style="border-color:rgba(108,138,255,.3)">
+      <div class="module-name" style="color:var(--accent)">core/</div>
+      <p>Core library &mdash; SPI interfaces, identity model, BC backend, config parsing</p>
+    </div>
+    <div class="module-card" style="border-color:rgba(244,114,182,.3)">
+      <div class="module-name" style="color:var(--pink)">sigstore/</div>
+      <p>Sigstore backend &mdash; ServiceLoader-discovered, isolated dependencies</p>
+    </div>
+    <div class="module-card" style="border-color:rgba(52,211,153,.3)">
+      <div class="module-name" style="color:var(--green)">maven-plugin/</div>
+      <p>Maven plugin &mdash; sign, verify, dependency-signers goals</p>
+    </div>
+    <div class="module-card" style="border-color:rgba(251,191,36,.3)">
+      <div class="module-name" style="color:var(--amber)">cli/</div>
+      <p>Command-line interface &mdash; picocli, Quarkus fat jar</p>
+    </div>
+  </div>
+
+  <!-- Four backends -->
+  <h3 style="margin-top:2.5rem">Four Signing Backends</h3>
+  <div style="overflow-x:auto">
+    <table class="backend-table">
+      <thead>
+        <tr>
+          <th>Backend</th>
+          <th>Type</th>
+          <th>Key Model</th>
+          <th>v4</th>
+          <th>v6</th>
+          <th>PQC</th>
+          <th>Sigstore</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>BC</strong> (Bouncy Castle)</td>
+          <td><span class="tag tag-green">Pure Java</span></td>
+          <td>BC keystore + GnuPG pubring + cert-d</td>
+          <td><span class="tag tag-green">Sign &amp; Verify</span></td>
+          <td><span class="tag tag-green">Sign &amp; Verify</span></td>
+          <td><span class="tag tag-amber">Phase 2</span></td>
+          <td>&mdash;</td>
+        </tr>
+        <tr>
+          <td><strong>sq</strong> (Sequoia)</td>
+          <td><span class="tag tag-blue">CLI wrapper</span></td>
+          <td>Sequoia cert store</td>
+          <td><span class="tag tag-green">Sign &amp; Verify</span></td>
+          <td><span class="tag tag-green">Sign &amp; Verify</span></td>
+          <td><span class="tag tag-green">RFC 9980</span></td>
+          <td>&mdash;</td>
+        </tr>
+        <tr>
+          <td><strong>gpg</strong> (GnuPG)</td>
+          <td><span class="tag tag-blue">CLI wrapper</span></td>
+          <td>GnuPG keyring</td>
+          <td><span class="tag tag-green">Sign &amp; Verify</span></td>
+          <td><span class="tag tag-red">None</span></td>
+          <td><span class="tag tag-red">None</span></td>
+          <td>&mdash;</td>
+        </tr>
+        <tr>
+          <td><strong>Sigstore</strong></td>
+          <td><span class="tag tag-green">Pure Java</span></td>
+          <td>Keyless (OIDC)</td>
+          <td colspan="3" style="text-align:center;color:var(--text-dim)">N/A &mdash; different paradigm</td>
+          <td><span class="tag tag-green">Sign &amp; Verify</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Format / Tool separation -->
+  <h3 style="margin-top:2.5rem">Format / Tool Separation</h3>
+  <p><code>SignatureFormat</code> owns parsing, detection, and combining. <code>SignatureTool</code> owns crypto operations. Multiple tools can share one format.</p>
+
+  <div class="flow-container" style="padding:1.5rem 2rem">
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:1.5rem;align-items:start">
+      <div>
+        <div style="text-align:center;margin-bottom:1rem">
+          <span class="flow-node fn-format">OpenPgpSignatureFormat</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.5rem;align-items:center">
+          <span class="flow-node fn-tool">BcRunner</span>
+          <span class="flow-node fn-tool">SqRunner</span>
+          <span class="flow-node fn-tool">GpgRunner</span>
+        </div>
+        <p style="text-align:center;font-size:.8rem;margin-top:.75rem">Three tools share one format</p>
+      </div>
+      <div style="border-left:1px solid var(--border);height:100%"></div>
+      <div>
+        <div style="text-align:center;margin-bottom:1rem">
+          <span class="flow-node fn-sigstore">SigstoreSignatureFormat</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.5rem;align-items:center">
+          <span class="flow-node fn-sigstore">SigstoreTool</span>
+        </div>
+        <p style="text-align:center;font-size:.8rem;margin-top:.75rem">One tool, one format</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Credential model -->
+  <h3 style="margin-top:2.5rem">Credential Model</h3>
+  <p>Identity matching is type-agnostic. Each credential type handles its own matching semantics.</p>
+
+  <div class="cred-grid">
+    <div class="cred-card" style="border-color:rgba(108,138,255,.3)">
+      <h4 style="color:var(--accent)">FingerprintCredential</h4>
+      <p><strong>Types:</strong> <code>openpgp4</code>, <code>openpgp6</code></p>
+      <p>Named by key version, not tool or algorithm. Exact fingerprint match.</p>
+    </div>
+    <div class="cred-card" style="border-color:rgba(52,211,153,.3)">
+      <h4 style="color:var(--green)">EmailCredential</h4>
+      <p><strong>Type:</strong> <code>email</code></p>
+      <p>Cross-backend fallback. Case-insensitive. Works across OpenPGP and Sigstore.</p>
+    </div>
+    <div class="cred-card" style="border-color:rgba(244,114,182,.3)">
+      <h4 style="color:var(--pink)">SigstoreCredential</h4>
+      <p><strong>Type:</strong> <code>sigstore</code></p>
+      <p>Rich matching on Fulcio cert extensions. Null fields act as wildcards.</p>
+    </div>
+  </div>
+
+  <div class="approach-highlight" style="margin-top:1.5rem">
+    <h3>Cross-Backend Identity Matching</h3>
+    <p>Sigstore verification extracts <strong>both</strong> a <code>SigstoreCredential</code> and an <code>EmailCredential</code>. A signer configured with only an email matches both OpenPGP and Sigstore signatures &mdash; no cross-type matching logic needed.</p>
+  </div>
+
+  <!-- SPI extensibility -->
+  <h3 style="margin-top:2.5rem">SPI &amp; Extensibility</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem">
+    <div class="cred-card" style="border-color:rgba(52,211,153,.3)">
+      <h4 style="color:var(--green)">Pluggable: Tools</h4>
+      <p><code>SignatureToolFactory</code> via ServiceLoader. New backends within existing formats.</p>
+      <p style="margin-top:.5rem"><strong>Example:</strong> Sigstore module is discovered automatically when on the classpath.</p>
+    </div>
+    <div class="cred-card" style="border-color:rgba(251,191,36,.3)">
+      <h4 style="color:var(--amber)">Curated: Formats</h4>
+      <p>Sealed <code>VerificationUnit</code> and <code>VerifyResult</code> hierarchies. New formats require a core release.</p>
+      <p style="margin-top:.5rem"><strong>Rationale:</strong> new packet structures and verification semantics warrant review.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ============================================================ -->
+<!-- 4. SIGSTORE INTEGRATION                                       -->
+<!-- ============================================================ -->
+<section>
+  <span class="section-label"><span class="slide-number">4</span> Sigstore Integration</span>
+  <h2>How Sigmund Integrates sigstore-java</h2>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin:2rem 0">
+    <div class="cred-card" style="border-color:rgba(244,114,182,.3)">
+      <h4 style="color:var(--pink)">Architecture</h4>
+      <p>Separate <code>sigmund-sigstore</code> module isolates heavy dependencies. <code>SigstoreToolFactory</code> is <strong>ServiceLoader-discovered</strong> &mdash; adding the JAR to the classpath is sufficient.</p>
+      <p style="margin-top:.5rem">Wraps <code>KeylessSigner</code> and <code>KeylessVerifier</code> from sigstore-java. Pure Java, no CLI binary needed.</p>
+    </div>
+    <div class="cred-card" style="border-color:rgba(244,114,182,.3)">
+      <h4 style="color:var(--pink)">Signing Safeguards</h4>
+      <p>OIDC identity validation during signing via <code>allowedOidcIdentities</code> &mdash; prevents artifacts from being signed <strong>with the wrong identity</strong>. Signing fails if the OIDC token doesn't match the expected identity.</p>
+      <p style="margin-top:.5rem">CI-tuned defaults: ambient GitHub Actions OIDC token, no browser popups in non-interactive environments.</p>
+    </div>
+  </div>
+
+  <h3 style="margin-top:2.5rem">SigstoreCredential: Rich Certificate Matching</h3>
+  <p>Sigstore verification extracts credentials from Fulcio certificate extensions. Each field is independently matchable &mdash; <strong>null fields act as wildcards</strong>.</p>
+
+  <div class="compare-concepts" style="margin-top:1.5rem">
+    <div class="concept-card" style="border-color:rgba(248,113,113,.3)">
+      <h4><span style="color:var(--red)">&#9670;</span> Subject matching (fragile)</h4>
+      <p style="font-size:1rem;color:var(--text-dim);margin-bottom:.75rem">The OIDC subject often includes version-specific refs that change with every release. Trust config requires updates on <strong>every dependency version bump</strong>.</p>
+      <div class="code-example"><span style="color:var(--text-dim)"># Breaks on every new release tag</span>
+<span style="color:var(--pink)">sigstore:</span>
+  issuer: <span style="color:var(--green)">"https://token.actions.githubusercontent.com"</span>
+  subject: <span style="color:var(--red)">"https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.2.3"</span></div>
+    </div>
+    <div class="concept-card" style="border-color:rgba(52,211,153,.3)">
+      <h4><span style="color:var(--green)">&#9670;</span> Source repo URI matching (stable)</h4>
+      <p style="font-size:1rem;color:var(--text-dim);margin-bottom:.75rem">The <code>source-repository-uri</code> points to the repository itself &mdash; stable across versions. Trust config stays static: <strong>"trust anything signed from this repo."</strong></p>
+      <div class="code-example"><span style="color:var(--text-dim)"># Stable across all versions</span>
+<span style="color:var(--pink)">sigstore:</span>
+  issuer: <span style="color:var(--green)">"https://token.actions.githubusercontent.com"</span>
+  source-repository-uri: <span style="color:var(--green)">"https://github.com/org/repo"</span></div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:2.5rem">Cross-Backend Identity Matching</h3>
+  <div class="approach-highlight" style="background:linear-gradient(135deg,rgba(244,114,182,.08),rgba(108,138,255,.06));border-color:rgba(244,114,182,.2)">
+    <h3 style="color:var(--pink)">One signer, both worlds</h3>
+    <p>When a Sigstore signature is verified and the Fulcio certificate subject is an email, Sigmund extracts <strong>both</strong> a <code>SigstoreCredential</code> and an <code>EmailCredential</code>. A signer configured with just an <code>email</code> credential matches PGP and Sigstore signatures transparently &mdash; no cross-type matching logic needed.</p>
+    <p style="margin-top:.75rem">This means a project migrating from PGP to Sigstore can keep the same trust config &mdash; the email-based matching bridges both systems automatically.</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ============================================================ -->
+<!-- 5. SIGNING ROUTING                                            -->
+<!-- ============================================================ -->
+<section>
+  <span class="section-label"><span class="slide-number">5</span> Signing</span>
+  <h2>Signing Pipeline &amp; Task Routing</h2>
+
+  <div class="flow-container">
+    <h3 style="color:var(--green)">Signing Flow</h3>
+
+    <div class="flow-row">
+      <span class="flow-node fn-input">artifact.jar</span>
+    </div>
+    <div class="flow-arrow-down">&darr;</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;max-width:700px;margin:0 auto">
+      <div style="text-align:center">
+        <span class="flow-node fn-tool" style="display:block;margin-bottom:.5rem">BC / GPG</span>
+        <span class="flow-node fn-output" style="font-size:.78rem">classic.asc</span>
+        <p style="font-size:.75rem;color:var(--text-dim);margin-top:.25rem">v4 or v6 packet</p>
+      </div>
+      <div style="text-align:center">
+        <span class="flow-node fn-tool" style="display:block;margin-bottom:.5rem">Sequoia sq</span>
+        <span class="flow-node fn-output" style="font-size:.78rem">pqc.sig</span>
+        <p style="font-size:.75rem;color:var(--text-dim);margin-top:.25rem">v6 PQC packet</p>
+      </div>
+      <div style="text-align:center">
+        <span class="flow-node fn-sigstore" style="display:block;margin-bottom:.5rem">Sigstore</span>
+        <span class="flow-node fn-sigstore" style="font-size:.78rem">.sigstore.json</span>
+        <p style="font-size:.75rem;color:var(--text-dim);margin-top:.25rem">keyless bundle</p>
+      </div>
+    </div>
+
+    <div class="flow-arrow-down">&darr;</div>
+
+    <div class="flow-row">
+      <span class="flow-node fn-format">OpenPgpSignatureFormat.combine()</span>
+    </div>
+    <div class="flow-arrow-down">&darr;</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:500px;margin:0 auto">
+      <div style="text-align:center">
+        <span class="flow-node fn-output">artifact.jar.asc</span>
+        <p style="font-size:.78rem;color:var(--text-dim);margin-top:.25rem">Classic + PQC combined<br>byte-for-byte preserved</p>
+      </div>
+      <div style="text-align:center">
+        <span class="flow-node fn-sigstore">artifact.jar.sigstore.json</span>
+        <p style="font-size:.78rem;color:var(--text-dim);margin-top:.25rem">Standalone bundle<br>not combinable</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Credential-to-tool routing -->
+  <h3 style="margin-top:2.5rem">Credential-to-Tool Routing</h3>
+  <p>The builder routes signer credentials to tools in three steps:</p>
+
+  <div class="trust-flow" style="position:relative;padding-left:20px">
+    <div class="step-connector"></div>
+
+    <div class="trust-step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h4>Capability Match</h4>
+        <p>Find tools whose <code>supportedCredentialTypes()</code> contains the credential type.</p>
+      </div>
+    </div>
+
+    <div class="trust-step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <h4>Availability Check</h4>
+        <p><code>canSign()</code> filters tools that don't have the key material in their keyring.</p>
+      </div>
+    </div>
+
+    <div class="trust-step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <h4>Ambiguity Resolution</h4>
+        <p>Single survivor wins. Multiple survivors &rarr; config error. Explicit <code>tools.*.credentials</code> overrides bypass all of this.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backward compatibility -->
+  <div class="approach-highlight" style="background:linear-gradient(135deg,rgba(52,211,153,.08),rgba(108,138,255,.06));border-color:rgba(52,211,153,.2)">
+    <h3 style="color:var(--green)">Backward-Compatible Hybrid .asc</h3>
+    <p>Classic signature is always the <strong>first armored block</strong>. Tools that parse only the first block (including Maven Central) see only the classic signature and succeed. PQC-aware tools process all blocks.</p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ============================================================ -->
+<!-- 6. VERIFICATION ROUTING                                       -->
+<!-- ============================================================ -->
+<section>
+  <span class="section-label"><span class="slide-number">6</span> Verification</span>
+  <h2>Verification &amp; Trust Routing</h2>
+
+  <!-- Signature verification flow -->
+  <div class="flow-container">
+    <h3 style="color:var(--accent2)">Signature Verification Flow</h3>
+
+    <div class="flow-row">
+      <span class="flow-node fn-input">artifact.jar</span>
+      <span style="color:var(--text-dim);font-size:1.2rem">+</span>
+      <span class="flow-node fn-input">artifact.jar.asc</span>
+    </div>
+    <div class="flow-arrow-down">&darr;</div>
+
+    <div class="flow-row">
+      <span class="flow-node fn-format">SignatureFormat.parse()</span>
+    </div>
+    <div class="flow-arrow-down">&darr;</div>
+
+    <div class="flow-row">
+      <span class="flow-node fn-decision">VerificationUnit[]</span>
+    </div>
+    <div class="flow-arrow-down">&darr; for each unit</div>
+
+    <div class="flow-row" style="gap:0">
+      <span class="flow-node fn-tool" style="border-radius:10px 0 0 10px;border-right:none">bc</span>
+      <span class="flow-node fn-decision" style="border-radius:0;border-left:none;border-right:none;font-size:.75rem;padding:.6rem .5rem">PASS?</span>
+      <span class="flow-node fn-tool" style="border-radius:0;border-right:none">sq</span>
+      <span class="flow-node fn-decision" style="border-radius:0;border-left:none;border-right:none;font-size:.75rem;padding:.6rem .5rem">PASS?</span>
+      <span class="flow-node fn-tool" style="border-radius:0 10px 10px 0">gpg</span>
+    </div>
+    <p style="text-align:center;font-size:.8rem;margin:.75rem 0 0">Toolchain order &mdash; PASS stops immediately, NO_KEY/FAIL falls through</p>
+
+    <div class="flow-arrow-down">&darr;</div>
+    <div class="flow-row">
+      <span class="flow-node fn-output">VerifyResult (PASS / FAIL / NO_KEY / SKIPPED)</span>
+    </div>
+  </div>
+
+  <!-- Concrete example -->
+  <div class="routing-example">
+    <h4>Concrete Example: Hybrid .asc with v4 RSA + v6 ML-DSA</h4>
+
+    <div class="routing-step">
+      <span class="step-label" style="color:var(--accent)">v4 block</span>
+      <span>BC &rarr; <span class="tag tag-amber">NO_KEY</span> &rarr; sq &rarr; <span class="tag tag-amber">SKIPPED</span> &rarr; GPG finds key in pubring.kbx &rarr; <span class="tag tag-green">PASS</span></span>
+    </div>
+    <div class="routing-step">
+      <span class="step-label" style="color:var(--accent2)">v6 block</span>
+      <span>BC &rarr; <span class="tag tag-amber">NO_KEY</span> &rarr; sq finds key in cert store &rarr; <span class="tag tag-green">PASS</span></span>
+    </div>
+  </div>
+
+  <!-- Trust verification flow -->
+  <h3 style="margin-top:3rem">Trust Verification Flow</h3>
+  <p><code>TrustVerifier.assess()</code> goes beyond crypto validity to answer: <em>"Is this artifact from someone I trust?"</em></p>
+
+  <div class="trust-flow" style="position:relative;padding-left:20px;margin-top:2rem">
+    <div class="step-connector"></div>
+
+    <div class="trust-step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h4>Resolve Policy</h4>
+        <p>Look up expected signers for the artifact from <code>sigmund.yaml</code> trust mappings. Pattern matching with wildcard support and specificity ranking.</p>
+      </div>
+    </div>
+
+    <div class="trust-step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <h4>Check Unsigned Allowances</h4>
+        <p>If the artifact matches an <code>unsigned:</code> pattern and has no evidence &rarr; immediately return TRUSTED.</p>
+      </div>
+    </div>
+
+    <div class="trust-step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <h4>Verify Evidence</h4>
+        <p><code>EvidenceProvider.verify()</code> &rarr; <code>EvidenceResult</code>s with proven credentials. Key fetching from keyservers happens transparently here on NO_KEY results.</p>
+      </div>
+    </div>
+
+    <div class="trust-step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <h4>Match Identity</h4>
+        <p>Credential bag overlap: any proven credential matches any expected credential &rarr; identity confirmed. Type-agnostic &mdash; works across all backends.</p>
+      </div>
+    </div>
+
+    <div class="trust-step">
+      <div class="step-num">5</div>
+      <div class="step-content">
+        <h4>Apply Policy &rarr; Verdict</h4>
+        <p>Produce the final trust verdict based on matches and policy settings.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trust verdicts -->
+  <h3 style="margin-top:2rem">Trust Verdicts</h3>
+  <div class="verdict-row">
+    <span class="verdict v-trusted">TRUSTED</span>
+    <span class="verdict v-untrusted">UNTRUSTED</span>
+    <span class="verdict v-unsigned">UNSIGNED</span>
+    <span class="verdict v-failed">VERIFICATION_FAILED</span>
+    <span class="verdict v-noconfig">NOT_CONFIGURED</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.5rem;margin-top:1rem;font-size:.85rem">
+    <div><span style="color:var(--green);font-weight:600">TRUSTED</span> <span style="color:var(--text-dim)">&mdash; expected signer matched</span></div>
+    <div><span style="color:var(--red);font-weight:600">UNTRUSTED</span> <span style="color:var(--text-dim)">&mdash; signed but not by expected signer</span></div>
+    <div><span style="color:var(--amber);font-weight:600">UNSIGNED</span> <span style="color:var(--text-dim)">&mdash; no evidence files found</span></div>
+    <div><span style="color:var(--pink);font-weight:600">VERIFICATION_FAILED</span> <span style="color:var(--text-dim)">&mdash; crypto failure</span></div>
+    <div><span style="color:var(--text-dim);font-weight:600">NOT_CONFIGURED</span> <span style="color:var(--text-dim)">&mdash; artifact not in policy</span></div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ============================================================ -->
+<!-- 6. CLOSING                                                    -->
+<!-- ============================================================ -->
+<section>
+  <span class="section-label"><span class="slide-number">7</span> Impact</span>
+  <h2>What This Means for Maven</h2>
+
+  <div class="closing-grid">
+
+    <div class="closing-card" style="border-color:rgba(52,211,153,.3)">
+      <h3><span style="color:var(--green)">&#9654;</span> For Consumers</h3>
+      <ul>
+        <li>First tool to verify <em>who</em> signed your dependencies</li>
+        <li>Enforce trust policies automatically in CI</li>
+        <li>Auto-generate config from existing signatures</li>
+        <li>Cross-backend: one signer matches OpenPGP + Sigstore</li>
+      </ul>
+    </div>
+
+    <div class="closing-card" style="border-color:rgba(108,138,255,.3)">
+      <h3><span style="color:var(--accent)">&#9654;</span> For Publishers</h3>
+      <ul>
+        <li>Drop-in replacement for existing signing plugins</li>
+        <li>PQC-ready today &mdash; future-proof without breaking consumers</li>
+        <li>Multi-format: <code>.asc</code> + <code>.sigstore.json</code> in one build</li>
+        <li>Pure Java BC backend &mdash; zero external deps</li>
+      </ul>
+    </div>
+
+    <div class="closing-card" style="border-color:rgba(167,139,250,.3)">
+      <h3><span style="color:var(--accent2)">&#9654;</span> For the Ecosystem</h3>
+      <ul>
+        <li>Bridges the LibrePGP / RFC 9580 split</li>
+        <li>Identity-first model extensible to SLSA, SBOM verification</li>
+        <li><code>EvidenceProvider</code> SPI for future trust evidence types</li>
+        <li><code>SignatureToolFactory</code> SPI for new signing backends</li>
+      </ul>
+    </div>
+
+  </div>
+
+  <!-- YAML config example -->
+  <h3 style="margin-top:2.5rem">Unified Configuration: <code>sigmund.yaml</code></h3>
+  <div class="code-block" style="line-height:1.5"><span class="cmt"># Define trusted signers</span>
+<span class="kw">signers:</span>
+  <span class="str">apache:</span>
+    name: <span class="str">"Apache Software Foundation"</span>
+    pgp4: <span class="str">"4AEE18F83AFDEB23468B2E5A..."</span>
+  <span class="str">ci-pipeline:</span>
+    sigstore:
+      issuer: <span class="str">"https://token.actions.githubusercontent.com"</span>
+      source-repository-uri: <span class="str">"https://github.com/org/repo"</span>
+
+<span class="cmt"># Map artifacts to trusted signers</span>
+<span class="kw">trust:</span>
+  <span class="str">org.apache.maven.*:</span> apache
+  <span class="str">io.quarkus.*:</span> [quarkus-team, ci-pipeline]
+
+<span class="cmt"># Signing configuration</span>
+<span class="kw">signing:</span>
+  signer: apache
+  tools:
+    sq:
+      cipher-suite: <span class="str">"mldsa87-ed448"</span>
+
+<span class="cmt"># Policy</span>
+<span class="kw">policy:</span>
+  on-untrusted: <span class="str">fail</span></div>
+
+  <div style="text-align:center;margin-top:4rem;padding:3rem 0">
+    <p style="font-size:1.2rem;color:var(--text);max-width:none"><strong>Version 0.0.1</strong> &mdash; Apache License 2.0</p>
+    <p style="color:var(--text-dim);margin-top:.5rem;max-width:none">
+      <code style="color:var(--accent)">dev.cyberstamp.sigmund:sigmund-maven-plugin</code>
+    </p>
+  </div>
+</section>
+
+</body>
+</html>
