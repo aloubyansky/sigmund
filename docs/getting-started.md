@@ -167,7 +167,7 @@ com.sketchy:malware:1.0: untrusted signer
 The `on-untrusted` setting controls failure behavior. The default is `fail`. Set it to `warn` in `sigmund.yaml` to report issues without failing the build:
 
 ```yaml
-settings:
+policy:
   on-untrusted: warn
 ```
 

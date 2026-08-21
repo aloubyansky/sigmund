@@ -124,27 +124,45 @@ class SigmundConfigParserTest {
         }
 
         @Test
-        void pgp4Alias() {
+        void pgp4Canonical() {
             var config = parse("""
                     signers:
                       alice:
                         pgp4: "4AEE18F83AFDEB23"
                     """);
-            var alice = config.signers().get("alice");
-            assertThat(alice.credentials().get(0)).isInstanceOf(FingerprintCredential.class);
-            var fp = (FingerprintCredential) alice.credentials().get(0);
+            var fp = (FingerprintCredential) config.signers().get("alice").credentials().get(0);
             assertThat(fp.type()).isEqualTo("openpgp4");
         }
 
         @Test
-        void pgp6Alias() {
+        void pgp6Canonical() {
             var config = parse("""
                     signers:
                       alice:
                         pgp6: "ABCD1234ABCD1234"
                     """);
-            assertThat(config.signers().get("alice").credentials().get(0))
-                    .isInstanceOf(FingerprintCredential.class);
+            var fp = (FingerprintCredential) config.signers().get("alice").credentials().get(0);
+            assertThat(fp.type()).isEqualTo("openpgp6");
+        }
+
+        @Test
+        void openpgp4Alias() {
+            var config = parse("""
+                    signers:
+                      alice:
+                        openpgp4: "4AEE18F83AFDEB23"
+                    """);
+            var fp = (FingerprintCredential) config.signers().get("alice").credentials().get(0);
+            assertThat(fp.type()).isEqualTo("openpgp4");
+        }
+
+        @Test
+        void openpgp6Alias() {
+            var config = parse("""
+                    signers:
+                      alice:
+                        openpgp6: "ABCD1234ABCD1234"
+                    """);
             var fp = (FingerprintCredential) config.signers().get("alice").credentials().get(0);
             assertThat(fp.type()).isEqualTo("openpgp6");
         }
@@ -368,13 +386,13 @@ class SigmundConfigParserTest {
         }
 
         @Test
-        void unsignedAllowed() {
+        void signatureOptionalAllowed() {
             var config = parse("""
-                    unsigned:
-                      - "org.example:unsigned-lib"
+                    signature-optional:
+                      - "org.example:optional-lib"
                     """);
             assertThat(config.trustPolicy().isUnsignedAllowed(
-                    artifact("org.example", "unsigned-lib", "1.0"))).isTrue();
+                    artifact("org.example", "optional-lib", "1.0"))).isTrue();
             assertThat(config.trustPolicy().isUnsignedAllowed(
                     artifact("org.example", "other-lib", "1.0"))).isFalse();
         }
@@ -420,9 +438,9 @@ class SigmundConfigParserTest {
             var config = parse("""
                     signing:
                       signer: alice
-                      default-profile: hybrid
+                      credential-types: [pgp4, pgp6]
                       profiles:
-                        hybrid: [openpgp4, openpgp6]
+                        classic: [pgp4]
                       toolchain: [sq]
                     tools:
                       sq:
@@ -430,8 +448,8 @@ class SigmundConfigParserTest {
                     """);
             var signing = config.signingConfig();
             assertThat(signing.signer()).isEqualTo("alice");
-            assertThat(signing.defaultProfile()).isEqualTo("hybrid");
-            assertThat(signing.profiles().get("hybrid")).isEqualTo(List.of("openpgp4", "openpgp6"));
+            assertThat(signing.credentialTypes()).isEqualTo(List.of("pgp4", "pgp6"));
+            assertThat(signing.profiles().get("classic")).isEqualTo(List.of("pgp4"));
             assertThat(signing.toolchain()).isEqualTo(List.of("sq"));
             assertThat(config.toolsConfig().get("sq").settings().get("cipher-suite")).isEqualTo("mldsa87-ed448");
         }
@@ -444,12 +462,12 @@ class SigmundConfigParserTest {
     }
 
     @Nested
-    class DiscoveryParsing {
+    class VerificationParsing {
 
         @Test
-        void discoveryConfig() {
+        void verificationConfig() {
             var config = parse("""
-                    discovery:
+                    verification:
                       resolve-signers: true
                       import-to-keyring: false
                       keyservers:
@@ -464,7 +482,7 @@ class SigmundConfigParserTest {
         @Test
         void toolchainList() {
             var config = parse("""
-                    discovery:
+                    verification:
                       toolchain: [sq, gpg]
                     """);
             assertThat(config.discoveryConfig().toolchain()).isEqualTo(List.of("sq", "gpg"));
@@ -473,7 +491,7 @@ class SigmundConfigParserTest {
         @Test
         void toolchainScalar() {
             var config = parse("""
-                    discovery:
+                    verification:
                       toolchain: gpg
                     """);
             assertThat(config.discoveryConfig().toolchain()).isEqualTo(List.of("gpg"));
@@ -482,7 +500,7 @@ class SigmundConfigParserTest {
         @Test
         void toolchainDefault() {
             var config = parse("""
-                    discovery:
+                    verification:
                       resolve-signers: true
                     """);
             assertThat(config.discoveryConfig().toolchain()).isNull();
@@ -490,7 +508,7 @@ class SigmundConfigParserTest {
         }
 
         @Test
-        void noDiscoverySection() {
+        void noVerificationSection() {
             var config = parse("version: 1");
             assertThat(config.discoveryConfig()).isEqualTo(DiscoveryConfig.DEFAULT);
         }
@@ -535,18 +553,18 @@ class SigmundConfigParserTest {
                       alice:
                         name: "Alice"
                         email: "alice@example.com"
-                        openpgp4: "4AEE18F83AFDEB23"
-                        openpgp6: "ABCD1234ABCD1234"
+                        pgp4: "4AEE18F83AFDEB23"
+                        pgp6: "ABCD1234ABCD1234"
                       bob: "bob@example.com"
                     signing:
                       signer: alice
                     trust:
                       "org.example:*": [alice, bob]
-                    unsigned:
-                      - "org.example:unsigned-lib"
+                    signature-optional:
+                      - "org.example:optional-lib"
                     policy:
                       on-untrusted: fail
-                    discovery:
+                    verification:
                       resolve-signers: true
                       keyservers:
                         - "hkps://keys.openpgp.org"

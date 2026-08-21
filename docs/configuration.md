@@ -12,9 +12,9 @@ Sigmund uses a `sigmund.yaml` file for configuration. This reference documents e
   - [signing](#signing)
   - [artifacts](#artifacts)
   - [trust](#trust)
-  - [unsigned](#unsigned)
+  - [signature-optional](#signature-optional)
   - [policy](#policy)
-  - [discovery](#discovery)
+  - [verification](#verification)
   - [tools](#tools)
 - [Tool Settings Tables](#tool-settings-tables)
   - [BC (BouncyCastle)](#bc-bouncycastle)
@@ -52,15 +52,15 @@ signers:
   apache:
     name: "Apache Software Foundation"
     members:
-      - openpgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+      - pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
         email: "dev@maven.apache.org"
-      - openpgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
+      - pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
   
   # Single-key signer with multiple credential types
   jane:
     name: "Jane Doe"
-    openpgp4: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
-    openpgp6: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
+    pgp4: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
+    pgp6: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
     email: "jane@example.com"
   
   # CI/CD identity using Sigstore credentials
@@ -85,8 +85,8 @@ trust:
   # Multiple signers for one pattern
   "io.quarkus.*": [redhat, jboss-community]
 
-# Artifacts expected to be unsigned
-unsigned:
+# Artifacts that do not require a signature
+signature-optional:
   - "com.internal.*"
   - "com.example:test-utils"
 
@@ -107,21 +107,16 @@ signing:
   # Toolchain order for signing operations
   toolchain: [bc, sq, gpg]
   
-  # Named profiles for different signing scenarios
+  # Default credential types to produce (filters which tools are used)
+  credential-types: [pgp4, pgp6]
+  
+  # Named profiles for explicit switching (e.g., --profile classic)
   profiles:
     classic:
-      - openpgp4
-    v6-only:
-      - openpgp6
-    hybrid:
-      - openpgp4
-      - openpgp6
-  
-  # Default profile to use when none specified
-  default-profile: hybrid
+      - pgp4
 
-# Discovery and verification settings
-discovery:
+# Verification settings
+verification:
   # Toolchain order for verification operations
   toolchain: [bc, sq, gpg]
   
@@ -210,20 +205,18 @@ An object with credential fields. At least one credential type must be specified
 signers:
   jane:
     name: "Jane Doe"                    # Optional display name
-    openpgp4: "ABCD...EF12"              # OpenPGP v4 fingerprint (40 hex chars)
-    pgp4: "ABCD...EF12"                  # Alias for openpgp4
-    openpgp6: "1234...CDEF"              # OpenPGP v6 fingerprint (64 hex chars)
-    pgp6: "1234...CDEF"                  # Alias for openpgp6
-    email: "jane@example.com"            # Email address
-    sigstore:                            # Sigstore credential (matchable fields)
+    pgp4: "ABCD...EF12"                 # OpenPGP v4 fingerprint (40 hex chars)
+    pgp6: "1234...CDEF"                 # OpenPGP v6 fingerprint (64 hex chars)
+    email: "jane@example.com"           # Email address
+    sigstore:                           # Sigstore credential (matchable fields)
       issuer: "https://token.actions.githubusercontent.com"
       subject: "https://github.com/org/repo/.github/workflows/ci.yml@refs/heads/main"
 ```
 
 **Credential types:**
 
-- **`openpgp4` / `pgp4`** — OpenPGP v4 fingerprint (40 hexadecimal characters). Matched against OpenPGP v4 signatures.
-- **`openpgp6` / `pgp6`** — OpenPGP v6 fingerprint (64 hexadecimal characters). Matched against PGP signatures only (v6 keys).
+- **`pgp4`** — OpenPGP v4 fingerprint (40 hexadecimal characters). Matched against OpenPGP v4 signatures. Alias: `openpgp4`.
+- **`pgp6`** — OpenPGP v6 fingerprint (64 hexadecimal characters). Matched against OpenPGP v6 signatures. Alias: `openpgp6`.
 - **`email`** — Email address. Matched case-insensitively against PGP user IDs and Sigstore OIDC subjects (when subject is an email).
 - **`sigstore`** — Sigstore certificate credential with matchable fields. Only the fields you specify need to match. Available fields:
   - `issuer` — OIDC issuer URL
@@ -236,9 +229,7 @@ signers:
 
   > **Signing-time vs verification-time matching:** When both `issuer` and `subject` are set and the signer is used for signing (`signing.signer`), the OIDC token is validated at signing time — mismatched identities are rejected before requesting a Fulcio certificate. All other fields (`source-repository-uri`, `build-trigger`, etc.) are Fulcio certificate extensions and are matched at verification time only. For CI pipelines where the `subject` includes a git ref that changes per release, use `issuer` + `source-repository-uri` for stable verification-time matching without config churn.
 
-**Shorthand aliases:**
-- `pgp4` is an alias for `openpgp4`
-- `pgp6` is an alias for `openpgp6`
+**Aliases:** `openpgp4` and `openpgp6` are accepted aliases for `pgp4` and `pgp6` respectively.
 
 #### Organization with Multiple Members
 
@@ -249,9 +240,9 @@ signers:
   apache:
     name: "Apache Software Foundation"
     members:
-      - openpgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+      - pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
         email: "dev@maven.apache.org"
-      - openpgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
+      - pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
 ```
 
 ### `signing`
@@ -263,20 +254,35 @@ Configures which identity to sign as and the signing toolchain.
 
 ```yaml
 signing:
-  signer: my-identity        # References a signer from the signers section
-  toolchain: [bc, sq, gpg]   # Tools to use for signing, in priority order
-  profiles:                   # Named credential type profiles
+  signer: my-identity             # References a signer from the signers section
+  toolchain: [bc, sq, gpg]        # Tools to use for signing, in priority order
+  credential-types: [pgp4, pgp6]  # Default credential types to produce
+  profiles:                       # Named profiles for explicit switching
     classic:
-      - openpgp4
-  default-profile: classic    # Default profile to use
+      - pgp4
 ```
 
 #### Fields
 
 - **`signer`** (string, optional) — References a signer ID from the `signers` section. This identity will be used for signing operations.
 - **`toolchain`** (array of strings, optional) — Lists which tools to use for signing and in what order. Only the listed tools are initialized. Tool names: `bc`, `sq`, `gpg`, `sigstore`. Per-tool settings are configured in the top-level `tools` section.
-- **`profiles`** (map, optional) — Named profiles that specify which credential types to use. Keys are profile names, values are arrays of credential type strings (`openpgp4`, `openpgp6`, etc.).
-- **`default-profile`** (string, optional) — The default profile to use when none is explicitly specified.
+- **`credential-types`** (array of strings, optional) — The default set of credential types to produce. Only tools whose supported credential types intersect this list are used. When omitted, all available signing tools are used. Values: `pgp4`, `pgp6`, `sigstore`.
+- **`profiles`** (map, optional) — Named profiles for explicit switching (e.g., `--profile classic`). Each profile maps a name to a list of credential type strings. When a profile is requested by name, it takes precedence over `credential-types`.
+
+### `signature-optional`
+
+**Type:** Array of strings
+**Default:** `[]` (empty)
+
+Lists artifact patterns for which a signature is not required. Artifacts matching these patterns will not fail verification when unsigned. If a matching artifact happens to be signed, normal trust policy evaluation applies.
+
+```yaml
+signature-optional:
+  - "com.internal.*"
+  - "com.example:test-utils"
+```
+
+Pattern syntax is the same as the `trust` section. Named artifact groups from the `artifacts` section can also be referenced here.
 
 ### `artifacts`
 
@@ -342,21 +348,6 @@ Values can be:
 
 Signer IDs must reference entries from the `signers` section.
 
-### `unsigned`
-
-**Type:** Array of strings  
-**Default:** `[]` (empty)
-
-Lists artifact patterns that are expected to be unsigned. Artifacts matching these patterns will not trigger trust policy violations.
-
-```yaml
-unsigned:
-  - "com.internal.*"
-  - "com.example:test-utils"
-```
-
-Pattern syntax is the same as the `trust` section.
-
 ### `policy`
 
 **Type:** Object  
@@ -390,15 +381,15 @@ policy:
   - `warn` — Log a warning when unlisted signatures are found, but don't fail
   - `require` — Fail if any unlisted signatures are found on the artifact
 
-### `discovery`
+### `verification`
 
-**Type:** Object  
+**Type:** Object
 **Default:** See fields below
 
 Configures the verification toolchain, key fetching, and verification behavior.
 
 ```yaml
-discovery:
+verification:
   toolchain: [bc, sq, gpg]
   resolve-signers: true
   import-to-keyring: false
@@ -641,21 +632,15 @@ version: 1
 signers:
   release-team:
     name: "Release Engineering"
-    openpgp4: "ABCD...EF12"  # v4 fingerprint for GPG compatibility
-    openpgp6: "1234...CDEF"  # v6 fingerprint for PQC
+    pgp4: "ABCD...EF12"  # v4 fingerprint for GPG compatibility
+    pgp6: "1234...CDEF"  # v6 fingerprint for PQC
 
 signing:
   signer: release-team
   toolchain: [bc, sq, gpg]
-  
-  profiles:
-    hybrid:
-      - openpgp4
-      - openpgp6
-  
-  default-profile: hybrid
+  credential-types: [pgp4, pgp6]
 
-discovery:
+verification:
   toolchain: [bc, sq, gpg]
 
 tools:
@@ -705,7 +690,7 @@ version: 1
 signers:
   release-lead:
     name: "Release Lead"
-    openpgp4: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+    pgp4: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
     sigstore:
       issuer: "https://token.actions.githubusercontent.com"
       source-repository-uri: "https://github.com/myorg/myrepo"
@@ -715,7 +700,7 @@ signing:
   signer: release-lead
   toolchain: [bc, sigstore]
 
-discovery:
+verification:
   toolchain: [bc, sigstore]
 
 tools:
@@ -738,7 +723,7 @@ policy:
   listed-evidence: all       # All listed signatures must match
   unlisted-evidence: require # Fail on any unlisted signatures
 
-discovery:
+verification:
   resolve-signers: false     # Don't auto-fetch keys
   import-to-keyring: false   # Don't persist fetched keys
 ```
@@ -753,11 +738,11 @@ policy:
   listed-evidence: any         # Any matching signature is sufficient
   unlisted-evidence: ignore    # Ignore unlisted signatures
 
-unsigned:
+signature-optional:
   - "com.internal.*"           # Internal artifacts don't need signatures
   - "com.example:*:*-SNAPSHOT" # Snapshots don't need signatures
 
-discovery:
+verification:
   resolve-signers: true        # Auto-fetch missing keys
   import-to-keyring: true      # Cache keys permanently
 ```

@@ -117,10 +117,9 @@ sigmund sign --file artifact.jar
 To override the default, set `key-name` in `sigmund.yaml`:
 
 ```yaml
-signing:
-  tools:
-    gpg:
-      key-name: your@email.com
+tools:
+  gpg:
+    key-name: your@email.com
 ```
 
 ## Signing with Bouncy Castle
@@ -198,11 +197,10 @@ If the environment variable is not set, Sigmund prompts interactively when a ter
 To use a different environment variable name (e.g., to reuse an existing CI secret), set `passphrase-env` in `sigmund.yaml`:
 
 ```yaml
-signing:
-  tools:
-    bc:
-      signing-fingerprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
-      passphrase-env: MY_KEY_PASSPHRASE
+tools:
+  bc:
+    signing-fingerprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+    passphrase-env: MY_KEY_PASSPHRASE
 ```
 
 ### Passphrase Resolution Order
@@ -244,10 +242,9 @@ Sigmund checks `SIGMUND_BC_SIGNING_KEY` by default. The key is parsed in memory 
 To use a different env var name, set `signing-key-env` in `sigmund.yaml`:
 
 ```yaml
-signing:
-  tools:
-    bc:
-      signing-key-env: MY_SIGNING_KEY
+tools:
+  bc:
+    signing-key-env: MY_SIGNING_KEY
 ```
 
 **Priority:** `tsk-file` takes precedence over `signing-key-env` if both are configured.
@@ -369,10 +366,9 @@ sq config set sign.signer-self "YOUR_FINGERPRINT"
 To override the default, set `signing-fingerprint` in `sigmund.yaml`:
 
 ```yaml
-signing:
-  tools:
-    sq:
-      signing-fingerprint: "D62AAB339E45E5EA2FD036872B01D46A517A2991..."
+tools:
+  sq:
+    signing-fingerprint: "D62AAB339E45E5EA2FD036872B01D46A517A2991..."
 ```
 
 This produces a hybrid `.asc` file containing both a classic signature (from GPG or BC) and a PQC signature (from sq).
@@ -507,35 +503,30 @@ Signing produces a `.sigstore.json` bundle for each artifact, containing:
 
 Unlike OpenPGP `.asc` files, Sigstore bundles are self-contained — no keyserver lookup is needed for verification. The bundle format follows the [Sigstore Bundle specification](https://github.com/sigstore/protobuf-specs).
 
-## Signing Profiles
+## Signing Credential Types and Profiles
 
-Profiles select which signature types to include in the `.asc` file. Configure profiles in `sigmund.yaml`:
+Use `credential-types` to restrict which signature types are produced by default:
 
 ```yaml
 signing:
-  profiles:
-    classic:
-      - openpgp4
-    v6-only:
-      - openpgp6
-    hybrid:
-      - openpgp4
-      - openpgp6
-  default-profile: hybrid
+  credential-types: [pgp4, pgp6]  # produce both v4 and v6 signatures
 ```
 
-**Available profiles:**
+For scenarios that require named switching at invocation time, define profiles:
 
-- **`classic`** — OpenPGP v4 signatures only (GPG-compatible, no PQC)
-- **`v6-only`** — OpenPGP v6 signatures only (BC v6 or sq, may not be GPG-compatible)
-- **`hybrid`** — Both OpenPGP v4 and v6 signatures (maximum compatibility + PQC)
+```yaml
+signing:
+  credential-types: [pgp4, pgp6]  # default
+  profiles:
+    classic:
+      - pgp4
+```
 
-The `default-profile` setting determines which profile is used when no profile is explicitly specified. If omitted, all available credential types are used.
-
-Use `sigmund:signer-info` (Maven) or `sigmund signer-info` (CLI) to see which tools and keys are active for a given profile:
+Use `sigmund:signer-info` (Maven) or `sigmund signer-info` (CLI) to see which tools and keys are active:
 
 ```bash
-mvn sigmund:signer-info -Dsigmund.profile=hybrid
+mvn sigmund:signer-info
+mvn sigmund:signer-info -Dsigmund.profile=classic
 ```
 
 ## Signing Pipeline

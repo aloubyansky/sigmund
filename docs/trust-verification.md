@@ -109,8 +109,8 @@ Sigmund supports four credential types:
 
 | Type | YAML Key | Description | Example |
 |------|----------|-------------|---------|
-| OpenPGP v4 | `openpgp4` or `pgp4` | 40-character v4 fingerprint | `4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12` |
-| OpenPGP v6 | `openpgp6` or `pgp6` | 64-character v6 fingerprint | `D62AAB339E45E5EA2FD036872B01D46A517A2991...` |
+| OpenPGP v4 | `pgp4` (alias: `openpgp4`) | 40-character v4 fingerprint | `4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12` |
+| OpenPGP v6 | `pgp6` (alias: `openpgp6`) | 64-character v6 fingerprint | `D62AAB339E45E5EA2FD036872B01D46A517A2991...` |
 | Email | `email` | Email address | `dev@example.com` |
 | Sigstore | `sigstore` | Object with matchable certificate fields | (see below) |
 
@@ -129,8 +129,8 @@ signers:
 signers:
   alice:
     name: "Alice Developer"
-    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
-    pgp6: "D62AAB339E45E5EA2FD036872B01D46A517A2991EF8B8F67C32CF07A49CBDAA0"
+    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"  # v4 fingerprint
+    pgp6: "D62AAB339E45E5EA2FD036872B01D46A517A2991EF8B8F67C32CF07A49CBDAA0"  # v6 fingerprint
     email: "alice@example.com"
 ```
 
@@ -173,17 +173,17 @@ trust:
 
 For artifact `io.quarkus:quarkus-core:3.0.0`, the pattern `io.quarkus:quarkus-core` wins.
 
-### 3. Unsigned Artifacts
+### 3. Signature-Optional Artifacts
 
-The `unsigned` section lists artifact patterns that are allowed to have no signature:
+The `signature-optional` section lists artifact patterns for which a signature is not required:
 
 ```yaml
-unsigned:
+signature-optional:
   - com.internal.*
   - org.example:test-utils
 ```
 
-These artifacts are skipped during trust verification and reported separately. Use this for internal dependencies or known unsigned dependencies that you trust through other means.
+Artifacts matching these patterns will not fail verification when unsigned. If a matching artifact happens to be signed, normal trust policy evaluation applies.
 
 ### 4. Policy Configuration
 
@@ -204,12 +204,12 @@ policy:
 
 **Note:** The `on-untrusted` setting can be overridden with the `-Dsigmund.onUntrusted` Maven property.
 
-### 5. Discovery Configuration
+### 5. Verification Configuration
 
-The `discovery` section controls how Sigmund fetches signer information:
+The `verification` section controls how Sigmund fetches signer information:
 
 ```yaml
-discovery:
+verification:
   resolve-signers: true
   import-to-keyring: false
   keyservers:
@@ -271,8 +271,8 @@ trust:
   # Specific artifact
   com.fasterxml.jackson.core:jackson-databind: jackson-dev
 
-# Allow specific artifacts to be unsigned
-unsigned:
+# Artifacts that do not require a signature
+signature-optional:
   - com.internal.*
   - org.example:legacy-lib
 
@@ -282,8 +282,8 @@ policy:
   listed-evidence: all      # all | any
   unlisted-evidence: ignore # ignore | warn | require
 
-# Discovery settings
-discovery:
+# Verification settings
+verification:
   resolve-signers: true
   import-to-keyring: false
   keyservers:
@@ -552,7 +552,7 @@ trust:
 
 **Option 2: Allow the artifact to be unsigned** (if there's no signature):
 ```yaml
-unsigned:
+signature-optional:
   - com.example:artifact
 ```
 

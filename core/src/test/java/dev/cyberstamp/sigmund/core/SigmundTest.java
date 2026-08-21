@@ -41,8 +41,7 @@ class SigmundTest {
             var bc = mockTool("bc", true, true, Set.of("openpgp4"));
             var gpg = mockTool("gpg", true, true, Set.of("openpgp4"));
             var config = new SigmundConfig(1, null, null, null,
-                    new SigningConfig(null, List.of("bc"),
-                            Map.of(), null),
+                    new SigningConfig(null, List.of("bc"), List.of(), Map.of()),
                     null, null);
             var sigmund = Sigmund.builder().config(config)
                     .addTool(bc).addTool(gpg).build();
@@ -59,8 +58,7 @@ class SigmundTest {
         void signerThrowsWhenConfiguredToolCannotSign() {
             var bc = mockTool("bc", true, false, Set.of("openpgp4"));
             var config = new SigmundConfig(1, null, null, null,
-                    new SigningConfig(null, List.of("bc"),
-                            Map.of(), null),
+                    new SigningConfig(null, List.of("bc"), List.of(), Map.of()),
                     null, null);
             var sigmund = Sigmund.builder().config(config)
                     .addTool(bc).build();
@@ -72,12 +70,11 @@ class SigmundTest {
         }
 
         @Test
-        void signerWithDefaultProfile() {
+        void signerWithCredentialTypes() {
             var v4Tool = mockTool("gpg", true, true, Set.of("openpgp4"));
             var v6Tool = mockTool("sq", true, true, Set.of("openpgp6"));
             var config = new SigmundConfig(1, null, null, null,
-                    new SigningConfig(null, List.of(),
-                            Map.of("v6-only", List.of("openpgp6")), "v6-only"),
+                    new SigningConfig(null, List.of(), List.of("openpgp6"), Map.of()),
                     null, null);
             var sigmund = Sigmund.builder().config(config)
                     .addTool(v4Tool).addTool(v6Tool).build();
@@ -95,10 +92,9 @@ class SigmundTest {
             var v4Tool = mockTool("gpg", true, true, Set.of("openpgp4"));
             var v6Tool = mockTool("sq", true, true, Set.of("openpgp6"));
             var config = new SigmundConfig(1, null, null, null,
-                    new SigningConfig(null, List.of(),
+                    new SigningConfig(null, List.of(), List.of(),
                             Map.of("v6-only", List.of("openpgp6"),
-                                    "classical", List.of("openpgp4")),
-                            null),
+                                    "classical", List.of("openpgp4"))),
                     null, null);
             var sigmund = Sigmund.builder().config(config)
                     .addTool(v4Tool).addTool(v6Tool).build();
@@ -120,8 +116,8 @@ class SigmundTest {
         @Test
         void signerWithUnknownProfileThrows() {
             var config = new SigmundConfig(1, null, null, null,
-                    new SigningConfig(null, List.of(),
-                            Map.of("v6-only", List.of("openpgp6")), null),
+                    new SigningConfig(null, List.of(), List.of(),
+                            Map.of("v6-only", List.of("openpgp6"))),
                     null, null);
             var sigmund = Sigmund.builder().config(config)
                     .addTool(mockTool("gpg", true, true, Set.of("openpgp4"))).build();
@@ -559,8 +555,7 @@ class SigmundTest {
             var bc = mockTool("bc", true, true, Set.of("openpgp4"));
             var gpg = mockTool("gpg", true, true, Set.of("openpgp4"));
             var config = new SigmundConfig(1, null, null, null,
-                    new SigningConfig(null, List.of("gpg"),
-                            Map.of(), null),
+                    new SigningConfig(null, List.of("gpg"), List.of(), Map.of()),
                     null, null);
             var builder = Sigmund.builder().config(config).discoveryConfig(noAutoDiscovery());
             builder.addTool(bc);
@@ -579,7 +574,7 @@ class SigmundTest {
             var bc = mockTool("bc", true, true, Set.of("openpgp4"));
             var gpg = mockTool("gpg", true, true, Set.of("openpgp4"));
             var config = new SigmundConfig(1, null, null, null,
-                    new SigningConfig(null, List.of(), Map.of(), null),
+                    new SigningConfig(null, List.of(), List.of(), Map.of()),
                     null, null);
             var builder = Sigmund.builder().config(config).discoveryConfig(noAutoDiscovery());
             builder.addTool(bc);
