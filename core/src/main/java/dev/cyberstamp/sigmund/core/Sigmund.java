@@ -106,17 +106,14 @@ public class Sigmund implements AutoCloseable {
     }
 
     /**
-     * Creates a signer using the default profile (if configured) or all signing tools.
+     * Creates a signer using the default {@code credential-types} filter (if configured),
+     * or all available signing tools when no filter is set.
      *
      * @return a new signer
      */
     public Signer signer() {
-        if (signingConfig != null && signingConfig.defaultProfile() != null) {
-            return signer(signingConfig.defaultProfile());
-        }
-        List<SignatureTool> signingTools = configuredSigningTools(
-                tools.stream().filter(SignatureTool::canSign).toList());
-        return new Signer(signingTools);
+        List<String> credentialTypes = signingConfig != null ? signingConfig.credentialTypes() : List.of();
+        return signerForCredentialTypes(credentialTypes);
     }
 
     /**
@@ -124,9 +121,10 @@ public class Sigmund implements AutoCloseable {
      * <p>
      * The profile maps to a list of credential types; only tools whose
      * {@link SignatureTool#supportedCredentialTypes()} intersects with the
-     * profile's credential types are included.
+     * profile's credential types are included. Takes precedence over the
+     * default {@code credential-types} setting.
      *
-     * @param profileName the profile name (e.g., {@code "hybrid"}, {@code "v6-only"})
+     * @param profileName the profile name (e.g., {@code "classic"}, {@code "hybrid"})
      * @return a new signer filtered to the profile's credential types
      * @throws SigmundException if the profile name is not found in the signing config
      */
@@ -139,13 +137,18 @@ public class Sigmund implements AutoCloseable {
             throw new SigmundException("Unknown signing profile: " + profileName
                     + ". Available profiles: " + signingConfig.profiles().keySet());
         }
-        List<SignatureTool> profileTools = configuredSigningTools(
-                tools.stream()
-                        .filter(SignatureTool::canSign)
-                        .filter(t -> t.supportedCredentialTypes().stream()
-                                .anyMatch(credentialTypes::contains))
-                        .toList());
-        return new Signer(profileTools);
+        return signerForCredentialTypes(credentialTypes);
+    }
+
+    private Signer signerForCredentialTypes(List<String> credentialTypes) {
+        List<SignatureTool> candidates = tools.stream().filter(SignatureTool::canSign).toList();
+        if (!credentialTypes.isEmpty()) {
+            candidates = candidates.stream()
+                    .filter(t -> t.supportedCredentialTypes().stream()
+                            .anyMatch(credentialTypes::contains))
+                    .toList();
+        }
+        return new Signer(configuredSigningTools(candidates));
     }
 
     /**

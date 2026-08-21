@@ -70,12 +70,12 @@ class SigmundConfigParser {
         SignersConfig signers = parseSigners(root.get("signers"));
         SigningConfig signingConfig = parseSigningConfig(root.get("signing"));
         ToolsConfig toolsConfig = parseToolsRegistry(root.get("tools"));
-        DiscoveryConfig discoveryConfig = parseDiscoveryConfig(root.get("discovery"));
+        DiscoveryConfig discoveryConfig = parseDiscoveryConfig(root.get("verification"));
 
         ArtifactsConfig artifacts = parseArtifactGroups(root.get("artifacts"));
         Map<String, List<String>> rawTrust = parseTrustSection(root.get("trust"));
         Map<String, List<String>> expandedTrust = artifacts.expandTrustMappings(rawTrust);
-        List<String> rawUnsigned = parseStringList(root.get("unsigned"));
+        List<String> rawUnsigned = parseStringList(root.get("signature-optional"));
         List<String> expandedUnsigned = artifacts.expandPatterns(rawUnsigned);
         ListedEvidencePolicy listedEvidence = parseListedEvidencePolicy(root);
         UnlistedEvidencePolicy unlistedEvidence = parseUnlistedEvidencePolicy(root);
@@ -161,10 +161,10 @@ class SigmundConfigParser {
      * @param node the YAML node containing credential fields
      */
     private static void addCredentialsFromNode(List<Credential> credentials, JsonNode node) {
-        addFingerprintCredential(credentials, node, Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V4);
         addFingerprintCredential(credentials, node, "pgp4", Credential.TYPE_OPENPGP_V4);
-        addFingerprintCredential(credentials, node, Credential.TYPE_OPENPGP_V6, Credential.TYPE_OPENPGP_V6);
+        addFingerprintCredential(credentials, node, Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V4);
         addFingerprintCredential(credentials, node, "pgp6", Credential.TYPE_OPENPGP_V6);
+        addFingerprintCredential(credentials, node, Credential.TYPE_OPENPGP_V6, Credential.TYPE_OPENPGP_V6);
         addEmailCredential(credentials, node);
         addSigstoreCredential(credentials, node);
     }
@@ -302,9 +302,9 @@ class SigmundConfigParser {
         }
         String signer = textField(node, "signer");
         List<String> toolchain = parseStringList(node.get("toolchain"));
+        List<String> credentialTypes = parseStringList(node.get("credential-types"));
         Map<String, List<String>> profiles = parseProfiles(node.get("profiles"));
-        String defaultProfile = textField(node, "default-profile");
-        return new SigningConfig(signer, toolchain, profiles, defaultProfile);
+        return new SigningConfig(signer, toolchain, credentialTypes, profiles);
     }
 
     private static Map<String, List<String>> parseProfiles(JsonNode node) {

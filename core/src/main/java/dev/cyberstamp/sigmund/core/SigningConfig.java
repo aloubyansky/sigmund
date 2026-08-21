@@ -8,8 +8,19 @@ import java.util.Map;
  * <p>
  * References a signer from the shared {@code signers} registry by name.
  * The {@code toolchain} specifies which tools to use for signing and their
- * priority order. Profiles select subsets of credential types for different
- * signing scenarios.
+ * priority order.
+ *
+ * <h2>Credential type filtering</h2>
+ * <p>
+ * {@code credentialTypes} is the direct way to restrict which signature types are produced.
+ * For example, {@code [pgp4, pgp6]} produces both OpenPGP v4 and v6 signatures.
+ * When set, it serves as the default filter — only tools whose
+ * {@link SignatureTool#supportedCredentialTypes()} intersects with this list are used.
+ * <p>
+ * Named {@code profiles} are an opt-in overlay for scenarios that require switching
+ * between different credential type sets at invocation time (e.g., {@code --profile classic}
+ * vs {@code --profile hybrid}). When a profile is requested by name, it takes precedence
+ * over {@code credentialTypes}. When neither is set, all available signing tools are used.
  *
  * <h2>Toolchain resolution</h2>
  * <p>
@@ -20,27 +31,28 @@ import java.util.Map;
  *
  * @param signer the signer identity name (e.g., {@code "alice"}), or {@code null}
  * @param toolchain tools to use for signing and their priority order; empty means use default
- * @param profiles named profiles mapping to credential type lists
- * @param defaultProfile the default profile name, or {@code null} to use all credentials
+ * @param credentialTypes default credential types to produce; empty means use all available
+ * @param profiles named profiles mapping to credential type lists; opt-in overlay
  * @see DiscoveryConfig#effectiveToolchain()
  * @see ToolsConfig
  */
 public record SigningConfig(
         String signer,
         List<String> toolchain,
-        Map<String, List<String>> profiles,
-        String defaultProfile) {
+        List<String> credentialTypes,
+        Map<String, List<String>> profiles) {
 
     /**
-     * Default signing configuration: no signer, empty toolchain, no profiles.
+     * Default signing configuration: no signer, empty toolchain, no credential types, no profiles.
      */
-    public static final SigningConfig DEFAULT = new SigningConfig(null, List.of(), Map.of(), null);
+    public static final SigningConfig DEFAULT = new SigningConfig(null, List.of(), List.of(), Map.of());
 
     /**
      * Creates a signing config with defensive copies.
      */
     public SigningConfig {
         toolchain = toolchain != null ? List.copyOf(toolchain) : List.of();
+        credentialTypes = credentialTypes != null ? List.copyOf(credentialTypes) : List.of();
         profiles = profiles != null ? Map.copyOf(profiles) : Map.of();
     }
 }
