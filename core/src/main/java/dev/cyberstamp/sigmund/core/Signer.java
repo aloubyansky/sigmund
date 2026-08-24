@@ -182,6 +182,7 @@ public class Signer {
      */
     private Path createTempSigFile(Path outputDir, SignatureTool tool) {
         try {
+            Files.createDirectories(outputDir);
             return Files.createTempFile(outputDir, "sig-" + tool.name() + "-", ".tmp");
         } catch (IOException e) {
             throw new ToolExecutionException("Failed to create temp file for signing", e);
