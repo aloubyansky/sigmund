@@ -13,7 +13,7 @@ class SignatureEvidenceAdapterTest {
     private static final Path ARTIFACT = Path.of("artifact.jar");
     private static final Path EVIDENCE = Path.of("artifact.jar.asc");
     private static final String FP = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
-    private static final OpenPgpVerificationUnit V4_UNIT = new OpenPgpVerificationUnit("armored", 4, FP, 1);
+    private static final OpenPgpClaim V4_UNIT = new OpenPgpClaim("armored", 4, FP, 1);
 
     @Nested
     class BasicVerification {
@@ -80,7 +80,7 @@ class SignatureEvidenceAdapterTest {
         @Test
         void multipleUnitsRoutedIndependently() {
             var format = mockFormat("openpgp", ".asc", true,
-                    List.of(V4_UNIT, new OpenPgpVerificationUnit("armored2", 6, "FP2", 1)));
+                    List.of(V4_UNIT, new OpenPgpClaim("armored2", 6, "FP2", 1)));
             var v4Tool = mockToolForVersion("gpg", 4, passVerifyResult(),
                     List.of(new FingerprintCredential("openpgp4", FP)));
             var v6Tool = mockToolForVersion("sq", 6, passVerifyResult(),
@@ -216,7 +216,7 @@ class SignatureEvidenceAdapterTest {
     }
 
     private static SignatureFormat mockFormat(String name, String ext, boolean canHandle,
-            List<VerificationUnit> units) {
+            List<Claim> claims) {
         return new SignatureFormat() {
             @Override
             public String name() {
@@ -234,8 +234,8 @@ class SignatureEvidenceAdapterTest {
             }
 
             @Override
-            public List<VerificationUnit> parse(Path f) {
-                return units;
+            public List<Claim> parse(Path f) {
+                return claims;
             }
         };
     }
@@ -281,7 +281,7 @@ class SignatureEvidenceAdapterTest {
             }
 
             @Override
-            public boolean canVerify(VerificationUnit unit) {
+            public boolean canVerify(Claim claim) {
                 return canVerify;
             }
 
@@ -291,7 +291,7 @@ class SignatureEvidenceAdapterTest {
             }
 
             @Override
-            public VerifyResult verify(Path a, VerificationUnit u) {
+            public VerifyResult verify(Path a, Claim u) {
                 return result;
             }
 
@@ -331,8 +331,8 @@ class SignatureEvidenceAdapterTest {
             }
 
             @Override
-            public boolean canVerify(VerificationUnit unit) {
-                return unit instanceof OpenPgpVerificationUnit o && o.packetVersion() == version;
+            public boolean canVerify(Claim claim) {
+                return claim instanceof OpenPgpClaim o && o.packetVersion() == version;
             }
 
             @Override
@@ -341,7 +341,7 @@ class SignatureEvidenceAdapterTest {
             }
 
             @Override
-            public VerifyResult verify(Path a, VerificationUnit u) {
+            public VerifyResult verify(Path a, Claim u) {
                 return result;
             }
 
@@ -392,7 +392,7 @@ class SignatureEvidenceAdapterTest {
         }
 
         @Override
-        public boolean canVerify(VerificationUnit unit) {
+        public boolean canVerify(Claim claim) {
             return true;
         }
 
@@ -402,7 +402,7 @@ class SignatureEvidenceAdapterTest {
         }
 
         @Override
-        public VerifyResult verify(Path a, VerificationUnit u) {
+        public VerifyResult verify(Path a, Claim u) {
             if (imported) {
                 return new OpenPgpVerifyResult(Verdict.PASS, "Test", "RSA", 4, FP, FP);
             }
@@ -429,7 +429,7 @@ class SignatureEvidenceAdapterTest {
         }
 
         private static SignatureFormat mockFormat(String name, String ext, boolean canHandle,
-                List<VerificationUnit> units) {
+                List<Claim> claims) {
             return new SignatureFormat() {
                 @Override
                 public String name() {
@@ -447,8 +447,8 @@ class SignatureEvidenceAdapterTest {
                 }
 
                 @Override
-                public List<VerificationUnit> parse(Path f) {
-                    return units;
+                public List<Claim> parse(Path f) {
+                    return claims;
                 }
             };
         }

@@ -1,17 +1,17 @@
 package dev.cyberstamp.sigmund.sigstore;
 
+import dev.cyberstamp.sigmund.core.Claim;
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.EmailCredential;
 import dev.cyberstamp.sigmund.core.SignResult;
 import dev.cyberstamp.sigmund.core.SignatureFormat;
 import dev.cyberstamp.sigmund.core.SignatureTool;
 import dev.cyberstamp.sigmund.core.SigningInfo;
+import dev.cyberstamp.sigmund.core.SigstoreClaim;
 import dev.cyberstamp.sigmund.core.SigstoreCredential;
-import dev.cyberstamp.sigmund.core.SigstoreVerificationUnit;
 import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
 import dev.cyberstamp.sigmund.core.ToolExecutionException;
 import dev.cyberstamp.sigmund.core.Verdict;
-import dev.cyberstamp.sigmund.core.VerificationUnit;
 import dev.cyberstamp.sigmund.core.VerifyResult;
 import dev.sigstore.KeylessSigner;
 import dev.sigstore.KeylessSignerException;
@@ -123,8 +123,8 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
     }
 
     @Override
-    public boolean canVerify(VerificationUnit unit) {
-        return unit instanceof SigstoreVerificationUnit;
+    public boolean canVerify(Claim claim) {
+        return claim instanceof SigstoreClaim;
     }
 
     /**
@@ -162,7 +162,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
     /**
      * Verifies a Sigstore bundle against an artifact.
      * <p>
-     * Parses the bundle JSON from the {@link SigstoreVerificationUnit}, delegates
+     * Parses the bundle JSON from the {@link SigstoreClaim}, delegates
      * cryptographic verification to {@link KeylessVerifier#verify(Path, Bundle,
      * dev.sigstore.VerificationOptions)}, and on success populates the result with
      * identity metadata (OIDC issuer, subject, algorithm, Rekor log index) extracted
@@ -172,16 +172,16 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
      * the trusted root fetched at {@link KeylessVerifier} construction time.
      *
      * @param artifactFile the artifact that was signed
-     * @param unit the Sigstore verification unit
+     * @param claim the Sigstore claim
      * @return the verification result with OIDC identity and Rekor log index
      * @throws ToolExecutionException for infrastructure failures (network, configuration)
      */
     @Override
-    public VerifyResult verify(Path artifactFile, VerificationUnit unit) {
+    public VerifyResult verify(Path artifactFile, Claim claim) {
         if (verifier == null) {
             throw new IllegalStateException("Verification not configured");
         }
-        SigstoreVerificationUnit su = (SigstoreVerificationUnit) unit;
+        SigstoreClaim su = (SigstoreClaim) claim;
 
         Bundle bundle;
         try {

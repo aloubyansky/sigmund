@@ -14,7 +14,7 @@ import java.util.List;
  * <p>
  * A single {@code .asc} file may contain multiple armored blocks (e.g., a classical
  * v4 signature followed by a PQC v6 signature). Each block is parsed into a separate
- * {@link OpenPgpVerificationUnit} with metadata extracted from the signature packet.
+ * {@link OpenPgpClaim} with metadata extracted from the signature packet.
  *
  * @see AscCombiner
  */
@@ -58,25 +58,25 @@ public class OpenPgpSignatureFormat implements SignatureFormat {
     }
 
     /**
-     * Parses an ASCII-armored signature file into individually verifiable units.
+     * Parses an ASCII-armored signature file into individually verifiable claims.
      * <p>
      * Extracts all armored blocks, inspects each block's signature packet for
      * version, algorithm ID, and issuer fingerprint, and wraps each into an
-     * {@link OpenPgpVerificationUnit}.
+     * {@link OpenPgpClaim}.
      *
      * @param signatureFile the path to the {@code .asc} file
-     * @return the parsed verification units, one per armored block
+     * @return the parsed claims, one per armored block
      * @throws ToolExecutionException if the file cannot be read
      */
     @Override
-    public List<VerificationUnit> parse(Path signatureFile) {
+    public List<Claim> parse(Path signatureFile) {
         String content = readFile(signatureFile);
         List<String> blocks = AscCombiner.extractAllBlocks(content);
-        List<VerificationUnit> units = new ArrayList<>(blocks.size());
+        List<Claim> claims = new ArrayList<>(blocks.size());
         for (String block : blocks) {
-            units.add(parseBlock(block));
+            claims.add(parseBlock(block));
         }
-        return units;
+        return claims;
     }
 
     @Override
@@ -110,9 +110,9 @@ public class OpenPgpSignatureFormat implements SignatureFormat {
         }
     }
 
-    private OpenPgpVerificationUnit parseBlock(String block) {
+    private OpenPgpClaim parseBlock(String block) {
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(block);
-        return new OpenPgpVerificationUnit(
+        return new OpenPgpClaim(
                 block,
                 info.version(),
                 info.issuerFingerprint(),

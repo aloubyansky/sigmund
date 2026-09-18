@@ -13,13 +13,13 @@ package dev.cyberstamp.sigmund.core;
  * <p>
  * New <em>tools</em> within an existing format can be plugged in via
  * {@code Sigmund.builder().addTool()}. New <em>formats</em> require a core release
- * because both {@code VerificationUnit} and {@link VerifyResult} are sealed hierarchies.
+ * because both {@code Claim} and {@link VerifyResult} are sealed hierarchies.
  * This is intentional — a new format introduces new packet structures and verification
  * semantics that warrant review as part of core.
  *
  * @see SignatureFormat#parse(java.nio.file.Path)
- * @see SignatureTool#canVerify(VerificationUnit)
+ * @see SignatureTool#canVerify(Claim)
  */
-public sealed interface VerificationUnit
-        permits OpenPgpVerificationUnit, SigstoreVerificationUnit {
+public sealed interface Claim
+        permits OpenPgpClaim, SigstoreClaim {
 }

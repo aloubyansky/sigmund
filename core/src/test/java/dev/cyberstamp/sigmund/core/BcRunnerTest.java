@@ -47,14 +47,14 @@ class BcRunnerTest {
     @Test
     void canVerifyAcceptsAnyOpenPgpUnit() {
         BcRunner runner = createVerifyOnly(Path.of(System.getProperty("java.io.tmpdir")));
-        assertThat(runner.canVerify(new OpenPgpVerificationUnit("block", 4, "FP", 27))).isTrue();
-        assertThat(runner.canVerify(new OpenPgpVerificationUnit("block", 6, "FP", 27))).isTrue();
+        assertThat(runner.canVerify(new OpenPgpClaim("block", 4, "FP", 27))).isTrue();
+        assertThat(runner.canVerify(new OpenPgpClaim("block", 6, "FP", 27))).isTrue();
     }
 
     @Test
     void canVerifyRejectsSigstoreUnit() {
         BcRunner runner = createVerifyOnly(Path.of(System.getProperty("java.io.tmpdir")));
-        assertThat(runner.canVerify(new SigstoreVerificationUnit("{}"))).isFalse();
+        assertThat(runner.canVerify(new SigstoreClaim("{}"))).isFalse();
     }
 
     @Test
@@ -106,10 +106,10 @@ class BcRunnerTest {
 
         String armored = Files.readString(sigFile);
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
-        OpenPgpVerificationUnit unit = new OpenPgpVerificationUnit(
+        OpenPgpClaim claim = new OpenPgpClaim(
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
 
-        VerifyResult result = signer.verify(artifact, unit);
+        VerifyResult result = signer.verify(artifact, claim);
         assertThat(result.verdict()).isEqualTo(Verdict.PASS);
     }
 
@@ -131,9 +131,9 @@ class BcRunnerTest {
         String armored = Files.readString(sigFile);
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
 
-        // Create a unit with null fingerprint, simulating a v4 signature
+        // Create a claim with null fingerprint, simulating a v4 signature
         // without Issuer Fingerprint subpacket (type 33)
-        OpenPgpVerificationUnit unitNoFp = new OpenPgpVerificationUnit(
+        OpenPgpClaim unitNoFp = new OpenPgpClaim(
                 armored, info.version(), null, info.algorithmId());
 
         // BC should extract the key ID from the signature bytes and find the key
@@ -164,7 +164,7 @@ class BcRunnerTest {
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
 
         // Verify with null fingerprint against the empty store
-        OpenPgpVerificationUnit unitNoFp = new OpenPgpVerificationUnit(
+        OpenPgpClaim unitNoFp = new OpenPgpClaim(
                 armored, info.version(), null, info.algorithmId());
 
         VerifyResult result = runner.verify(artifact, unitNoFp);
@@ -206,10 +206,10 @@ class BcRunnerTest {
 
         String armored = Files.readString(sigFile);
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
-        OpenPgpVerificationUnit unit = new OpenPgpVerificationUnit(
+        OpenPgpClaim claim = new OpenPgpClaim(
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
 
-        VerifyResult result = verifier.verify(artifact, unit);
+        VerifyResult result = verifier.verify(artifact, claim);
         assertThat(result.verdict()).isEqualTo(Verdict.PASS);
         assertThat(Files.exists(verifierCertD)).as("cert-d should not exist — key was ephemeral").isFalse();
     }
@@ -217,11 +217,11 @@ class BcRunnerTest {
     @Test
     void verifyNoKeyReturnsNoKeyVerdict(@TempDir Path tempDir) throws Exception {
         BcRunner runner = createVerifyOnly(tempDir);
-        OpenPgpVerificationUnit unit = new OpenPgpVerificationUnit(
+        OpenPgpClaim claim = new OpenPgpClaim(
                 "-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n",
                 4, "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF", 27);
 
-        VerifyResult result = runner.verify(tempDir.resolve("nonexistent"), unit);
+        VerifyResult result = runner.verify(tempDir.resolve("nonexistent"), claim);
         assertThat(result.verdict()).isEqualTo(Verdict.NO_KEY);
     }
 
@@ -267,10 +267,10 @@ class BcRunnerTest {
 
         String armored = Files.readString(sigFile);
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
-        OpenPgpVerificationUnit unit = new OpenPgpVerificationUnit(
+        OpenPgpClaim claim = new OpenPgpClaim(
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
 
-        VerifyResult result = signer.verify(artifact, unit);
+        VerifyResult result = signer.verify(artifact, claim);
         assertThat(result.verdict()).isEqualTo(Verdict.PASS);
     }
 
@@ -367,10 +367,10 @@ class BcRunnerTest {
 
         String armored = Files.readString(sigFile);
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
-        OpenPgpVerificationUnit unit = new OpenPgpVerificationUnit(
+        OpenPgpClaim claim = new OpenPgpClaim(
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
 
-        assertThat(signer.verify(artifact, unit).verdict()).isEqualTo(Verdict.PASS);
+        assertThat(signer.verify(artifact, claim).verdict()).isEqualTo(Verdict.PASS);
     }
 
     @Test
@@ -389,10 +389,10 @@ class BcRunnerTest {
 
         String armored = Files.readString(sigFile);
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
-        OpenPgpVerificationUnit unit = new OpenPgpVerificationUnit(
+        OpenPgpClaim claim = new OpenPgpClaim(
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
 
-        assertThat(signer.verify(artifact, unit).verdict()).isEqualTo(Verdict.PASS);
+        assertThat(signer.verify(artifact, claim).verdict()).isEqualTo(Verdict.PASS);
     }
 
     @Test

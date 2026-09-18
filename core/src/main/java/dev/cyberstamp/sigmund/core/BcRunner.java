@@ -221,11 +221,11 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      * {@inheritDoc}
      *
      * <p>
-     * Accepts any {@link OpenPgpVerificationUnit} — handles all packet versions.
+     * Accepts any {@link OpenPgpClaim} — handles all packet versions.
      */
     @Override
-    public boolean canVerify(VerificationUnit unit) {
-        return unit instanceof OpenPgpVerificationUnit;
+    public boolean canVerify(Claim claim) {
+        return claim instanceof OpenPgpClaim;
     }
 
     /**
@@ -235,8 +235,8 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      * Verifies a detached OpenPGP signature using Bouncy Castle.
      */
     @Override
-    public VerifyResult verify(Path artifactFile, VerificationUnit unit) {
-        if (!(unit instanceof OpenPgpVerificationUnit opgu)) {
+    public VerifyResult verify(Path artifactFile, Claim claim) {
+        if (!(claim instanceof OpenPgpClaim opgu)) {
             return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, -1, null, null);
         }
         return verifyOpenPgpUnit(artifactFile, opgu);
@@ -566,7 +566,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
     /**
      * Verifies a single OpenPGP signature block against an artifact.
      */
-    private OpenPgpVerifyResult verifyOpenPgpUnit(Path artifactFile, OpenPgpVerificationUnit opgu) {
+    private OpenPgpVerifyResult verifyOpenPgpUnit(Path artifactFile, OpenPgpClaim opgu) {
         int version = opgu.packetVersion();
         String fingerprint = opgu.issuerFingerprint();
         String algorithm = resolveAlgorithm(opgu.algorithmId());
@@ -590,7 +590,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
                 fingerprint, algorithm, userId);
     }
 
-    private String extractKeyIdFromSignature(OpenPgpVerificationUnit opgu) {
+    private String extractKeyIdFromSignature(OpenPgpClaim opgu) {
         try {
             byte[] sigBytes = AscCombiner.dearmor(opgu.armoredBlock());
             PGPSignature sig = parseSignature(sigBytes);
@@ -606,7 +606,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
     /**
      * Performs the cryptographic signature verification.
      */
-    private OpenPgpVerifyResult verifySignature(Path artifactFile, OpenPgpVerificationUnit opgu,
+    private OpenPgpVerifyResult verifySignature(Path artifactFile, OpenPgpClaim opgu,
             PGPPublicKeyRing pubKeyRing, int version, String fingerprint,
             String algorithm, String userId) {
         try {

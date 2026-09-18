@@ -122,8 +122,8 @@ class BcSqCrossToolTest {
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
         assertThat(info.version() > 0).as("Failed to parse signature packet").isTrue();
 
-        OpenPgpVerificationUnit unit = new OpenPgpVerificationUnit(
+        OpenPgpClaim claim = new OpenPgpClaim(
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
-        return runner.verify(artifact, unit);
+        return runner.verify(artifact, claim);
     }
 }

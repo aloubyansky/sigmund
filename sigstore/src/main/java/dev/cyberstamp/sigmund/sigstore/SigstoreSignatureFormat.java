@@ -1,9 +1,9 @@
 package dev.cyberstamp.sigmund.sigstore;
 
+import dev.cyberstamp.sigmund.core.Claim;
 import dev.cyberstamp.sigmund.core.SignatureFormat;
-import dev.cyberstamp.sigmund.core.SigstoreVerificationUnit;
+import dev.cyberstamp.sigmund.core.SigstoreClaim;
 import dev.cyberstamp.sigmund.core.ToolExecutionException;
-import dev.cyberstamp.sigmund.core.VerificationUnit;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -17,10 +17,10 @@ import java.util.List;
  * Each bundle is a standalone JSON file containing the Fulcio certificate,
  * message signature, and Rekor transparency log entry. Unlike OpenPGP where
  * one {@code .asc} file may contain multiple armored blocks, a Sigstore
- * bundle is always a single verifiable unit.
+ * bundle is always a single verifiable claim.
  *
  * @see SignatureFormat
- * @see SigstoreVerificationUnit
+ * @see SigstoreClaim
  */
 public class SigstoreSignatureFormat implements SignatureFormat {
 
@@ -82,20 +82,20 @@ public class SigstoreSignatureFormat implements SignatureFormat {
     }
 
     /**
-     * Parses a Sigstore bundle file into a single {@link SigstoreVerificationUnit}.
+     * Parses a Sigstore bundle file into a single {@link SigstoreClaim}.
      * <p>
      * The entire file content is wrapped as a JSON string — no sub-parsing
      * is performed at this stage.
      *
      * @param signatureFile the Sigstore bundle file
-     * @return a single-element list containing the verification unit
+     * @return a single-element list containing the claim
      * @throws ToolExecutionException if the file cannot be read
      */
     @Override
-    public List<VerificationUnit> parse(Path signatureFile) {
+    public List<Claim> parse(Path signatureFile) {
         try {
             String json = Files.readString(signatureFile);
-            return List.of(new SigstoreVerificationUnit(json));
+            return List.of(new SigstoreClaim(json));
         } catch (IOException e) {
             throw new ToolExecutionException(
                     "Failed to read Sigstore bundle: " + signatureFile, e);

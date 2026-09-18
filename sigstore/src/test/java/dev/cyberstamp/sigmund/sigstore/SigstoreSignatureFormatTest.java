@@ -2,8 +2,8 @@ package dev.cyberstamp.sigmund.sigstore;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import dev.cyberstamp.sigmund.core.SigstoreVerificationUnit;
-import dev.cyberstamp.sigmund.core.VerificationUnit;
+import dev.cyberstamp.sigmund.core.Claim;
+import dev.cyberstamp.sigmund.core.SigstoreClaim;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -106,11 +106,11 @@ class SigstoreSignatureFormatTest {
             Path file = tempDir.resolve("artifact.jar.sigstore.json");
             Files.writeString(file, bundle);
 
-            List<VerificationUnit> units = format.parse(file);
+            List<Claim> claims = format.parse(file);
 
-            assertThat(units.size()).isEqualTo(1);
-            assertThat(units.get(0)).isInstanceOf(SigstoreVerificationUnit.class);
-            assertThat(((SigstoreVerificationUnit) units.get(0)).jsonBundle())
+            assertThat(claims.size()).isEqualTo(1);
+            assertThat(claims.get(0)).isInstanceOf(SigstoreClaim.class);
+            assertThat(((SigstoreClaim) claims.get(0)).jsonBundle())
                     .isEqualTo(bundle);
         }
 
@@ -120,9 +120,9 @@ class SigstoreSignatureFormatTest {
             Path file = tempDir.resolve("bundle.sigstore.json");
             Files.writeString(file, bundle);
 
-            List<VerificationUnit> units = format.parse(file);
+            List<Claim> claims = format.parse(file);
 
-            assertThat(((SigstoreVerificationUnit) units.get(0)).jsonBundle())
+            assertThat(((SigstoreClaim) claims.get(0)).jsonBundle())
                     .isEqualTo(bundle);
         }
     }

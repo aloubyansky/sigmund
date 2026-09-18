@@ -91,9 +91,9 @@ class OpenPgpSignatureFormatTest {
             Path file = tmp.resolve("sig.asc");
             Files.writeString(file, block);
 
-            List<VerificationUnit> units = format.parse(file);
-            assertThat(units).hasSize(1);
-            assertThat(units.get(0)).isInstanceOf(OpenPgpVerificationUnit.class);
+            List<Claim> claims = format.parse(file);
+            assertThat(claims).hasSize(1);
+            assertThat(claims.get(0)).isInstanceOf(OpenPgpClaim.class);
         }
 
         @Test
@@ -103,8 +103,8 @@ class OpenPgpSignatureFormatTest {
             Path file = tmp.resolve("combined.asc");
             Files.writeString(file, block1 + block2);
 
-            List<VerificationUnit> units = format.parse(file);
-            assertThat(units).hasSize(2);
+            List<Claim> claims = format.parse(file);
+            assertThat(claims).hasSize(2);
         }
 
         @Test
@@ -113,8 +113,8 @@ class OpenPgpSignatureFormatTest {
             Path file = tmp.resolve("sig.asc");
             Files.writeString(file, block);
 
-            OpenPgpVerificationUnit unit = (OpenPgpVerificationUnit) format.parse(file).get(0);
-            assertThat(unit.armoredBlock()).contains("BEGIN PGP SIGNATURE");
+            OpenPgpClaim claim = (OpenPgpClaim) format.parse(file).get(0);
+            assertThat(claim.armoredBlock()).contains("BEGIN PGP SIGNATURE");
         }
     }
 

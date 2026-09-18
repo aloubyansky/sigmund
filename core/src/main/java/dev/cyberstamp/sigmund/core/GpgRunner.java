@@ -523,11 +523,11 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
     /**
      * {@inheritDoc}
      * <p>
-     * Accepts {@link OpenPgpVerificationUnit}s with {@code packetVersion <= 4}.
+     * Accepts {@link OpenPgpClaim}s with {@code packetVersion <= 4}.
      */
     @Override
-    public boolean canVerify(VerificationUnit unit) {
-        return unit instanceof OpenPgpVerificationUnit opgu
+    public boolean canVerify(Claim claim) {
+        return claim instanceof OpenPgpClaim opgu
                 && opgu.packetVersion() > 0
                 && opgu.packetVersion() <= 4;
     }
@@ -539,8 +539,8 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
      * the result into an {@link OpenPgpVerifyResult}.
      */
     @Override
-    public VerifyResult verify(Path artifactFile, VerificationUnit unit) {
-        if (!(unit instanceof OpenPgpVerificationUnit opgu)) {
+    public VerifyResult verify(Path artifactFile, Claim claim) {
+        if (!(claim instanceof OpenPgpClaim opgu)) {
             return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, -1, null, null);
         }
         return verifyArmoredBlock(artifactFile, opgu);
@@ -665,7 +665,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
         return listKeyUserId(keyId);
     }
 
-    private OpenPgpVerifyResult verifyArmoredBlock(Path artifactFile, OpenPgpVerificationUnit opgu) {
+    private OpenPgpVerifyResult verifyArmoredBlock(Path artifactFile, OpenPgpClaim opgu) {
         Path sigFile = null;
         try {
             sigFile = Files.createTempFile("gpg-verify-", ".asc");
@@ -679,7 +679,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
         }
     }
 
-    private OpenPgpVerifyResult toOpenPgpVerifyResult(GpgVerifyResult gpgResult, OpenPgpVerificationUnit opgu) {
+    private OpenPgpVerifyResult toOpenPgpVerifyResult(GpgVerifyResult gpgResult, OpenPgpClaim opgu) {
         // Prefer the full fingerprint from the signature packet's issuer fingerprint subpacket.
         // Fall back to GPG's short key ID when the subpacket is absent (older v4 signatures).
         // FingerprintCredential.matches() uses suffix matching, so the short key ID still

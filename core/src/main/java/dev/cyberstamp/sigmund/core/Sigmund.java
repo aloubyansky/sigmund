@@ -365,10 +365,10 @@ public class Sigmund implements AutoCloseable {
         if (format == null) {
             return new FileSignatureReport(signatureFile, "unknown", List.of());
         }
-        List<VerificationUnit> units = format.parse(signatureFile);
+        List<Claim> claims = format.parse(signatureFile);
         List<VerifyResult> results = new ArrayList<>();
-        for (VerificationUnit unit : units) {
-            VerifyResult result = verifyUnit(artifactFile, unit);
+        for (Claim claim : claims) {
+            VerifyResult result = verifyClaim(artifactFile, claim);
             if (result != null) {
                 results.add(result);
             }
@@ -386,7 +386,7 @@ public class Sigmund implements AutoCloseable {
     }
 
     /**
-     * Verifies a single verification unit against the artifact file.
+     * Verifies a single claim against the artifact file.
      * <p>
      * Tries each tool in priority order. Only {@link Verdict#PASS} stops
      * iteration immediately; {@code NO_KEY} and {@code FAIL} fall through
@@ -396,13 +396,13 @@ public class Sigmund implements AutoCloseable {
      *
      * @return the best result, or {@code null} if all tools returned {@code SKIPPED}
      */
-    private VerifyResult verifyUnit(Path artifactFile, VerificationUnit unit) {
+    private VerifyResult verifyClaim(Path artifactFile, Claim claim) {
         VerifyResult best = null;
         for (SignatureTool tool : tools) {
-            if (!tool.canVerify(unit)) {
+            if (!tool.canVerify(claim)) {
                 continue;
             }
-            VerifyResult result = tool.verify(artifactFile, unit);
+            VerifyResult result = tool.verify(artifactFile, claim);
             if (result.verdict() == Verdict.PASS) {
                 return result;
             }

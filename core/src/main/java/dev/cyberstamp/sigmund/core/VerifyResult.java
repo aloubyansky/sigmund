@@ -1,7 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
 /**
- * The result of verifying a single {@link VerificationUnit} via a {@link SignatureTool}.
+ * The result of verifying a single {@link Claim} via a {@link SignatureTool}.
  * <p>
  * Each backend produces a typed subclass with backend-specific fields (e.g.,
  * {@link OpenPgpVerifyResult} carries the key fingerprint, {@link SigstoreVerifyResult}
@@ -12,7 +12,7 @@ package dev.cyberstamp.sigmund.core;
  * result into proven {@link Credential}s for identity matching — the tool owns
  * the mapping from its result type to proven credentials.
  *
- * @see SignatureTool#verify(java.nio.file.Path, VerificationUnit)
+ * @see SignatureTool#verify(java.nio.file.Path, Claim)
  * @see OpenPgpVerifyResult
  * @see SigstoreVerifyResult
  * @see UnverifiedResult

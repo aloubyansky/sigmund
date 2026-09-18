@@ -647,11 +647,11 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     /**
      * {@inheritDoc}
      * <p>
-     * Accepts {@link OpenPgpVerificationUnit}s with {@code packetVersion >= 5}.
+     * Accepts {@link OpenPgpClaim}s with {@code packetVersion >= 5}.
      */
     @Override
-    public boolean canVerify(VerificationUnit unit) {
-        return unit instanceof OpenPgpVerificationUnit opgu
+    public boolean canVerify(Claim claim) {
+        return claim instanceof OpenPgpClaim opgu
                 && opgu.packetVersion() >= 5;
     }
 
@@ -708,8 +708,8 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
      * from the Sequoia cert store.
      */
     @Override
-    public VerifyResult verify(Path artifactFile, VerificationUnit unit) {
-        if (!(unit instanceof OpenPgpVerificationUnit opgu)) {
+    public VerifyResult verify(Path artifactFile, Claim claim) {
+        if (!(claim instanceof OpenPgpClaim opgu)) {
             return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, -1, null, null);
         }
         return verifyOpenPgpUnit(artifactFile, opgu);
@@ -733,7 +733,7 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
         return List.of();
     }
 
-    private OpenPgpVerifyResult verifyOpenPgpUnit(Path artifactFile, OpenPgpVerificationUnit opgu) {
+    private OpenPgpVerifyResult verifyOpenPgpUnit(Path artifactFile, OpenPgpClaim opgu) {
         int version = opgu.packetVersion();
         String fingerprint = opgu.issuerFingerprint();
         int algoId = opgu.algorithmId();

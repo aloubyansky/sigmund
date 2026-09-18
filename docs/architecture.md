@@ -54,7 +54,7 @@ Sigmund supports three OpenPGP backends, each with distinct capabilities:
 
 ## Toolchain and Routing
 
-Verification units are routed to tools based on a configurable toolchain. The default toolchain is:
+Claims are routed to tools based on a configurable toolchain. The default toolchain is:
 
 ```
 [bc, sq, gpg]
@@ -64,7 +64,7 @@ BC attempts verification first. If BC cannot fully verify a signature (missing k
 
 The routing mechanism works as follows:
 
-1. Each signature file is parsed into one or more `VerificationUnit`s by its `SignatureFormat`
+1. Each signature file is parsed into one or more `Claim`s by its `SignatureFormat`
 2. For each unit, tools are checked in toolchain order
 3. Each tool where `canVerify(unit)` returns true attempts verification
 4. If a tool returns `PASS`, it is used immediately
@@ -223,11 +223,11 @@ artifact.jar + artifact.jar.asc
     +-- SignatureVerificationReport (all results)
 ```
 
-Each armored block is parsed into a `VerificationUnit` and routed to the first available tool in the priority list that can handle it (via `canVerify()`).
+Each armored block is parsed into a `Claim` and routed to the first available tool in the priority list that can handle it (via `canVerify()`).
 
 ### BC Verification
 
-BC handles any `OpenPgpVerificationUnit` (v4 or v6 classic algorithms). Verification steps:
+BC handles any `OpenPgpClaim` (v4 or v6 classic algorithms). Verification steps:
 
 1. Extract issuer fingerprint from the signature packet's Issuer Fingerprint subpacket (type 33)
 2. Search for the signer's public key in GnuPG pubring, cert-d, or BC private store
@@ -264,7 +264,7 @@ Sigmund implements a two-layer architecture separating cryptographic verificatio
 Layer 2 is the `SignatureTool` SPI, implemented by `BcRunner`, `SqRunner`, and `GpgRunner`. Each tool:
 
 1. Declares capabilities via `supportedCredentialTypes()` (e.g., `["openpgp4", "openpgp6"]`)
-2. Routes verification via `canVerify(VerificationUnit)` (packet version and algorithm)
+2. Routes verification via `canVerify(Claim)` (packet version and algorithm)
 3. Performs cryptographic verification → `VerifyResult` (verdict + metadata)
 4. Extracts proven credentials via `extractCredentials(VerifyResult)` → `List<Credential>`
 
@@ -277,7 +277,7 @@ The credential type is determined by the packet version that was cryptographical
 Layer 1 is the `EvidenceProvider` interface, bridged from Layer 2 via `SignatureEvidenceAdapter`. The adapter:
 
 1. Delegates `canHandle(Path)` to `SignatureFormat`
-2. Parses signature files into `VerificationUnit`s
+2. Parses signature files into `Claim`s
 3. Routes each unit to the appropriate `SignatureTool`
 4. Handles key fetching on `NO_KEY` verdict (if `resolve-signers` is enabled)
 5. Wraps `VerifyResult` + extracted credentials into `EvidenceResult`

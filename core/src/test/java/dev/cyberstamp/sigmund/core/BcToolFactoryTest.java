@@ -104,10 +104,10 @@ class BcToolFactoryTest {
 
         String armored = Files.readString(sigFile);
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
-        OpenPgpVerificationUnit unit = new OpenPgpVerificationUnit(
+        OpenPgpClaim claim = new OpenPgpClaim(
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
 
-        VerifyResult result = signer.verify(artifact, unit);
+        VerifyResult result = signer.verify(artifact, claim);
         assertThat(result.verdict()).isEqualTo(Verdict.PASS);
     }
 

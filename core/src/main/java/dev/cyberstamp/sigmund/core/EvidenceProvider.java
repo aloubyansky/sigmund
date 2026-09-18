@@ -9,7 +9,7 @@ import java.util.List;
  * This is the Layer 1 (identity verification) interface — it takes a file and returns
  * proven credentials via {@link EvidenceResult}. It operates at a higher level than
  * the Layer 2 {@code SignatureTool} interface, which works with parsed
- * {@code VerificationUnit}s.
+ * {@code Claim}s.
  *
  * <h2>Implementations</h2>
  * <ul>

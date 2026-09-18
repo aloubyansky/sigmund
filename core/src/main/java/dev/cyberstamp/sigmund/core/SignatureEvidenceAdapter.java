@@ -9,15 +9,15 @@ import java.util.List;
  * <p>
  * Wraps a {@link SignatureFormat} and its associated {@link SignatureTool}s into an
  * {@link EvidenceProvider}. There is one adapter per format, not per tool — the adapter
- * parses the file once and routes each {@link VerificationUnit} to the right tool via
- * {@link SignatureTool#canVerify(VerificationUnit)}.
+ * parses the file once and routes each {@link Claim} to the right tool via
+ * {@link SignatureTool#canVerify(Claim)}.
  *
  * <h2>Verification flow</h2>
  * <ol>
  * <li>{@link SignatureFormat#canHandle(Path)} → detection</li>
- * <li>{@link SignatureFormat#parse(Path)} → {@link VerificationUnit}s</li>
- * <li>For each unit, find a {@link SignatureTool} where {@code canVerify(unit)} is true</li>
- * <li>{@link SignatureTool#verify(Path, VerificationUnit)} → {@link VerifyResult}</li>
+ * <li>{@link SignatureFormat#parse(Path)} → {@link Claim}s</li>
+ * <li>For each claim, find a {@link SignatureTool} where {@code canVerify(claim)} is true</li>
+ * <li>{@link SignatureTool#verify(Path, Claim)} → {@link VerifyResult}</li>
  * <li>If {@code NO_KEY}, ask the tool to fetch the key (if it implements {@link KeyImporter})
  * and re-verify; if still {@code NO_KEY}, continue to the next tool</li>
  * <li>{@link SignatureTool#extractCredentials(VerifyResult)} → proven credentials</li>
@@ -43,7 +43,7 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * Creates a new adapter bridging the given format and tools into an evidence provider.
      *
      * @param format the signature format (e.g., {@link OpenPgpSignatureFormat})
-     * @param tools the tools that can verify units of this format
+     * @param tools the tools that can verify claims of this format
      */
     public SignatureEvidenceAdapter(SignatureFormat format, List<SignatureTool> tools) {
         this.format = format;
@@ -84,55 +84,55 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
     /**
      * {@inheritDoc}
      * <p>
-     * Parses the evidence file into verification units, verifies each unit with
+     * Parses the evidence file into claims, verifies each claim with
      * the appropriate tool, optionally fetches missing keys, and wraps results
      * into {@link EvidenceResult}s.
      */
     @Override
     public List<EvidenceResult> verify(Path artifactFile, Path evidenceFile) {
-        List<VerificationUnit> units = parseUnits(evidenceFile);
-        List<EvidenceResult> results = new ArrayList<>(units.size());
-        for (VerificationUnit unit : units) {
-            results.add(verifyUnit(artifactFile, unit));
+        List<Claim> claims = parseClaims(evidenceFile);
+        List<EvidenceResult> results = new ArrayList<>(claims.size());
+        for (Claim claim : claims) {
+            results.add(verifyClaim(artifactFile, claim));
         }
         return results;
     }
 
     /**
-     * Parses the evidence file into individual verification units using the underlying format.
+     * Parses the evidence file into individual claims using the underlying format.
      *
      * @param evidenceFile path to the signature/evidence file
-     * @return the parsed verification units
+     * @return the parsed claims
      */
-    private List<VerificationUnit> parseUnits(Path evidenceFile) {
+    private List<Claim> parseClaims(Path evidenceFile) {
         return format.parse(evidenceFile);
     }
 
     /**
-     * Verifies a single verification unit against the artifact file.
+     * Verifies a single claim against the artifact file.
      * <p>
-     * Routes the unit to each tool in priority order. If a tool returns
+     * Routes the claim to each tool in priority order. If a tool returns
      * {@link Verdict#NO_KEY} and implements {@link KeyImporter}, the adapter
      * asks it to fetch the key and re-verifies. Only {@link Verdict#PASS}
      * stops iteration immediately; {@code NO_KEY} and {@code FAIL} fall
      * through to the next tool, keeping the highest-ranked non-PASS result.
      *
      * @param artifactFile the artifact whose signature is being verified
-     * @param unit the verification unit to verify
-     * @return the evidence result for this unit
+     * @param claim the claim to verify
+     * @return the evidence result for this claim
      */
-    private EvidenceResult verifyUnit(Path artifactFile, VerificationUnit unit) {
+    private EvidenceResult verifyClaim(Path artifactFile, Claim claim) {
         EvidenceResult best = null;
         for (SignatureTool tool : tools) {
-            if (!tool.canVerify(unit)) {
+            if (!tool.canVerify(claim)) {
                 continue;
             }
-            VerifyResult result = tool.verify(artifactFile, unit);
+            VerifyResult result = tool.verify(artifactFile, claim);
             if (result.verdict() == Verdict.SKIPPED) {
                 continue;
             }
             if (result.verdict() == Verdict.NO_KEY) {
-                result = fetchKeyAndRetry(artifactFile, unit, tool, result);
+                result = fetchKeyAndRetry(artifactFile, claim, tool, result);
             }
             if (result.verdict() == Verdict.PASS) {
                 return wrapAsEvidence(tool, result);
@@ -155,32 +155,32 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * internally. If the key is fetched, re-verifies with the same tool.
      *
      * @param artifactFile the artifact being verified
-     * @param unit the verification unit whose key is missing
+     * @param claim the claim whose key is missing
      * @param tool the tool to retry verification with
      * @param originalResult the original {@link Verdict#NO_KEY} result
      * @return the result of re-verification after import, or the original result if fetching failed
      */
-    private VerifyResult fetchKeyAndRetry(Path artifactFile, VerificationUnit unit,
+    private VerifyResult fetchKeyAndRetry(Path artifactFile, Claim claim,
             SignatureTool tool, VerifyResult originalResult) {
-        String keyId = extractKeyIdFromUnit(unit);
+        String keyId = extractKeyIdFromClaim(claim);
         if (keyId == null) {
             return originalResult;
         }
 
         if (tool instanceof KeyImporter ki && ki.fetchKey(keyId)) {
-            return tool.verify(artifactFile, unit);
+            return tool.verify(artifactFile, claim);
         }
         return originalResult;
     }
 
     /**
-     * Extracts the key ID (fingerprint) from a verification unit, if available.
+     * Extracts the key ID (fingerprint) from a claim, if available.
      *
-     * @param unit the verification unit
-     * @return the issuer fingerprint for OpenPGP units, or {@code null} for unsupported unit types
+     * @param claim the claim
+     * @return the issuer fingerprint for OpenPGP claims, or {@code null} for unsupported claim types
      */
-    private String extractKeyIdFromUnit(VerificationUnit unit) {
-        if (unit instanceof OpenPgpVerificationUnit opgu) {
+    private String extractKeyIdFromClaim(Claim claim) {
+        if (claim instanceof OpenPgpClaim opgu) {
             return opgu.issuerFingerprint();
         }
         return null;

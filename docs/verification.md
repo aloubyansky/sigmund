@@ -60,7 +60,7 @@ This guide covers how to verify artifact signatures using Sigmund. Signature ver
 Sigmund verifies signatures by:
 
 1. Detecting the signature format from the file extension (`.asc` for OpenPGP, `.sigstore.json` for Sigstore)
-2. Parsing the signature file into verification units
+2. Parsing the signature file into claims
 3. Routing each unit to an appropriate verification tool (BC, Sequoia, GPG, or Sigstore)
 4. Verifying each signature against the artifact
 5. Reporting the results with an overall verdict

@@ -6,7 +6,7 @@ package dev.cyberstamp.sigmund.core;
  * Distinguishes between successful verification, failed verification,
  * missing keys, and skipped verification.
  *
- * @see SignatureTool#verify(java.nio.file.Path, VerificationUnit)
+ * @see SignatureTool#verify(java.nio.file.Path, Claim)
  */
 public enum Verdict {
 
@@ -44,7 +44,7 @@ public enum Verdict {
      * Verification was not attempted.
      * <p>
      * This indicates that no signature was present or the tool could not
-     * handle the verification unit. This is distinct from {@link #FAIL},
+     * handle the claim. This is distinct from {@link #FAIL},
      * which indicates that verification was attempted and the signature
      * was invalid.
      */

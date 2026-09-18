@@ -17,9 +17,9 @@ package dev.cyberstamp.sigmund.core;
  *        or {@code -1} if extraction failed
  * @see Algorithms#algorithmName(int)
  */
-public record OpenPgpVerificationUnit(
+public record OpenPgpClaim(
         String armoredBlock,
         int packetVersion,
         String issuerFingerprint,
-        int algorithmId) implements VerificationUnit {
+        int algorithmId) implements Claim {
 }

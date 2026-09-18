@@ -6,9 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.EmailCredential;
-import dev.cyberstamp.sigmund.core.OpenPgpVerificationUnit;
+import dev.cyberstamp.sigmund.core.OpenPgpClaim;
+import dev.cyberstamp.sigmund.core.SigstoreClaim;
 import dev.cyberstamp.sigmund.core.SigstoreCredential;
-import dev.cyberstamp.sigmund.core.SigstoreVerificationUnit;
 import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
 import dev.cyberstamp.sigmund.core.Verdict;
 import java.util.List;
@@ -67,13 +67,13 @@ class SigstoreToolTest {
         @Test
         void acceptsSigstoreUnit() {
             assertThat(metadataOnlyTool().canVerify(
-                    new SigstoreVerificationUnit("{}"))).isTrue();
+                    new SigstoreClaim("{}"))).isTrue();
         }
 
         @Test
         void rejectsOpenPgpUnit() {
             assertThat(metadataOnlyTool().canVerify(
-                    new OpenPgpVerificationUnit("block", 4, null, 0))).isFalse();
+                    new OpenPgpClaim("block", 4, null, 0))).isFalse();
         }
     }
 
@@ -172,7 +172,7 @@ class SigstoreToolTest {
 
         @Test
         void verifyThrowsWithoutVerifier() {
-            assertThatThrownBy(() -> metadataOnlyTool().verify(null, new SigstoreVerificationUnit("{}")))
+            assertThatThrownBy(() -> metadataOnlyTool().verify(null, new SigstoreClaim("{}")))
                     .isInstanceOf(IllegalStateException.class);
         }
     }

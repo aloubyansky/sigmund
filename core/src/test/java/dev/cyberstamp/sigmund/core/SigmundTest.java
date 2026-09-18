@@ -146,8 +146,8 @@ class SigmundTest {
             Path sigFile = createTempFile("test.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
-            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true,
                     new OpenPgpVerifyResult(Verdict.PASS, "Alice", "RSA", 4, "KEY", "FP"));
             var sigmund = Sigmund.builder().addTool(tool).build();
@@ -165,8 +165,8 @@ class SigmundTest {
             Path sigFile = createTempFile("fallthrough.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
-            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var skippingTool = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null));
             var passingTool = mockVerifyingTool("gpg", format, true,
@@ -187,8 +187,8 @@ class SigmundTest {
             Path sigFile = createTempFile("nokey.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
-            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var noKeyTool = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(Verdict.NO_KEY, null, "RSA", 4, "KEY", "FP"));
             var passingTool = mockVerifyingTool("gpg", format, true,
@@ -208,8 +208,8 @@ class SigmundTest {
             Path sigFile = createTempFile("fail.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
-            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var failTool = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(Verdict.FAIL, null, "RSA", 4, "KEY", "FP"));
             var passingTool = mockVerifyingTool("gpg", format, true,
@@ -228,8 +228,8 @@ class SigmundTest {
             Path sigFile = createTempFile("best.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
-            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var noKeyTool = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, "KEY", "FP"));
             var failTool = mockVerifyingTool("gpg", format, true,
@@ -247,8 +247,8 @@ class SigmundTest {
             Path sigFile = createTempFile("allnokey.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
-            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool1 = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, "KEY", "FP"));
             var tool2 = mockVerifyingTool("gpg", format, true,
@@ -267,8 +267,8 @@ class SigmundTest {
             Path sigFile = createTempFile("allskip.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
-            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool1 = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null));
             var tool2 = mockVerifyingTool("gpg", format, true,
@@ -301,8 +301,8 @@ class SigmundTest {
             Path sig1 = createTempFile("test.jar.asc", "sig1");
             Path sig2 = createTempFile("test2.jar.asc", "sig2");
 
-            var unit = new OpenPgpVerificationUnit("armored", 4, "FP", 1);
-            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true,
                     new OpenPgpVerifyResult(Verdict.PASS, null, "RSA", 4, null, null));
             var sigmund = Sigmund.builder().addTool(tool).build();
@@ -402,11 +402,11 @@ class SigmundTest {
 
         @Test
         void verifierAssessTrusted() throws IOException {
-            var unit = new OpenPgpVerificationUnit("armored", 4, null, 1);
+            var claim = new OpenPgpClaim("armored", 4, null, 1);
             var result = new OpenPgpVerifyResult(
                     Verdict.PASS, "Alice <alice@example.com>", "RSA",
                     4, "4AEE18F83AFDEB23", "4AEE18F83AFDEB23");
-            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true, result);
             var sigmund = Sigmund.builder().addTool(tool).build();
 
@@ -427,11 +427,11 @@ class SigmundTest {
 
         @Test
         void verifierAssessUntrusted() throws IOException {
-            var unit = new OpenPgpVerificationUnit("armored", 4, null, 1);
+            var claim = new OpenPgpClaim("armored", 4, null, 1);
             var result = new OpenPgpVerifyResult(
                     Verdict.PASS, "Bob <bob@example.com>", "RSA",
                     4, "DIFFERENT18F83AFD", "DIFFERENT18F83AFD");
-            var format = mockFormat("openpgp", ".asc", true, List.of(unit));
+            var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true, result);
             var sigmund = Sigmund.builder().addTool(tool).build();
 
@@ -712,7 +712,7 @@ class SigmundTest {
                 }
 
                 @Override
-                public boolean canVerify(VerificationUnit u) {
+                public boolean canVerify(Claim u) {
                     return false;
                 }
 
@@ -722,7 +722,7 @@ class SigmundTest {
                 }
 
                 @Override
-                public VerifyResult verify(Path a, VerificationUnit u) {
+                public VerifyResult verify(Path a, Claim u) {
                     throw new UnsupportedOperationException();
                 }
 
@@ -847,7 +847,7 @@ class SigmundTest {
             }
 
             @Override
-            public boolean canVerify(VerificationUnit u) {
+            public boolean canVerify(Claim u) {
                 return false;
             }
 
@@ -862,7 +862,7 @@ class SigmundTest {
             }
 
             @Override
-            public VerifyResult verify(Path a, VerificationUnit u) {
+            public VerifyResult verify(Path a, Claim u) {
                 return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null);
             }
 
@@ -902,7 +902,7 @@ class SigmundTest {
             }
 
             @Override
-            public boolean canVerify(VerificationUnit u) {
+            public boolean canVerify(Claim u) {
                 return false;
             }
 
@@ -912,7 +912,7 @@ class SigmundTest {
             }
 
             @Override
-            public VerifyResult verify(Path a, VerificationUnit u) {
+            public VerifyResult verify(Path a, Claim u) {
                 return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null);
             }
 
@@ -952,7 +952,7 @@ class SigmundTest {
             }
 
             @Override
-            public boolean canVerify(VerificationUnit u) {
+            public boolean canVerify(Claim u) {
                 return canVerify;
             }
 
@@ -962,7 +962,7 @@ class SigmundTest {
             }
 
             @Override
-            public VerifyResult verify(Path a, VerificationUnit u) {
+            public VerifyResult verify(Path a, Claim u) {
                 return result;
             }
 
@@ -977,7 +977,7 @@ class SigmundTest {
     }
 
     private static SignatureFormat mockFormat(String name, String ext, boolean canHandle,
-            List<VerificationUnit> units) {
+            List<Claim> claims) {
         return new SignatureFormat() {
             @Override
             public String name() {
@@ -995,8 +995,8 @@ class SigmundTest {
             }
 
             @Override
-            public List<VerificationUnit> parse(Path f) {
-                return units;
+            public List<Claim> parse(Path f) {
+                return claims;
             }
         };
     }
@@ -1040,7 +1040,7 @@ class SigmundTest {
         }
 
         @Override
-        public boolean canVerify(VerificationUnit u) {
+        public boolean canVerify(Claim u) {
             return false;
         }
 
@@ -1050,7 +1050,7 @@ class SigmundTest {
         }
 
         @Override
-        public VerifyResult verify(Path a, VerificationUnit u) {
+        public VerifyResult verify(Path a, Claim u) {
             throw new UnsupportedOperationException();
         }
 
@@ -1111,7 +1111,7 @@ class SigmundTest {
         }
 
         @Override
-        public boolean canVerify(VerificationUnit u) {
+        public boolean canVerify(Claim u) {
             return false;
         }
 
@@ -1121,7 +1121,7 @@ class SigmundTest {
         }
 
         @Override
-        public VerifyResult verify(Path a, VerificationUnit u) {
+        public VerifyResult verify(Path a, Claim u) {
             throw new UnsupportedOperationException();
         }
 
@@ -1201,7 +1201,7 @@ class SigmundTest {
         }
 
         @Override
-        public boolean canVerify(VerificationUnit u) {
+        public boolean canVerify(Claim u) {
             return false;
         }
 
@@ -1211,7 +1211,7 @@ class SigmundTest {
         }
 
         @Override
-        public VerifyResult verify(Path a, VerificationUnit u) {
+        public VerifyResult verify(Path a, Claim u) {
             return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null);
         }
 
@@ -1262,7 +1262,7 @@ class SigmundTest {
         }
 
         @Override
-        public boolean canVerify(VerificationUnit u) {
+        public boolean canVerify(Claim u) {
             return false;
         }
 
@@ -1272,7 +1272,7 @@ class SigmundTest {
         }
 
         @Override
-        public VerifyResult verify(Path a, VerificationUnit u) {
+        public VerifyResult verify(Path a, Claim u) {
             return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null);
         }
 

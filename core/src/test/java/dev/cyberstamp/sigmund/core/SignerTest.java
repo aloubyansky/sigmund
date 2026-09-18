@@ -200,7 +200,7 @@ class SignerTest {
             }
 
             @Override
-            public List<VerificationUnit> parse(Path f) {
+            public List<Claim> parse(Path f) {
                 return List.of();
             }
 
@@ -255,7 +255,7 @@ class SignerTest {
             }
 
             @Override
-            public boolean canVerify(VerificationUnit u) {
+            public boolean canVerify(Claim u) {
                 return false;
             }
 
@@ -265,7 +265,7 @@ class SignerTest {
             }
 
             @Override
-            public VerifyResult verify(Path a, VerificationUnit u) {
+            public VerifyResult verify(Path a, Claim u) {
                 throw new UnsupportedOperationException();
             }
 
@@ -314,7 +314,7 @@ class SignerTest {
             }
 
             @Override
-            public boolean canVerify(VerificationUnit u) {
+            public boolean canVerify(Claim u) {
                 return false;
             }
 
@@ -329,7 +329,7 @@ class SignerTest {
             }
 
             @Override
-            public VerifyResult verify(Path a, VerificationUnit u) {
+            public VerifyResult verify(Path a, Claim u) {
                 throw new UnsupportedOperationException();
             }
 

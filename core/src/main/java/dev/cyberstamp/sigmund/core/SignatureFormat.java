@@ -11,7 +11,7 @@ import java.util.List;
  * <p>
  * Each signature format (OpenPGP, Sigstore, etc.) has its own file format, detection
  * rules, and combining semantics. {@code SignatureFormat} keeps the facade and tools
- * format-agnostic — they work with {@link VerificationUnit}s parsed from files,
+ * format-agnostic — they work with {@link Claim}s parsed from files,
  * not with raw file content.
  *
  * <h2>Format vs tool distinction</h2>
@@ -76,17 +76,17 @@ public interface SignatureFormat {
     boolean canHandleByContent(Path signatureFile);
 
     /**
-     * Parses a signature file into individually verifiable units.
+     * Parses a signature file into individually verifiable claims.
      * <p>
-     * A single file may produce multiple units — for example, an OpenPGP {@code .asc}
+     * A single file may produce multiple claims — for example, an OpenPGP {@code .asc}
      * file may contain two armored blocks (classical and PQC), each parsed into a
-     * separate {@link OpenPgpVerificationUnit}.
+     * separate {@link OpenPgpClaim}.
      *
      * @param signatureFile the path to the signature file
-     * @return the parsed verification units
+     * @return the parsed claims
      * @throws ToolExecutionException if the file cannot be read or parsed
      */
-    List<VerificationUnit> parse(Path signatureFile);
+    List<Claim> parse(Path signatureFile);
 
     /**
      * Returns whether this format supports combining multiple signatures into a single file.
