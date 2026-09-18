@@ -43,7 +43,12 @@ overclaiming here is easy.
 
 - Repository or mirror compromise — substituted bytes carry no valid signature
   from the expected identity.
-- Publisher account takeover producing releases under a different key.
+- Publisher account takeover producing releases under a different key — for
+  policies that name key material. A policy naming an attested identity
+  (subject plus issuer) inherits the issuer's account security instead: whoever
+  controls the OIDC account, or the email address at the directory, can bind a
+  new key to that identity. Sigstore keyless has this property by construction;
+  the guarantee therefore depends on the credential kind in use.
 - Typosquat and dependency-confusion packages, to the extent policy is
   coordinate-scoped.
 - Silent republication of an existing coordinate with different content.
@@ -310,7 +315,10 @@ somewhere. Three sources:
 
 - **Structurally implied by claim kind.** A Fulcio cert with a GitHub Actions
   workflow identity is structurally a builder claim; the OIDC issuer and SAN
-  shape say so. A SLSA provenance predicate names its builder explicitly.
+  shape say so. A SLSA provenance predicate names its builder explicitly. In
+  practice the issuer carries this: a trusted issuer declares the default role
+  for identities it asserts, so derivation is configured rather than hardcoded
+  per backend.
 - **Asserted by policy.** Necessary where structure cannot distinguish — an
   OpenPGP key could belong to a publisher, a distro, or an internal reviewer,
   and nothing in the signature says which.
@@ -431,6 +439,10 @@ That makes the cache part of the trust model rather than an optimization:
   self-contained: anything that affects the verdict lives in the file, never in
   a file it references. With no policy file (zero-config), the digest is absent
   and the result says so, rather than digesting built-in defaults.
+- Sigmund's own base configuration — the shipped defaults the project policy is
+  layered over — is digested separately and recorded alongside. Two digests
+  rather than one over the merged result, so each stays recomputable from a file
+  and a changed default is visible instead of hidden inside the policy digest.
 - Stores the full result, not a boolean.
 - TTL is a policy setting.
 - `-o` is cache-only, never fail-open.
@@ -464,12 +476,22 @@ Key expiry is not revocation. A signature whose creation time falls within the
 key's validity period stays valid after the key expires; a signature created
 after expiry is `FAILED`.
 
-Identity matching must not depend on mutable key data. Keyservers can strip
-user IDs — keys.openpgp.org publishes only email-verified ones — so matching
-that relies on a user ID served today can reach a different verdict tomorrow
-with no change in trust. Match on key material. Whether an email can remain an
-OpenPGP identity credential, and against which snapshot of the key it is
-checked, is an open question (§9).
+Identity matching must not depend on unattested key data. A user ID is
+self-certified — anyone can put any address on a key — so a UID proves an
+identity only when the source that served it vouched for the binding.
+keys.openpgp.org publishes a UID only after the address owner confirms it, and
+is Sigmund's default keyserver, so the default fetch path does obtain verified
+bindings; what matters is recording *which* source supplied the key and
+accepting identity assertions only from issuers the policy trusts.
+
+Directory bindings are current state, not history. keys.openpgp.org associates
+an address with a single key, and verifying it for a new key removes it from the
+previous one, which is still served without the identity. So rotation unbinds
+the signatures the old key made: a verifier that cached the binding keeps it,
+a first-time verifier does not. Key material stays the backbone for third-party
+dependency verification — stable, offline, historically complete — and attested
+identities are opt-in. Whole-key revocations are distributed for keys with no
+verified user ID, so revocation checking is unaffected.
 
 Sigstore inverts this. Short-lived certs mean there is nothing to revoke; the
 question is whether the bundle verifies and whether policy still trusts the
@@ -546,10 +568,10 @@ policy artifact GAV. That gives org-wide distribution — point every project at
 the same artifact via a shared parent POM property or CI setting — with no
 merge semantics to define.
 
-Policy as an artifact in a Maven repository has a useful recursive property: it can be signed
-and verified by the same machinery. The base case is a small local trust
-anchor naming the identity permitted to publish policy. Small enough to review
-once, and the one thing that cannot be delegated.
+Policy as an artifact in a Maven repository has a useful recursive property: it
+can be signed and verified by the same machinery. The base case is a small local
+trust anchor naming the identity permitted to publish policy. Small enough to
+review once, and the one thing that cannot be delegated.
 
 Resolving the policy artifact is itself a resolution the extension intercepts
 (§2). It is verified against the local trust anchor only — never against the
@@ -564,11 +586,18 @@ version makes the policy digest recorded in a VSA meaningless.
 **Arguments may configure how verification is performed. They may not
 configure what is required.**
 
-Configurable by argument: keyservers, active discovery sources, timeouts,
-offline behaviour, config location.
+Configurable by argument: keyservers to fetch key material from, active
+discovery sources, timeouts, offline behaviour, config location.
 
-Policy-file only: trust requirements, accepted identities, roles, enforcement
-settings.
+Policy-file only: trust requirements, accepted identities, trusted issuers,
+roles, enforcement settings.
+
+**Fetching a key and trusting a source to say who someone is are different
+grants**, and they split on this line. Fetching by fingerprint cannot change
+acceptance, so keyservers stay arguments. Deciding that a server's word binds an
+address to a key does change acceptance — adding a non-verifying keyserver would
+otherwise turn unverified user IDs into matches — so the issuer list is
+policy-only.
 
 The line holds because widening discovery can never make an untrusted artifact
 pass. Consulting an extra keyserver can only resolve a `NO_CLAIM` or
@@ -697,12 +726,25 @@ independently arrived at two constructions Sigmund also uses:
 - RPMv6 allows multiple signatures per package and requires *all* of them to
   verify for the package to be trusted — matching Sigmund's default
   verification mode, and putting `--lenient` in a clearer light as the
-  deliberate exception.
+  deliberate exception. RPM enforces it at the format level; for Sigmund it is
+  the default claim-set mode, with the lenient setting as a documented escape.
 - Red Hat's hybrid packages carry a v6 ML-DSA-87+Ed448 signature alongside a v4
   RSA signature; RPM 6 systems verify both, older systems validate only the
-  classic signature. Structurally identical to Sigmund's hybrid `.asc`, where
-  the classic block comes first so Central and existing tooling succeed and the
-  PQC block follows for tools that understand it.
+  classic signature. The same construction in a different container — two
+  signatures over one artifact, under two keys, classic retained for
+  compatibility — arrived at independently.
+
+  The containers differ, and so does how cleanly each degrades. RPM gives each
+  signature its own header tag: `RPMSIGTAG_RSAHEADER` and `DSAHEADER` in v4,
+  the algorithm-agnostic `RPMSIGTAG_OPENPGPHEADER` added in v6. An older RPM
+  reads the tags it knows and ignores the rest, so degradation is a designed-in
+  format feature and ordering means nothing. Sigmund concatenates two armored
+  blocks into one detached `.asc`, classic first so Central and existing tooling
+  succeed — degradation by convention rather than by design, and imperfect:
+  GnuPG verifies the classic block but returns exit code 2 on the unknown v6
+  packet. Verification support is asymmetric too: RPM 6 checks both signatures
+  through its own OpenPGP backend, while Sigmund needs Sequoia `sq` for the PQC
+  block because Bouncy Castle does not yet recognize the RFC 9980 algorithm IDs.
 
 Red Hat signs its own packages this way today; publisher-side PQC signing
 tooling remains a technology preview.
@@ -799,10 +841,6 @@ later. No adapters shipped.
 - **Staleness detection for generated policy** — the concrete improvement over
   Gradle's current behaviour, and worth designing rather than inheriting.
 - **Key refresh cadence** for revocation to be meaningful (§3.8).
-- **Email as an OpenPGP identity credential** — keyservers strip or change user
-  IDs, so an email match can drift without any change in trust (§3.8). Options
-  range from dropping email credentials for OpenPGP, to checking them only
-  against the key as it was when policy was generated.
 - **A repository-layout convention for attestations on Central** — determines
   whether discovery case 3 is solvable at all.
 - **Whether `verifiedLevels` should carry non-SLSA properties** (the source
@@ -865,14 +903,15 @@ cross-ecosystem adapters.
 | Result levels | Claim, artifact and run results; artifact outcome derived in a fixed order; any `FAILED` claim dominates; claims no verifier supports are set aside unless explicitly required |
 | Outcomes | Six-state vocabulary; `NO_CLAIM` replaces `UNSIGNED`; `INDETERMINATE` with transient/permanent reason codes |
 | Enforcement | Per-outcome and per-scope; `FAILED` non-overridable; strictest for plugin/extension scope |
-| Caching | Part of the trust model; digest + policy digest key, policy digest over the raw policy file content, not the parsed model; policy self-contained; downgrades `INDETERMINATE`; `-o` never fail-open |
+| Caching | Part of the trust model; digest + policy digest key, policy digest over the raw policy file content, not the parsed model; base-config digest recorded separately; policy self-contained; downgrades `INDETERMINATE`; `-o` never fail-open |
 | Threat model | Stated explicitly; TOFU named as a limitation; outcomes stable except hard revocation, policy change or verifier change; OpenPGP backdating named as residual risk |
 | Time | Three clocks; evaluation basis per claim kind; Sigstore basis inherited from `sigstore-java` |
 | Revocation | Honour reason codes — compromise and unspecified retroactive, rotation forward-only; expiry judged at signature time; identity matching independent of keyserver-served user IDs; separate key TTL |
 | Scope | Artifacts in Maven repositories, whatever the language; the repository format defines what is verified, each build tool where; core uses repository concepts, never build-tool types |
 | Insertion points | Three, not two; keep plugin and extension both; coverage recorded in the result and the VSA; `ArtifactResolverPostProcessor` a candidate extension hook; evidence and policy resolution bypass verification; extension scope limited to build tooling versus project |
 | Vocabulary | Evidence = file, claim = assertion; rename `VerificationUnit` → `Claim` |
-| Attester role | Structure proposes, policy disposes; `unknown` added; requirements are role-scoped |
+| Credentials | Two kinds — key material, and an attested identity of subject plus issuer; a bare email is not an identity; identity assertions only from policy-named issuers; key source recorded always |
+| Attester role | Structure proposes, policy disposes; issuer carries the default role; `unknown` added; requirements are role-scoped |
 | Digests | Algorithm-tagged `DigestSet` maps; SHA-256 required; further algorithms additive |
 | Policy granularity | Rules match GAV prefixes; results stay per file; classifier and extension are not policy dimensions |
 | purl | One-way projection only; digest-first matching on VSA consumption |
@@ -881,4 +920,4 @@ cross-ecosystem adapters.
 | Policy | One authoritative config per project at reactor root; no per-module; version-pinned policy artifact; composition deferred |
 | Arguments | May configure how verification runs, never what is required |
 | Observe mode | Run mode; VSA keeps policy reference; enforcement mode recorded; emission off by default |
-| RPM | Precedent for all-signatures-must-verify and graceful hybrid degradation |
+| RPM | Independent precedent for all-signatures-must-verify and hybrid classic-plus-PQC signing; different container — header tags degrading by design, against concatenated armored blocks degrading by convention |

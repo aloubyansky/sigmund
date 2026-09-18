@@ -93,9 +93,10 @@ Settle the decisions everything else is built on.
 
 | ID | Task | Refs | Depends | Status |
 |---|---|---|---|---|
-| P0.1 | Check `Claim` for ambiguity against sigstore-java and OIDC/JWT types on the classpath; choose `Claim` or `VerifiableClaim` | §3.1 | — | todo |
-| P0.2 | ADR: result model — claim, artifact and run levels; roll-up rules; claim-set modes | §3.2, §3.2.1, §3.5 | — | todo |
-| P0.3 | ADR: policy schema — role-scoped requirements, claim-set mode, per-outcome and per-scope enforcement, what replaces `signature-optional`, matched-rule location | §3.2, §3.3, §3.6 | P0.2 | todo |
+| P0.1 | Check `Claim` for ambiguity against sigstore-java and OIDC/JWT types on the classpath; choose `Claim` or `VerifiableClaim` | §3.1 | — | done — no class on the 52-jar compile classpath contains "Claim"; the name is `Claim` |
+| P0.2 | ADR: result model — claim, artifact and run levels; roll-up rules; claim-set modes | §3.2, §3.2.1, §3.5 | — | done — [ADR-005](../adr/005-verification-result-model.md) |
+| P0.3 | ADR: policy schema — role-scoped requirements, claim-set mode, per-outcome and per-target enforcement (`signature-optional` becomes per-target `NO_CLAIM` enforcement), matched-rule location | §3.2, §3.3, §3.6 | P0.2, P0.4 | done — [ADR-007](../adr/007-policy-schema-and-enforcement.md) |
+| P0.4 | ADR: identity and credential model — key material versus attested identity, trusted issuers, subject expansion, key-material provenance | §3.3, §3.8, §5.3 | P0.2 | done — [ADR-006](../adr/006-identity-and-credential-model.md) |
 
 ### P1 — Vocabulary and result model
 
@@ -122,12 +123,20 @@ reasons, including a hybrid `.asc` verified by Bouncy Castle alone as
 
 | ID | Task | Refs | Depends | Status |
 |---|---|---|---|---|
-| P2.1 | Structural role derivation: Sigstore issuer and SAN shape → `builder` where the shape says so; bare OpenPGP → `unknown` | §3.3 | P1.6 | todo |
-| P2.2 | Role assertion in policy; derived-versus-asserted mismatch is a config error | §3.3 | P2.1, P0.3 | todo |
-| P2.3 | New policy schema and parser replacing `trust`, `signature-optional` and `policy`; validation with locations for matched-rule provenance | §3.2 | P0.3 | todo |
-| P2.4 | Requirement evaluator in `TrustVerifier`, role-scoped | §3.2, §3.3 | P1.7, P2.2, P2.3 | todo |
-| P2.5 | `generateTrustConfig` and `updateTrustConfig` emit the new schema, with roles set to `unknown` unless derivable | §5.3 | P2.3 | todo |
-| P2.6 | Rewrite `configuration.md` and `trust-verification.md` for the new schema | — | P2.4 | todo |
+| P2.1 | Credential model: `KeyCredential` and `IdentityCredential(issuer, attributes)` replacing `FingerprintCredential`, `EmailCredential` and `SigstoreCredential`; sealed `Credential` with a parallel `CredentialMatcher` for the policy side; subject is one attribute, and at least one attribute besides the issuer is required | §3.3 | P1.6 | todo |
+| P2.2 | Key-material provenance: every claim records the source that supplied the key; `BcRunner.fetchKey` stops preferring whichever keyserver returns user IDs | §3.8, §5.3 | P1.5, P2.1 | todo |
+| P2.3 | `issuers` section: kinds `oidc`, `openpgp-directory`, `local-store`; `asserts` bounds; empty by default; a UID becomes an identity only from a trusted issuer | §3.3, §5.3 | P2.1, P2.2 | todo |
+| P2.4 | One `credentials` list per signer (absorbing today's `sigstore:`, `email:` and `pgp*:` siblings), expanded at config load into explicit `(issuer, attributes)` matchers, with per-signer `issuers` narrowing; a matcher no trusted issuer can assert is a config error naming the stanza to add | §3.3 | P2.3 | todo |
+| P2.5 | Role derivation from issuer `default-role`; role assertion per signer; derived-versus-asserted mismatch is a config error | §3.3 | P2.3, P0.3 | todo |
+| P2.6 | New policy schema and parser: `rules` with `targets` and role-scoped `requires`, `defaults`, `claim-set`; replaces `trust`, `signature-optional` and `policy`; strict unknown-key errors, specificity ties and non-GAV patterns rejected, locations recorded for matched-rule provenance | §3.2 | P0.3, P2.4 | todo |
+| P2.7 | Requirement evaluator: conjunctive role-scoped clauses, disjunctive signers within a clause, `claim-set` governing remaining claims; `TrustPolicy` becomes rule lookup plus evaluator | §3.2, §3.3 | P1.7, P2.5, P2.6 | todo |
+| P2.8 | `generateTrustConfig` and `updateTrustConfig` emit the new schema — key material by default, no `email:` entries, `on-no-claim: allow` replacing the `signature-optional` list | §5.3 | P2.6 | todo |
+| P2.9 | Base configuration: `sigmund-base.yaml` shipped as a resource, located and read before the project policy and layered under it; carries issuer profiles (kind, asserts, endpoint, trust root, default role) and never the trusted-issuer list; scalar issuer entries expand from profiles | §3.3, §5.2 | P2.3 | todo |
+| P2.12 | Base-config schema restriction: separate document type and strict parser admitting only `version`, `issuer-profiles`, `keyservers`, `tools` — no `issuers` key exists in it, and `signers`, rules, requirements, enforcement and TTLs are absent; unknown keys are errors; each parser rejects the other's document | §5.2, §5.3 | P2.9 | todo |
+| P2.13 | Build-time test asserting the shipped base config parses strictly with no unknown keys and that the two parsers reject each other's documents; run on every build | — | P2.12 | todo |
+| P2.14 | Organization-supplied base config resolved as a version-pinned artifact and verified against the local trust anchor, like a policy artifact; strict parser applied at load | §5.2 | P2.12, P6.1, P6.2 | todo |
+| P2.10 | `sigmund effective-config` CLI command and `sigmund:effective-config` goal: print the expanded policy — issuers, credential matchers, rules, enforcement — with the origin of each value and both digests | §5.3 | P2.9, P4.2 | todo |
+| P2.11 | Rewrite `configuration.md` and `trust-verification.md` for the new schema, including the rotation caveat for directory-bound identities and the stability-versus-precision guidance for identity attributes | — | P2.7, P2.9 | todo |
 
 **Demo:** policy requiring a publisher claim and a builder claim for one group,
 publisher only for the rest; bootstrap-generated policy verifies clean.
@@ -136,10 +145,10 @@ publisher only for the rest; bootstrap-generated policy verifies clean.
 
 | ID | Task | Refs | Depends | Status |
 |---|---|---|---|---|
-| P3.1 | Per-outcome enforcement settings in policy; `FAILED` not overridable | §3.6 | P2.3 | todo |
+| P3.1 | Enforcement resolution — rule, scope, `defaults`, code default — with `fail`/`warn`/`allow` per outcome; `FAILED` not overridable and a setting for it is a config error; enforcement never changes an outcome | §3.6 | P2.6 | todo |
 | P3.2 | Scope as a goal parameter replacing `includeTestDependencies`; per-scope enforcement for `compile`, `runtime`, `test`; build-tooling scope defined but only populated by P5 | §2, §3.6 | P3.1 | todo |
 | P3.3 | Observe mode as a run mode: full verification and reporting, exit zero | §5.4 | P3.1 | todo |
-| P3.4 | Audit every plugin parameter and CLI option against how versus what; remove `sigmund.onUntrusted` and `sigmund.listedEvidence` | §5.3 | P3.1 | todo |
+| P3.4 | Audit every plugin parameter and CLI option against how versus what; remove `sigmund.onUntrusted` and `sigmund.listedEvidence`; remove `verifyPomFiles` and verify every resolved file of a matched GAV, POMs included; `keyservers` stays an argument, `issuers` is policy-only | §5.3 | P3.1, P2.3 | todo |
 | P3.5 | Single policy at the reactor root: default locations (aggregator directory, `.mvn/`), upward resolution from submodules, explicit override | §5.1 | — | todo |
 | P3.6 | Run result coverage from the goal: insertion point, scopes covered, build tooling not covered, enforcement mode, per-outcome counts | §2.1 | P1.6, P3.2, P3.3 | todo |
 
@@ -151,14 +160,14 @@ and `NO_CLAIM` counts, identical from the root and from a submodule.
 | ID | Task | Refs | Depends | Status |
 |---|---|---|---|---|
 | P4.1 | Result serialization (JSON) for artifact and run results | §3.2 | P1.6 | todo |
-| P4.2 | Policy digest: SHA-256 of the raw policy file content before parsing (the artifact digest when resolved by GAV), using the P1.2 digest type; absent in zero-config, and reported as absent | §3.2, §3.7 | P1.2 | todo |
+| P4.2 | Policy digest: SHA-256 of the raw policy file content before parsing (the artifact digest when resolved by GAV), using the P1.2 digest type; absent in zero-config, and reported as absent. Base config digested separately and recorded alongside, with the effective expanded issuer configuration and the Sigmund version | §3.2, §3.7 | P1.2, P2.9 | todo |
 | P4.3 | Persistent result cache keyed by artifact digest and policy digest, storing full results; TTL from policy | §3.7 | P4.1, P4.2 | todo |
 | P4.4 | `INDETERMINATE` downgraded to the cached outcome, cache age recorded in the result | §3.7 | P4.3 | todo |
 | P4.5 | Offline builds are cache-only and never fail open; `discovery-unavailable` reason | §3.5, §3.7 | P4.4 | todo |
-| P4.6 | Persistent public-key store with its own freshness TTL, replacing session-only key caching | §3.7, §3.8 | — | todo |
+| P4.6 | Persistent public-key store with its own freshness TTL, replacing session-only key caching; stores the source and observation time of each key, so a directory binding survives rotation for a verifier that saw it | §3.7, §3.8 | P2.2 | todo |
 | P4.7 | Revocation: detect revocation on refreshed keys; compromise and unspecified reason invalidate prior signatures, superseded or retired only later ones; applied reason code recorded in the result | §1.1, §3.8 | P4.6, P1.4 | todo |
-| P4.9 | Identity matching independent of keyserver-served user IDs, per the resolution of the email-credential question | §1.1, §3.8 | P4.6 | blocked |
 | P4.8 | `dependency-signers` populates the result cache; default `INDETERMINATE` posture with no cache entry per scope | §3.6 | P4.3, P3.2 | todo |
+| P4.9 | Identity matching independent of keyserver-served user IDs | §1.1, §3.8 | — | dropped — resolved by [ADR-006](../adr/006-identity-and-credential-model.md); delivered by P2.2 and P2.3 |
 
 **Demo:** verify online, then offline: offline passes from cache with ages
 reported; with the cache cleared it fails with `key-unavailable`, not silently.
@@ -211,7 +220,7 @@ builder claim coming from a SLSA provenance sidecar.
 
 | ID | Task | Refs | Depends | Status |
 |---|---|---|---|---|
-| P8.1 | VSA serializer from the run result: purl subject with digest, policy reference and digest, coverage, enforcement mode, `timeVerified` | §6, §8 | P3.6, P6.4 | todo |
+| P8.1 | VSA serializer from the run result: purl subject with digest, policy reference and digest, base-config digest and effective issuer configuration, coverage, enforcement mode, `timeVerified` | §6, §8 | P3.6, P6.4 | todo |
 | P8.2 | VSA signing as DSSE through an existing signing backend; emission settings, off by default in observe mode | §5.4, §6 | P8.1, P7.1 | todo |
 | P8.3 | Verifier trust root, configured separately from signer trust | §6 | P2.3 | todo |
 | P8.4 | VSA consumption: subject matched by digest first, policy-digest staleness check, one-hop loop guard, minimum-coverage acceptance | §6, §8 | P8.2, P8.3 | todo |
@@ -235,11 +244,9 @@ the strength of an upstream build's signed VSA.
 
 | Question | Blocks | Notes |
 |---|---|---|
-| What replaces `signature-optional`: a requirement satisfiable by the absence of claims, or `NO_CLAIM` enforcement scoped to a target? | P0.3 | The second keeps "no evidence found" visible as `NO_CLAIM` in counts, which coverage (§2.1) depends on |
 | Does `ArtifactResolverPostProcessor` see plugin and extension resolution, and can an extension contribute one? | P5.1 | Also a concrete question for the Maven maintainers (§9) |
 | Where do "how" settings live — policy file, separate file, or arguments only? | P3.4 | If in the policy file they change the policy digest (P4.2), which is conservative but invalidates the cache on a keyserver change |
 | Cache and key store location and sharing between CLI, plugin and extension | P4.3, P4.6 | |
-| Can an email remain an OpenPGP identity credential, and against which snapshot of the key? | P4.9, P2.3 | Keyservers strip or change user IDs, so an email match can drift with no change in trust (§3.8, §9) |
 
 ---
 
@@ -247,7 +254,11 @@ the strength of an upstream build's signed VSA.
 
 | Date | Decision | Record |
 |---|---|---|
-| — | — | — |
+| 2026-09-17 | Claim vocabulary, three result levels, roll-up, algorithm-tagged digests, `ArtifactSubject` as a record, tool outcome mapping | [ADR-005](../adr/005-verification-result-model.md) |
+| 2026-09-18 | `signature-optional` becomes per-target `NO_CLAIM` enforcement: the artifact is still verified and still counted as `NO_CLAIM`, only the failure decision relaxes | P3.1 |
+| 2026-09-18 | Policy schema: `rules` with role-scoped conjunctive `requires`, most-specific-rule-wins with no merging, `claim-set` replacing `listed-evidence`/`unlisted-evidence`, four-level enforcement resolution | [ADR-007](../adr/007-policy-schema-and-enforcement.md) |
+| 2026-09-18 | POMs are verified by default; `verifyPomFiles` removed. Requirements apply uniformly to all files of a GAV; no per-file or file-role settings for now | P3.4 |
+| 2026-09-18 | Two credential kinds, trusted issuers, matcher expansion at load, key-material provenance; `EmailCredential` removed; an identity is issuer plus attested attributes, subject being one of them; well-known issuer profiles come from a shipped base config that declares but never grants | [ADR-006](../adr/006-identity-and-credential-model.md) |
 
 ---
 
