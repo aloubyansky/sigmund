@@ -114,6 +114,7 @@ two claim shapes already shipping — detached `.asc` and Sigstore bundles.
 | P1.7 | `TrustVerifier` derives artifact outcomes by the roll-up rules; claim-set mode replaces `listed-evidence` in the verifier | §3.2.1 | P1.6 | todo |
 | P1.8 | Move reporting, the pass/fail decision and the `signature-optional` pre-filter from `VerifyMojo` into core, behind an API with no build-tool types — repository concepts (coordinates, layout, sidecar conventions) allowed; Maven plugin API, project model and resolver session not | §2, §7 | P1.7 | todo |
 | P1.9 | Result model rendering: human report in core; `VerifyMojo`, `DependencySignersMojo` and CLI `verify-signature` switched to it | §3.2 | P1.8 | todo |
+| P1.10 | Parsed `ArtifactPattern` replacing raw pattern strings: arity and shape validated once at load, specificity carried by the pattern, classifier-scoped patterns rejected instead of silently matching nothing | §3.2 | — | done — pulled forward from P2.6 |
 
 **Demo:** `sigmund:verify` over fixtures reporting all six outcomes with
 reasons, including a hybrid `.asc` verified by Bouncy Castle alone as
@@ -128,7 +129,7 @@ reasons, including a hybrid `.asc` verified by Bouncy Castle alone as
 | P2.3 | `issuers` section: kinds `oidc`, `openpgp-directory`, `local-store`; `asserts` bounds; empty by default; a UID becomes an identity only from a trusted issuer | §3.3, §5.3 | P2.1, P2.2 | todo |
 | P2.4 | One `credentials` list per signer (absorbing today's `sigstore:`, `email:` and `pgp*:` siblings), expanded at config load into explicit `(issuer, attributes)` matchers, with per-signer `issuers` narrowing; a matcher no trusted issuer can assert is a config error naming the stanza to add | §3.3 | P2.3 | todo |
 | P2.5 | Role derivation from issuer `default-role`; role assertion per signer; derived-versus-asserted mismatch is a config error | §3.3 | P2.3, P0.3 | todo |
-| P2.6 | New policy schema and parser: `rules` with `targets` and role-scoped `requires`, `defaults`, `claim-set`; replaces `trust`, `signature-optional` and `policy`; strict unknown-key errors, specificity ties and non-GAV patterns rejected, locations recorded for matched-rule provenance | §3.2 | P0.3, P2.4 | todo |
+| P2.6 | New policy schema and parser: `rules` with `targets` and role-scoped `requires`, `defaults`, `claim-set`; replaces `trust`, `signature-optional` and `policy`; strict unknown-key errors, specificity ties and non-GAV patterns rejected, locations recorded for matched-rule provenance | §3.2 | P0.3, P1.10, P2.4 | todo |
 | P2.7 | Requirement evaluator: conjunctive role-scoped clauses, disjunctive signers within a clause, `claim-set` governing remaining claims; `TrustPolicy` becomes rule lookup plus evaluator | §3.2, §3.3 | P1.7, P2.5, P2.6 | todo |
 | P2.8 | `generateTrustConfig` and `updateTrustConfig` emit the new schema — key material by default, no `email:` entries, `on-no-claim: allow` replacing the `signature-optional` list | §5.3 | P2.6 | todo |
 | P2.9 | Base configuration: `sigmund-base.yaml` shipped as a resource, located and read before the project policy and layered under it; carries issuer profiles (kind, asserts, endpoint, trust root, default role) and never the trusted-issuer list; scalar issuer entries expand from profiles | §3.3, §5.2 | P2.3 | todo |
