@@ -66,6 +66,23 @@ public final class ArtifactPattern {
     }
 
     /**
+     * Builds the pattern covering every file published under an artifact's module.
+     *
+     * <p>
+     * Version, classifier and extension are dropped, so the pattern matches the module's
+     * jar, pom, sources and javadoc alike, and every version of them. This is the shape
+     * bootstrap generates when it turns observed signers into policy: trust is stated per
+     * module, not per released file.
+     *
+     * @param coords the artifact whose module should be covered
+     * @return a pattern matching {@code group:artifact}
+     */
+    public static ArtifactPattern forModule(ArtifactCoords coords) {
+        return new ArtifactPattern(coords.namespace(), coords.name(), ANY,
+                coords.namespace() + ":" + coords.name());
+    }
+
+    /**
      * Indicates whether this pattern applies to an artifact.
      *
      * <p>

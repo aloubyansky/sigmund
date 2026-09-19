@@ -20,7 +20,6 @@ import dev.cyberstamp.sigmund.core.TrustVerifier;
 import dev.cyberstamp.sigmund.core.UnlistedEvidencePolicy;
 import dev.cyberstamp.sigmund.core.UntrustedPolicy;
 import dev.cyberstamp.sigmund.core.UnverifiedResult;
-import dev.cyberstamp.sigmund.core.Verdict;
 import dev.cyberstamp.sigmund.core.VerifyResult;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -68,8 +67,7 @@ public class VerifyMojo extends AbstractDependencyMojo {
             List<ArtifactCoords> toAssess = new ArrayList<>();
             List<String> skippedCoords = new ArrayList<>();
             for (ArtifactCoords artifact : artifacts) {
-                ArtifactCoords id = artifact;
-                if (trustPolicy.isUnsignedAllowed(id)) {
+                if (trustPolicy.isUnsignedAllowed(artifact)) {
                     skippedCoords.add(artifact.toString());
                 } else {
                     toAssess.add(artifact);
@@ -92,8 +90,7 @@ public class VerifyMojo extends AbstractDependencyMojo {
                 if (resolved == null) {
                     throw new MojoFailureException("Could not resolve artifact " + coords);
                 }
-                ArtifactCoords identity = coords;
-                requests.add(new AssessmentRequest(identity, resolved.artifactFile(),
+                requests.add(new AssessmentRequest(coords, resolved.artifactFile(),
                         resolved.evidenceFiles()));
                 assessedCoords.add(coords);
             }
@@ -180,18 +177,24 @@ public class VerifyMojo extends AbstractDependencyMojo {
      *
      * @return the enriched info, or {@code null} if the result has no useful identity data
      */
+    private static String describe(VerifyResult result) {
+        return result.isIndeterminate()
+                ? result.outcome() + ": " + result.reason()
+                : result.outcome().toString();
+    }
+
     private static EnrichedSignerInfo extractSignerInfo(VerifyResult vr) {
         if (vr instanceof OpenPgpVerifyResult opvr) {
             String label = Algorithms.versionLabel(opvr.version());
             String algo = vr.algorithm() != null ? " (" + vr.algorithm() + ")" : "";
             String keyId = opvr.preferredKeyId() != null ? opvr.preferredKeyId() : "unknown";
-            String suffix = vr.verdict() != Verdict.PASS ? " (" + vr.verdict() + ")" : "";
+            String suffix = !vr.isVerified() ? " (" + describe(vr) + ")" : "";
             return new EnrichedSignerInfo(opvr.signerDisplayName(), label + algo + ": " + keyId + suffix);
         }
         if (vr.signerDisplayName() != null) {
             String keyLine = vr.algorithm() != null ? vr.algorithm() : "unknown";
-            if (vr.verdict() != Verdict.PASS) {
-                keyLine += " (" + vr.verdict() + ")";
+            if (!vr.isVerified()) {
+                keyLine += " (" + describe(vr) + ")";
             }
             return new EnrichedSignerInfo(vr.signerDisplayName(), keyLine);
         }

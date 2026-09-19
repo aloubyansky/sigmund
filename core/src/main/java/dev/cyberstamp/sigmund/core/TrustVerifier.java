@@ -118,7 +118,7 @@ public class TrustVerifier {
 
     private boolean hasVerificationFailure(List<EvidenceResult> evidence) {
         return evidence.stream()
-                .anyMatch(e -> e.verdict() == Verdict.FAIL);
+                .anyMatch(EvidenceResult::isFailed);
     }
 
     private TrustResult matchCredentials(ArtifactCoords artifact,
@@ -127,7 +127,7 @@ public class TrustVerifier {
         List<EvidenceResult> unmatched = new ArrayList<>();
 
         for (EvidenceResult evidence : allEvidence) {
-            if (evidence.verdict() != Verdict.PASS) {
+            if (!evidence.isVerified()) {
                 unmatched.add(evidence);
                 continue;
             }

@@ -149,7 +149,7 @@ class SigmundTest {
             var claim = new OpenPgpClaim("armored", 4, "FP", 1);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true,
-                    new OpenPgpVerifyResult(Verdict.PASS, "Alice", "RSA", 4, "KEY", "FP"));
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice", "RSA", 4, "KEY", "FP"));
             var sigmund = Sigmund.builder().addTool(tool).build();
 
             SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
@@ -168,9 +168,10 @@ class SigmundTest {
             var claim = new OpenPgpClaim("armored", 4, "FP", 1);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var skippingTool = mockVerifyingTool("bc", format, true,
-                    new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null));
+                    new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null,
+                            4, null, null));
             var passingTool = mockVerifyingTool("gpg", format, true,
-                    new OpenPgpVerifyResult(Verdict.PASS, "Alice", "RSA", 4, "KEY", "FP"));
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice", "RSA", 4, "KEY", "FP"));
             var sigmund = Sigmund.builder().addTool(skippingTool).addTool(passingTool).build();
 
             SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
@@ -178,7 +179,7 @@ class SigmundTest {
             assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
             assertThat(report.files().size()).isEqualTo(1);
             assertThat(report.files().get(0).results().size()).isEqualTo(1);
-            assertThat(report.files().get(0).results().get(0).verdict()).isEqualTo(Verdict.PASS);
+            assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
         }
 
         @Test
@@ -190,15 +191,16 @@ class SigmundTest {
             var claim = new OpenPgpClaim("armored", 4, "FP", 1);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var noKeyTool = mockVerifyingTool("bc", format, true,
-                    new OpenPgpVerifyResult(Verdict.NO_KEY, null, "RSA", 4, "KEY", "FP"));
+                    new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null, "RSA", 4,
+                            "KEY", "FP"));
             var passingTool = mockVerifyingTool("gpg", format, true,
-                    new OpenPgpVerifyResult(Verdict.PASS, "Alice", "RSA", 4, "KEY", "FP"));
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice", "RSA", 4, "KEY", "FP"));
             var sigmund = Sigmund.builder().addTool(noKeyTool).addTool(passingTool).build();
 
             SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
             assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
-            assertThat(report.files().get(0).results().get(0).verdict()).isEqualTo(Verdict.PASS);
+            assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
             assertThat(report.files().get(0).results().get(0).signerDisplayName()).isEqualTo("Alice");
         }
 
@@ -211,15 +213,15 @@ class SigmundTest {
             var claim = new OpenPgpClaim("armored", 4, "FP", 1);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var failTool = mockVerifyingTool("bc", format, true,
-                    new OpenPgpVerifyResult(Verdict.FAIL, null, "RSA", 4, "KEY", "FP"));
+                    new OpenPgpVerifyResult(ClaimOutcome.FAILED, null, null, "RSA", 4, "KEY", "FP"));
             var passingTool = mockVerifyingTool("gpg", format, true,
-                    new OpenPgpVerifyResult(Verdict.PASS, "Alice", "RSA", 4, "KEY", "FP"));
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice", "RSA", 4, "KEY", "FP"));
             var sigmund = Sigmund.builder().addTool(failTool).addTool(passingTool).build();
 
             SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
             assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
-            assertThat(report.files().get(0).results().get(0).verdict()).isEqualTo(Verdict.PASS);
+            assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
         }
 
         @Test
@@ -231,14 +233,15 @@ class SigmundTest {
             var claim = new OpenPgpClaim("armored", 4, "FP", 1);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var noKeyTool = mockVerifyingTool("bc", format, true,
-                    new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, "KEY", "FP"));
+                    new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null, null, 4,
+                            "KEY", "FP"));
             var failTool = mockVerifyingTool("gpg", format, true,
-                    new OpenPgpVerifyResult(Verdict.FAIL, null, "RSA", 4, "KEY", "FP"));
+                    new OpenPgpVerifyResult(ClaimOutcome.FAILED, null, null, "RSA", 4, "KEY", "FP"));
             var sigmund = Sigmund.builder().addTool(noKeyTool).addTool(failTool).build();
 
             SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-            assertThat(report.files().get(0).results().get(0).verdict()).isEqualTo(Verdict.FAIL);
+            assertThat(report.files().get(0).results().get(0).isFailed()).isTrue();
         }
 
         @Test
@@ -250,15 +253,17 @@ class SigmundTest {
             var claim = new OpenPgpClaim("armored", 4, "FP", 1);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool1 = mockVerifyingTool("bc", format, true,
-                    new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, "KEY", "FP"));
+                    new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null, null, 4,
+                            "KEY", "FP"));
             var tool2 = mockVerifyingTool("gpg", format, true,
-                    new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, "KEY", "FP"));
+                    new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null, null, 4,
+                            "KEY", "FP"));
             var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2).build();
 
             SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
             assertThat(report.files().get(0).results().size()).isEqualTo(1);
-            assertThat(report.files().get(0).results().get(0).verdict()).isEqualTo(Verdict.NO_KEY);
+            assertThat(report.files().get(0).results().get(0).isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
         }
 
         @Test
@@ -270,9 +275,11 @@ class SigmundTest {
             var claim = new OpenPgpClaim("armored", 4, "FP", 1);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool1 = mockVerifyingTool("bc", format, true,
-                    new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null));
+                    new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null,
+                            4, null, null));
             var tool2 = mockVerifyingTool("gpg", format, true,
-                    new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null));
+                    new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null,
+                            4, null, null));
             var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2).build();
 
             SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
@@ -304,7 +311,7 @@ class SigmundTest {
             var claim = new OpenPgpClaim("armored", 4, "FP", 1);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true,
-                    new OpenPgpVerifyResult(Verdict.PASS, null, "RSA", 4, null, null));
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, null, "RSA", 4, null, null));
             var sigmund = Sigmund.builder().addTool(tool).build();
 
             SignatureVerificationReport report = sigmund.verifyAll(artifact, List.of(sig1, sig2));
@@ -403,8 +410,7 @@ class SigmundTest {
         @Test
         void verifierAssessTrusted() throws IOException {
             var claim = new OpenPgpClaim("armored", 4, null, 1);
-            var result = new OpenPgpVerifyResult(
-                    Verdict.PASS, "Alice <alice@example.com>", "RSA",
+            var result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice <alice@example.com>", "RSA",
                     4, "4AEE18F83AFDEB23", "4AEE18F83AFDEB23");
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true, result);
@@ -428,8 +434,7 @@ class SigmundTest {
         @Test
         void verifierAssessUntrusted() throws IOException {
             var claim = new OpenPgpClaim("armored", 4, null, 1);
-            var result = new OpenPgpVerifyResult(
-                    Verdict.PASS, "Bob <bob@example.com>", "RSA",
+            var result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Bob <bob@example.com>", "RSA",
                     4, "DIFFERENT18F83AFD", "DIFFERENT18F83AFD");
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true, result);
@@ -863,7 +868,8 @@ class SigmundTest {
 
             @Override
             public VerifyResult verify(Path a, Claim u) {
-                return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null);
+                return new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null,
+                        null, 4, null, null);
             }
 
             @Override
@@ -913,7 +919,8 @@ class SigmundTest {
 
             @Override
             public VerifyResult verify(Path a, Claim u) {
-                return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null);
+                return new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null,
+                        null, 4, null, null);
             }
 
             @Override
@@ -1197,7 +1204,8 @@ class SigmundTest {
 
         @Override
         public VerifyResult verify(Path a, Claim u) {
-            return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null);
+            return new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null, 4,
+                    null, null);
         }
 
         @Override
@@ -1258,7 +1266,8 @@ class SigmundTest {
 
         @Override
         public VerifyResult verify(Path a, Claim u) {
-            return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null);
+            return new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null, 4,
+                    null, null);
         }
 
         @Override

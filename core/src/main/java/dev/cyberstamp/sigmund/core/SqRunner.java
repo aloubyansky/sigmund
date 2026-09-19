@@ -710,14 +710,14 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     @Override
     public VerifyResult verify(Path artifactFile, Claim claim) {
         if (!(claim instanceof OpenPgpClaim opgu)) {
-            return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, -1, null, null);
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
         }
         return verifyOpenPgpUnit(artifactFile, opgu);
     }
 
     @Override
     public List<Credential> extractCredentials(VerifyResult result) {
-        if (result.verdict() != Verdict.PASS) {
+        if (!result.isVerified()) {
             return List.of();
         }
         if (result instanceof OpenPgpVerifyResult opvr && opvr.fingerprint() != null) {
@@ -740,14 +740,14 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
         String algorithm = resolveAlgorithm(algoId);
 
         if (fingerprint == null) {
-            return new OpenPgpVerifyResult(Verdict.SKIPPED, null, algorithm,
-                    version, fingerprint, fingerprint);
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM, null, algorithm, version,
+                    fingerprint, fingerprint);
         }
 
         CertInfo certInfo = inspectCert(fingerprint);
         if (certInfo == null) {
-            return new OpenPgpVerifyResult(Verdict.NO_KEY, null, algorithm,
-                    version, fingerprint, fingerprint);
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.KEY_UNAVAILABLE, null, algorithm, version, fingerprint,
+                    fingerprint);
         }
 
         if (certInfo.algorithm() != null) {
@@ -756,8 +756,8 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
 
         Path certFile = resolveCertFile(certInfo, fingerprint);
         if (certFile == null) {
-            return new OpenPgpVerifyResult(Verdict.NO_KEY, certInfo.userId(), algorithm,
-                    version, fingerprint, fingerprint);
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.KEY_UNAVAILABLE, certInfo.userId(), algorithm, version,
+                    fingerprint, fingerprint);
         }
 
         return verifyWithCertFile(artifactFile, opgu.armoredBlock(), certFile,
@@ -788,7 +788,7 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
             Files.writeString(sigFile, armoredBlock);
             boolean verified = verifyCertFile(artifactFile, sigFile, certFile);
             return new OpenPgpVerifyResult(
-                    verified ? Verdict.PASS : Verdict.FAIL,
+                    verified ? ClaimOutcome.VERIFIED : ClaimOutcome.FAILED, null,
                     userId, algorithm, version, fingerprint, fingerprint);
         } catch (IOException e) {
             throw new ToolExecutionException("Failed to create temp file for SQ verification", e);

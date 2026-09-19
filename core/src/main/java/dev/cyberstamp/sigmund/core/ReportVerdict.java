@@ -7,15 +7,15 @@ package dev.cyberstamp.sigmund.core;
  */
 public enum ReportVerdict {
 
-    /** Every signature in the report has {@link Verdict#PASS}. */
+    /** Every claim in the report is {@link ClaimOutcome#VERIFIED}. */
     ALL_PASS,
 
-    /** At least one signature passed; none failed (some were skipped or had no key). */
+    /** At least one claim verified and none failed; the rest were indeterminate. */
     PASS_WITH_SKIPS,
 
-    /** At least one signature passed but at least one also failed. */
+    /** At least one claim verified, but at least one also failed. */
     PASS_WITH_FAILURES,
 
-    /** No signature passed (all failed, all skipped, or the list is empty). */
+    /** No claim verified: all failed, all were indeterminate, or there were none. */
     NONE_PASSED
 }

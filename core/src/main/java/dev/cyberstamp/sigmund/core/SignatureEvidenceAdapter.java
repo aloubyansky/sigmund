@@ -18,8 +18,9 @@ import java.util.List;
  * <li>{@link SignatureFormat#parse(Path)} → {@link Claim}s</li>
  * <li>For each claim, find a {@link SignatureTool} where {@code canVerify(claim)} is true</li>
  * <li>{@link SignatureTool#verify(Path, Claim)} → {@link VerifyResult}</li>
- * <li>If {@code NO_KEY}, ask the tool to fetch the key (if it implements {@link KeyImporter})
- * and re-verify; if still {@code NO_KEY}, continue to the next tool</li>
+ * <li>If the key is unavailable, ask the tool to fetch it (when it implements
+ * {@link KeyImporter}) and re-verify; if it is still unavailable, continue to the next
+ * tool</li>
  * <li>{@link SignatureTool#extractCredentials(VerifyResult)} → proven credentials</li>
  * <li>Wrap into {@link EvidenceResult}</li>
  * </ol>
@@ -112,10 +113,11 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * Verifies a single claim against the artifact file.
      * <p>
      * Routes the claim to each tool in priority order. If a tool returns
-     * {@link Verdict#NO_KEY} and implements {@link KeyImporter}, the adapter
-     * asks it to fetch the key and re-verifies. Only {@link Verdict#PASS}
-     * stops iteration immediately; {@code NO_KEY} and {@code FAIL} fall
-     * through to the next tool, keeping the highest-ranked non-PASS result.
+     * {@link IndeterminateReason#KEY_UNAVAILABLE} and implements {@link KeyImporter}, the
+     * adapter asks it to fetch the key and re-verifies. Only
+     * {@link ClaimOutcome#VERIFIED} stops iteration immediately; other outcomes fall
+     * through to the next tool, keeping the most conclusive answer seen
+     * ({@link VerifyResult#isMoreConclusiveThan}).
      *
      * @param artifactFile the artifact whose signature is being verified
      * @param claim the claim to verify
@@ -123,28 +125,31 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      */
     private EvidenceResult verifyClaim(Path artifactFile, Claim claim) {
         EvidenceResult best = null;
+        VerifyResult bestResult = null;
         for (SignatureTool tool : tools) {
             if (!tool.canVerify(claim)) {
                 continue;
             }
             VerifyResult result = tool.verify(artifactFile, claim);
-            if (result.verdict() == Verdict.SKIPPED) {
+            if (result.isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM)) {
                 continue;
             }
-            if (result.verdict() == Verdict.NO_KEY) {
+            if (result.isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)) {
                 result = fetchKeyAndRetry(artifactFile, claim, tool, result);
             }
-            if (result.verdict() == Verdict.PASS) {
+            if (result.isVerified()) {
                 return wrapAsEvidence(tool, result);
             }
-            if (best == null || result.verdict().outranks(best.verdict())) {
+            if (bestResult == null || result.isMoreConclusiveThan(bestResult)) {
+                bestResult = result;
                 best = wrapAsEvidence(tool, result);
             }
         }
         if (best != null) {
             return best;
         }
-        return new EvidenceResult(new UnverifiedResult(Verdict.SKIPPED), List.of(), name());
+        return new EvidenceResult(new UnverifiedResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM),
+                List.of(), name());
     }
 
     /**
@@ -157,7 +162,7 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * @param artifactFile the artifact being verified
      * @param claim the claim whose key is missing
      * @param tool the tool to retry verification with
-     * @param originalResult the original {@link Verdict#NO_KEY} result
+     * @param originalResult the result citing {@link IndeterminateReason#KEY_UNAVAILABLE}
      * @return the result of re-verification after import, or the original result if fetching failed
      */
     private VerifyResult fetchKeyAndRetry(Path artifactFile, Claim claim,

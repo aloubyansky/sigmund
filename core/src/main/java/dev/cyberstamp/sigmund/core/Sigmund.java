@@ -388,9 +388,10 @@ public class Sigmund implements AutoCloseable {
     /**
      * Verifies a single claim against the artifact file.
      * <p>
-     * Tries each tool in priority order. Only {@link Verdict#PASS} stops
-     * iteration immediately; {@code NO_KEY} and {@code FAIL} fall through
-     * to the next tool, keeping the highest-ranked non-PASS result. This
+     * Tries each tool in priority order. Only {@link ClaimOutcome#VERIFIED} stops
+     * iteration immediately; a claim no tool supports falls through to the next tool, and
+     * the most conclusive answer seen so far is kept
+     * ({@link VerifyResult#isMoreConclusiveThan}). This
      * allows tools with different key stores (BC ephemeral cache, GPG
      * {@code pubring.kbx}, Sequoia cert store) to complement each other.
      *
@@ -403,13 +404,13 @@ public class Sigmund implements AutoCloseable {
                 continue;
             }
             VerifyResult result = tool.verify(artifactFile, claim);
-            if (result.verdict() == Verdict.PASS) {
+            if (result.isVerified()) {
                 return result;
             }
-            if (result.verdict() == Verdict.SKIPPED) {
+            if (result.isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM)) {
                 continue;
             }
-            if (best == null || result.verdict().outranks(best.verdict())) {
+            if (result.isMoreConclusiveThan(best)) {
                 best = result;
             }
         }

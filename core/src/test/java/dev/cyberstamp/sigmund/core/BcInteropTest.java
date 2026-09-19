@@ -40,7 +40,7 @@ class BcInteropTest {
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
 
         VerifyResult result = signer.verify(artifact, claim);
-        assertThat(result.verdict()).isEqualTo(Verdict.PASS);
+        assertThat(result.isVerified()).isTrue();
     }
 
     @ParameterizedTest
@@ -66,7 +66,7 @@ class BcInteropTest {
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
 
         VerifyResult result = signer.verify(artifact, claim);
-        assertThat(result.verdict()).isEqualTo(Verdict.FAIL);
+        assertThat(result.isFailed()).isTrue();
     }
 
     @ParameterizedTest

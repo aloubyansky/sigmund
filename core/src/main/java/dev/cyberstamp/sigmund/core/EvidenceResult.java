@@ -9,7 +9,7 @@ import java.util.List;
  * signer display name, algorithm, and key metadata) alongside the proven
  * {@link Credential}s for identity matching.
  * <p>
- * The trust layer only needs {@link #verdict()} and {@link #provenCredentials()}
+ * The trust layer only needs {@link #outcome()} and {@link #provenCredentials()}
  * for policy decisions. Consumers that need richer display info (signer names,
  * key fingerprints, algorithms) access {@link #verifyResult()} directly.
  *
@@ -32,9 +32,46 @@ public record EvidenceResult(VerifyResult verifyResult, List<Credential> provenC
     /**
      * Returns the verification outcome.
      *
-     * @return the verdict (PASS, FAIL, NO_KEY, or SKIPPED)
+     * @return the claim outcome
      */
-    public Verdict verdict() {
-        return verifyResult.verdict();
+    public ClaimOutcome outcome() {
+        return verifyResult.outcome();
+    }
+
+    /**
+     * Returns why verification could not complete.
+     *
+     * @return the reason, or {@code null} when the outcome is conclusive
+     */
+    public IndeterminateReason reason() {
+        return verifyResult.reason();
+    }
+
+    /**
+     * Indicates whether the claim verified.
+     *
+     * @return {@code true} when the claim's outcome is {@link ClaimOutcome#VERIFIED}
+     */
+    public boolean isVerified() {
+        return verifyResult.isVerified();
+    }
+
+    /**
+     * Indicates whether cryptographic verification failed.
+     *
+     * @return {@code true} when the claim's outcome is {@link ClaimOutcome#FAILED}
+     */
+    public boolean isFailed() {
+        return verifyResult.isFailed();
+    }
+
+    /**
+     * Indicates whether verification could not complete for a particular reason.
+     *
+     * @param expected the reason to test for
+     * @return {@code true} when the claim is indeterminate for that reason
+     */
+    public boolean isIndeterminate(IndeterminateReason expected) {
+        return verifyResult.isIndeterminate(expected);
     }
 }

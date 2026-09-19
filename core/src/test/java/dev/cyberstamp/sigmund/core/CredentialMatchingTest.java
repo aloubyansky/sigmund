@@ -7,10 +7,10 @@ import org.junit.jupiter.api.Test;
 
 class CredentialMatchingTest {
 
-    private static final VerifyResult PGP_PASS = new OpenPgpVerifyResult(
-            Verdict.PASS, null, null, 4, null, null);
-    private static final VerifyResult SIGSTORE_PASS = new SigstoreVerifyResult(
-            Verdict.PASS, null, null, null, null, -1);
+    private static final VerifyResult PGP_PASS = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, null, null, 4, null,
+            null);
+    private static final VerifyResult SIGSTORE_PASS = new SigstoreVerifyResult(ClaimOutcome.VERIFIED, null, null, null, null,
+            null, -1);
 
     @Test
     void fingerprintMatchV4() {

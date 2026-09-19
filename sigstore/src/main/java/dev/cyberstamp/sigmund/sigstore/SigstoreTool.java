@@ -1,8 +1,10 @@
 package dev.cyberstamp.sigmund.sigstore;
 
 import dev.cyberstamp.sigmund.core.Claim;
+import dev.cyberstamp.sigmund.core.ClaimOutcome;
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.EmailCredential;
+import dev.cyberstamp.sigmund.core.IndeterminateReason;
 import dev.cyberstamp.sigmund.core.SignResult;
 import dev.cyberstamp.sigmund.core.SignatureFormat;
 import dev.cyberstamp.sigmund.core.SignatureTool;
@@ -11,7 +13,6 @@ import dev.cyberstamp.sigmund.core.SigstoreClaim;
 import dev.cyberstamp.sigmund.core.SigstoreCredential;
 import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
 import dev.cyberstamp.sigmund.core.ToolExecutionException;
-import dev.cyberstamp.sigmund.core.Verdict;
 import dev.cyberstamp.sigmund.core.VerifyResult;
 import dev.sigstore.KeylessSigner;
 import dev.sigstore.KeylessSignerException;
@@ -187,7 +188,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
         try {
             bundle = Bundle.from(new StringReader(su.jsonBundle()));
         } catch (BundleParseException e) {
-            return new SigstoreVerifyResult(Verdict.FAIL, null, null, null, null, -1);
+            return evidenceMalformed();
         }
 
         try {
@@ -213,7 +214,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
      */
     @Override
     public List<Credential> extractCredentials(VerifyResult result) {
-        if (result.verdict() != Verdict.PASS) {
+        if (!result.isVerified()) {
             return List.of();
         }
         SigstoreVerifyResult sr = (SigstoreVerifyResult) result;
@@ -241,13 +242,37 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
         }
     }
 
-    private VerifyResult handleVerificationException(KeylessVerificationException e) {
-        Throwable cause = e.getCause();
-        if (isInfrastructureFailure(cause)) {
-            throw new ToolExecutionException(
-                    "Sigstore verification infrastructure failure: " + e.getMessage(), e);
+    /**
+     * Maps a verification exception to an outcome, keeping an attack signal distinct from
+     * an infrastructure problem.
+     *
+     * <p>
+     * A failure caused by I/O means the trust root could not be reached or read, which says
+     * nothing about the artifact: the outcome is indeterminate and transient, so a cached
+     * earlier result or a later run can settle it. Anything else means the bundle itself did
+     * not verify, which is the attack signal.
+     *
+     * @param e the exception raised by the Sigstore verifier
+     * @return the mapped result
+     */
+    VerifyResult handleVerificationException(KeylessVerificationException e) {
+        if (isInfrastructureFailure(e.getCause())) {
+            return SigstoreVerifyResult.indeterminate(IndeterminateReason.TRUST_ROOT_UNAVAILABLE);
         }
-        return new SigstoreVerifyResult(Verdict.FAIL, null, null, null, null, -1);
+        return new SigstoreVerifyResult(ClaimOutcome.FAILED, null, null, null, null, null, -1);
+    }
+
+    /**
+     * Builds the result for evidence that could not be parsed.
+     *
+     * <p>
+     * A bundle that will not parse has not failed verification — nothing was verified. The
+     * reason is permanent: the same bytes will not parse on a later run either.
+     *
+     * @return an indeterminate result citing malformed evidence
+     */
+    static VerifyResult evidenceMalformed() {
+        return SigstoreVerifyResult.indeterminate(IndeterminateReason.EVIDENCE_MALFORMED);
     }
 
     private boolean isInfrastructureFailure(Throwable cause) {
@@ -269,7 +294,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
         String logIndex = extractLogIndex(bundle);
         String algorithm = cert.getPublicKey().getAlgorithm();
 
-        return new SigstoreVerifyResult(Verdict.PASS, subject, algorithm,
+        return new SigstoreVerifyResult(ClaimOutcome.VERIFIED, null, subject, algorithm,
                 sigstoreCredential, logIndex, subjectType);
     }
 

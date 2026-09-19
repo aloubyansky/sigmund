@@ -47,6 +47,28 @@ class ArtifactPatternTest {
     }
 
     @Nested
+    class ForModule {
+
+        @Test
+        void dropsVersionClassifierAndExtension() {
+            ArtifactCoords sources = new ArtifactCoords("org.example", "lib", "sources", "jar", "1.0");
+            assertThat(ArtifactPattern.forModule(sources).toString())
+                    .isEqualTo("org.example:lib");
+        }
+
+        @Test
+        void matchesEveryFileOfThatModule() {
+            ArtifactCoords jar = new ArtifactCoords("org.example", "lib", "", "jar", "1.0");
+            ArtifactPattern pattern = ArtifactPattern.forModule(jar);
+            assertThat(pattern.matches(jar)).isTrue();
+            assertThat(pattern.matches(
+                    new ArtifactCoords("org.example", "lib", "", "pom", "2.0"))).isTrue();
+            assertThat(pattern.matches(
+                    new ArtifactCoords("org.example", "other", "", "jar", "1.0"))).isFalse();
+        }
+    }
+
+    @Nested
     class Matching {
 
         @Test

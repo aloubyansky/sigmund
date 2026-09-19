@@ -237,7 +237,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
     @Override
     public VerifyResult verify(Path artifactFile, Claim claim) {
         if (!(claim instanceof OpenPgpClaim opgu)) {
-            return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, -1, null, null);
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
         }
         return verifyOpenPgpUnit(artifactFile, opgu);
     }
@@ -267,7 +267,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
 
     @Override
     public List<Credential> extractCredentials(VerifyResult result) {
-        if (result.verdict() != Verdict.PASS) {
+        if (!result.isVerified()) {
             return List.of();
         }
         if (result instanceof OpenPgpVerifyResult opvr && opvr.fingerprint() != null) {
@@ -575,14 +575,14 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
             fingerprint = extractKeyIdFromSignature(opgu);
         }
         if (fingerprint == null) {
-            return new OpenPgpVerifyResult(Verdict.SKIPPED, null, algorithm,
-                    version, null, null);
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.EVIDENCE_MALFORMED, null, algorithm, version, null,
+                    null);
         }
 
         PGPPublicKeyRing pubKeyRing = keyStore.findPublicKey(fingerprint);
         if (pubKeyRing == null) {
-            return new OpenPgpVerifyResult(Verdict.NO_KEY, null, algorithm,
-                    version, fingerprint, fingerprint);
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.KEY_UNAVAILABLE, null, algorithm, version, fingerprint,
+                    fingerprint);
         }
 
         String userId = keyStore.findPrimaryUserId(fingerprint);
@@ -613,23 +613,21 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
             byte[] sigBytes = AscCombiner.dearmor(opgu.armoredBlock());
             PGPSignature signature = parseSignature(sigBytes);
             if (signature == null) {
-                return new OpenPgpVerifyResult(Verdict.FAIL, userId, algorithm,
-                        version, fingerprint, fingerprint);
+                return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint, fingerprint);
             }
 
             PGPPublicKey verifyKey = findVerificationKey(pubKeyRing, signature);
             if (verifyKey == null) {
-                return new OpenPgpVerifyResult(Verdict.NO_KEY, userId, algorithm,
-                        version, fingerprint, fingerprint);
+                return OpenPgpVerifyResult.indeterminate(IndeterminateReason.KEY_UNAVAILABLE, userId, algorithm, version,
+                        fingerprint, fingerprint);
             }
 
             boolean valid = verifyDetachedSignature(signature, verifyKey, artifactFile);
             return new OpenPgpVerifyResult(
-                    valid ? Verdict.PASS : Verdict.FAIL,
+                    valid ? ClaimOutcome.VERIFIED : ClaimOutcome.FAILED, null,
                     userId, algorithm, version, fingerprint, fingerprint);
         } catch (Exception e) {
-            return new OpenPgpVerifyResult(Verdict.FAIL, userId, algorithm,
-                    version, fingerprint, fingerprint);
+            return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint, fingerprint);
         }
     }
 

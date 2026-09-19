@@ -108,7 +108,7 @@ class BcToolFactoryTest {
                 armored, info.version(), info.issuerFingerprint(), info.algorithmId());
 
         VerifyResult result = signer.verify(artifact, claim);
-        assertThat(result.verdict()).isEqualTo(Verdict.PASS);
+        assertThat(result.isVerified()).isTrue();
     }
 
     @Test

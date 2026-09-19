@@ -27,7 +27,7 @@ class SignatureEvidenceAdapterTest {
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
             assertThat(results).hasSize(1);
-            assertThat(results.get(0).verdict()).isEqualTo(Verdict.PASS);
+            assertThat(results.get(0).isVerified()).isTrue();
             assertThat(results.get(0).provenCredentials()).hasSize(1);
             assertThat(results.get(0).provenCredentials().get(0).type()).isEqualTo("openpgp4");
             assertThat(results.get(0).provider()).isEqualTo("openpgp");
@@ -41,14 +41,15 @@ class SignatureEvidenceAdapterTest {
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
             assertThat(results).hasSize(1);
-            assertThat(results.get(0).verdict()).isEqualTo(Verdict.SKIPPED);
+            assertThat(results.get(0).isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM)).isTrue();
             assertThat(results.get(0).provenCredentials()).isEmpty();
         }
 
         @Test
         void skippedToolFallsThroughToNext() {
             var skipping = mockTool("bc", true, true,
-                    new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null),
+                    new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null,
+                            4, null, null),
                     List.of());
             var passing = mockTool("gpg", true, true, passVerifyResult(),
                     List.of(new FingerprintCredential("openpgp4", FP)));
@@ -57,24 +58,26 @@ class SignatureEvidenceAdapterTest {
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
             assertThat(results).hasSize(1);
-            assertThat(results.get(0).verdict()).isEqualTo(Verdict.PASS);
+            assertThat(results.get(0).isVerified()).isTrue();
             assertThat(results.get(0).provenCredentials()).hasSize(1);
         }
 
         @Test
         void allToolsSkipReturnsSkipped() {
             var tool1 = mockTool("bc", true, true,
-                    new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null),
+                    new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null,
+                            4, null, null),
                     List.of());
             var tool2 = mockTool("gpg", true, true,
-                    new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null),
+                    new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null,
+                            4, null, null),
                     List.of());
             var adapter = adapterWith(singleUnitFormat(), List.of(tool1, tool2));
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
             assertThat(results).hasSize(1);
-            assertThat(results.get(0).verdict()).isEqualTo(Verdict.SKIPPED);
+            assertThat(results.get(0).isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM)).isTrue();
         }
 
         @Test
@@ -135,7 +138,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertThat(results.get(0).verdict()).isEqualTo(Verdict.NO_KEY);
+            assertThat(results.get(0).isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
         }
 
         @Test
@@ -145,7 +148,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertThat(results.get(0).verdict()).isEqualTo(Verdict.PASS);
+            assertThat(results.get(0).isVerified()).isTrue();
         }
 
         @Test
@@ -155,7 +158,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertThat(results.get(0).verdict()).isEqualTo(Verdict.NO_KEY);
+            assertThat(results.get(0).isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
         }
 
         @Test
@@ -166,7 +169,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertThat(results.get(0).verdict()).isEqualTo(Verdict.PASS);
+            assertThat(results.get(0).isVerified()).isTrue();
         }
 
         @Test
@@ -177,7 +180,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertThat(results.get(0).verdict()).isEqualTo(Verdict.NO_KEY);
+            assertThat(results.get(0).isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
         }
 
         @Test
@@ -189,7 +192,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertThat(results.get(0).verdict()).isEqualTo(Verdict.PASS);
+            assertThat(results.get(0).isVerified()).isTrue();
         }
 
         @Test
@@ -200,7 +203,7 @@ class SignatureEvidenceAdapterTest {
 
             List<EvidenceResult> results = adapter.verify(ARTIFACT, EVIDENCE);
 
-            assertThat(results.get(0).verdict()).isEqualTo(Verdict.FAIL);
+            assertThat(results.get(0).isFailed()).isTrue();
         }
     }
 
@@ -241,15 +244,15 @@ class SignatureEvidenceAdapterTest {
     }
 
     private static OpenPgpVerifyResult passVerifyResult() {
-        return new OpenPgpVerifyResult(Verdict.PASS, "Test", "RSA", 4, FP, FP);
+        return new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Test", "RSA", 4, FP, FP);
     }
 
     private static OpenPgpVerifyResult noKeyVerifyResult() {
-        return new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, FP, FP);
+        return new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null, null, 4, FP, FP);
     }
 
     private static OpenPgpVerifyResult failVerifyResult() {
-        return new OpenPgpVerifyResult(Verdict.FAIL, null, "RSA", 4, FP, FP);
+        return new OpenPgpVerifyResult(ClaimOutcome.FAILED, null, null, "RSA", 4, FP, FP);
     }
 
     private static SignatureTool mockTool(String name, boolean available, boolean canVerify,
@@ -404,14 +407,15 @@ class SignatureEvidenceAdapterTest {
         @Override
         public VerifyResult verify(Path a, Claim u) {
             if (imported) {
-                return new OpenPgpVerifyResult(Verdict.PASS, "Test", "RSA", 4, FP, FP);
+                return new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Test", "RSA", 4, FP, FP);
             }
-            return new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, FP, FP);
+            return new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null, null, 4, FP,
+                    FP);
         }
 
         @Override
         public List<Credential> extractCredentials(VerifyResult r) {
-            if (r.verdict() == Verdict.PASS) {
+            if (r.isVerified()) {
                 return List.of(new FingerprintCredential("openpgp4", FP));
             }
             return List.of();

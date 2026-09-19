@@ -110,14 +110,18 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
     /**
      * Result of a GPG signature verification.
      *
-     * @param verdict the verification outcome: {@link Verdict#PASS} if the signature is valid,
-     *        {@link Verdict#FAIL} if the signature does not match,
-     *        {@link Verdict#NO_KEY} if the signing key is not in the keyring
+     * @param outcome what verification established: {@link ClaimOutcome#VERIFIED} if the
+     *        signature is valid, {@link ClaimOutcome#FAILED} if it does not match, and
+     *        {@link ClaimOutcome#INDETERMINATE} if GPG could not decide
+     * @param reason why verification could not complete —
+     *        {@link IndeterminateReason#KEY_UNAVAILABLE} when the signing key is not in the
+     *        keyring — or {@code null} when the outcome is conclusive
      * @param keyId the signing key ID extracted from GPG output, or null if not found
      * @param algorithm the key algorithm (e.g., "RSA", "EDDSA"), or null if not found
      * @param signerUserId the signer's user ID (e.g., "Name &lt;email&gt;"), or null if the key is not in the keyring
      */
-    private record GpgVerifyResult(Verdict verdict, String keyId, String algorithm, String signerUserId) {
+    private record GpgVerifyResult(ClaimOutcome outcome, IndeterminateReason reason, String keyId,
+            String algorithm, String signerUserId) {
     }
 
     private final String gpgExecutable;
@@ -262,10 +266,17 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
      * <p>
      * This method runs {@code gpg --verify <signatureFile> <artifactFile>}
      * and interprets the result.
+     * <p>
+     * Exit code 2 means GPG emitted warnings — a hybrid {@code .asc} carrying a v6 packet
+     * GnuPG does not understand produces one — so the signature counts as verified only when
+     * GPG also reports "Good signature". A missing public key is reported as
+     * {@link IndeterminateReason#KEY_UNAVAILABLE} rather than as a failure: nothing about the
+     * artifact has been established, and the key may be available on a later run.
      *
      * @param artifactFile the file that was signed
      * @param signatureFile the detached signature file to verify
-     * @return a {@link GpgVerifyResult} with the verification outcome and extracted key ID
+     * @return a {@link GpgVerifyResult} carrying the outcome, any indeterminate reason and
+     *         the extracted key ID
      * @throws IllegalArgumentException if artifactFile or signatureFile is null
      */
     private GpgVerifyResult verifyFile(Path artifactFile, Path signatureFile) {
@@ -288,16 +299,18 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
 
         // Exit code 2 means warnings (e.g. unknown packet versions); treat as
         // valid only if GPG still reports "Good signature"
-        Verdict verdict;
+        ClaimOutcome outcome;
+        IndeterminateReason reason = null;
         if (result.exitCode() == 0
                 || (result.exitCode() == 2 && result.stderr().contains("Good signature"))) {
-            verdict = Verdict.PASS;
+            outcome = ClaimOutcome.VERIFIED;
         } else if (result.stderr().contains("No public key")) {
-            verdict = Verdict.NO_KEY;
+            outcome = ClaimOutcome.INDETERMINATE;
+            reason = IndeterminateReason.KEY_UNAVAILABLE;
         } else {
-            verdict = Verdict.FAIL;
+            outcome = ClaimOutcome.FAILED;
         }
-        return new GpgVerifyResult(verdict, keyId, algorithm, signerUserId);
+        return new GpgVerifyResult(outcome, reason, keyId, algorithm, signerUserId);
     }
 
     /**
@@ -541,14 +554,14 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
     @Override
     public VerifyResult verify(Path artifactFile, Claim claim) {
         if (!(claim instanceof OpenPgpClaim opgu)) {
-            return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, -1, null, null);
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
         }
         return verifyArmoredBlock(artifactFile, opgu);
     }
 
     @Override
     public List<Credential> extractCredentials(VerifyResult result) {
-        if (result.verdict() != Verdict.PASS) {
+        if (!result.isVerified()) {
             return List.of();
         }
         if (result instanceof OpenPgpVerifyResult opvr && opvr.fingerprint() != null) {
@@ -686,7 +699,8 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
         // matches against a full fingerprint in the trust configuration.
         String fingerprint = opgu.issuerFingerprint() != null ? opgu.issuerFingerprint() : gpgResult.keyId();
         return new OpenPgpVerifyResult(
-                gpgResult.verdict(),
+                gpgResult.outcome(),
+                gpgResult.reason(),
                 gpgResult.signerUserId(),
                 gpgResult.algorithm(),
                 opgu.packetVersion(),

@@ -124,6 +124,7 @@ public enum IndeterminateReason {
     KEY_UNAVAILABLE(true),
     TRUST_ROOT_UNAVAILABLE(true),
     DISCOVERY_UNAVAILABLE(true),
+    TOOL_UNAVAILABLE(true),
     UNSUPPORTED_ALGORITHM(false),
     EVIDENCE_MALFORMED(false);
 
@@ -253,6 +254,8 @@ detail, but they carry `ClaimOutcome` plus an `IndeterminateReason` instead of
 | Signature verifies | `PASS` | `VERIFIED` |
 | Signature does not verify | `FAIL` | `FAILED` |
 | Signer key not available | `NO_KEY` | `INDETERMINATE(KEY_UNAVAILABLE)` |
+| Signature packet names no issuer | `SKIPPED` | `INDETERMINATE(EVIDENCE_MALFORMED)` |
+| Verification tool missing or broken | `FAIL` | `INDETERMINATE(TOOL_UNAVAILABLE)` |
 | Algorithm unsupported by tool | `SKIPPED` | `INDETERMINATE(UNSUPPORTED_ALGORITHM)` |
 | Sigstore bundle unparseable | `FAIL` | `INDETERMINATE(EVIDENCE_MALFORMED)` |
 | Sigstore trust root unavailable | thrown | `INDETERMINATE(TRUST_ROOT_UNAVAILABLE)` |

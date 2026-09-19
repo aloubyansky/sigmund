@@ -109,7 +109,7 @@ class SignatureVerificationReportTest {
 
         @Test
         void formatIncludesAlgorithm() {
-            var result = new OpenPgpVerifyResult(Verdict.PASS,
+            var result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null,
                     "Alice", "RSA", 4, "ABCD1234", "FULL_FP");
             var report = reportWith(result);
             String formatted = report.format();
@@ -118,7 +118,7 @@ class SignatureVerificationReportTest {
 
         @Test
         void formatIncludesKeyId() {
-            var result = new OpenPgpVerifyResult(Verdict.PASS,
+            var result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null,
                     null, null, 4, "ABCD1234", "FULL_FP");
             var report = reportWith(result);
             String formatted = report.format();
@@ -127,7 +127,7 @@ class SignatureVerificationReportTest {
 
         @Test
         void formatIncludesSignerName() {
-            var result = new OpenPgpVerifyResult(Verdict.PASS,
+            var result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null,
                     "Alice <alice@example.com>", "RSA", 4, null, null);
             var report = reportWith(result);
             String formatted = report.format();
@@ -143,18 +143,20 @@ class SignatureVerificationReportTest {
     }
 
     private static OpenPgpVerifyResult passResult() {
-        return new OpenPgpVerifyResult(Verdict.PASS, null, "RSA", 4, null, null);
+        return new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, null, "RSA", 4, null, null);
     }
 
     private static OpenPgpVerifyResult failResult() {
-        return new OpenPgpVerifyResult(Verdict.FAIL, null, null, 4, null, null);
+        return new OpenPgpVerifyResult(ClaimOutcome.FAILED, null, null, null, 4, null, null);
     }
 
     private static OpenPgpVerifyResult skippedResult() {
-        return new OpenPgpVerifyResult(Verdict.SKIPPED, null, null, 4, null, null);
+        return new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null, 4,
+                null, null);
     }
 
     private static OpenPgpVerifyResult noKeyResult() {
-        return new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4, null, null);
+        return new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null, null, 4, null,
+                null);
     }
 }

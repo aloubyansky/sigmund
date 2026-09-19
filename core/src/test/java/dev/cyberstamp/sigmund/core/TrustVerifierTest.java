@@ -92,8 +92,7 @@ class TrustVerifierTest {
 
         @Test
         void untrustedWhenUnmatchedEvidenceAndPolicyRequiresAll() {
-            var alice = ALICE;
-            var policy = policyFor(alice, ListedEvidencePolicy.ALL);
+            var policy = policyFor(ALICE, ListedEvidencePolicy.ALL);
             var provider = multiResultProvider(
                     new EvidenceResult(PGP_PASS,
                             List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23")),
@@ -139,7 +138,8 @@ class TrustVerifierTest {
         @Test
         void noKeyEvidenceIncludedInUnmatched() {
             var policy = policyFor(ALICE, ListedEvidencePolicy.ANY);
-            var noKeyResult = new OpenPgpVerifyResult(Verdict.NO_KEY, null, null, 4,
+            var noKeyResult = new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null,
+                    null, 4,
                     null, "DEADBEEFDEADBEEF");
             var provider = multiResultProvider(
                     new EvidenceResult(noKeyResult,
@@ -154,7 +154,7 @@ class TrustVerifierTest {
 
             assertThat(result.verdict()).isEqualTo(TrustVerdict.UNTRUSTED);
             assertThat(result.unmatchedEvidence().size()).isEqualTo(1);
-            assertThat(result.unmatchedEvidence().get(0).verdict()).isEqualTo(Verdict.NO_KEY);
+            assertThat(result.unmatchedEvidence().get(0).isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
         }
 
         @Test
@@ -243,8 +243,8 @@ class TrustVerifierTest {
         };
     }
 
-    private static final VerifyResult PGP_PASS = new OpenPgpVerifyResult(
-            Verdict.PASS, null, null, 4, null, null);
+    private static final VerifyResult PGP_PASS = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, null, null, 4, null,
+            null);
 
     private static EvidenceProvider passingProvider(String mechanism, Credential... proven) {
         return new EvidenceProvider() {
@@ -282,7 +282,7 @@ class TrustVerifierTest {
             }
 
             public List<EvidenceResult> verify(Path a, Path e) {
-                return List.of(new EvidenceResult(new UnverifiedResult(Verdict.FAIL), List.of(), "openpgp"));
+                return List.of(new EvidenceResult(new UnverifiedResult(ClaimOutcome.FAILED, null), List.of(), "openpgp"));
             }
         };
     }

@@ -142,7 +142,8 @@ public interface SignatureTool {
      * {@code version < 6} → {@code FingerprintCredential("openpgp4", ...)},
      * {@code version >= 6} → {@code FingerprintCredential("openpgp6", ...)}.
      * <p>
-     * Returns an empty list if the result is not {@link Verdict#PASS}.
+     * Returns an empty list unless the result is {@link ClaimOutcome#VERIFIED}: an
+     * unverified claim proves no credential.
      *
      * @param result the verification result to extract credentials from
      * @return the proven credentials, or an empty list if verification did not pass

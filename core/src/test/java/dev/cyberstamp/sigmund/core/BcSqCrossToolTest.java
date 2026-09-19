@@ -47,8 +47,8 @@ class BcSqCrossToolTest {
 
         BcRunner bcRunner = new BcRunner(bcStore, null, null);
         VerifyResult result = verifyWithBc(bcRunner, artifact, sigFile);
-        assertThat(result.verdict())
-                .as("BC verification of SQ Ed25519 signature failed").isEqualTo(Verdict.PASS);
+        assertThat(result.isVerified())
+                .as("BC verification of SQ Ed25519 signature failed").isTrue();
     }
 
     @Test

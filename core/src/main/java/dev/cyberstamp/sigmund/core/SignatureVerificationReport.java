@@ -32,10 +32,10 @@ public class SignatureVerificationReport {
         boolean anySkip = false;
         for (FileSignatureReport file : files) {
             for (VerifyResult r : file.results()) {
-                switch (r.verdict()) {
-                    case PASS -> anyPass = true;
-                    case FAIL -> anyFail = true;
-                    case NO_KEY, SKIPPED -> anySkip = true;
+                switch (r.outcome()) {
+                    case VERIFIED -> anyPass = true;
+                    case FAILED -> anyFail = true;
+                    case INDETERMINATE -> anySkip = true;
                     default -> {
                     }
                 }
@@ -102,7 +102,10 @@ public class SignatureVerificationReport {
     }
 
     private void formatResult(StringBuilder sb, VerifyResult r) {
-        sb.append(r.verdict());
+        sb.append(r.outcome());
+        if (r.reason() != null) {
+            sb.append(" [").append(r.reason()).append(']');
+        }
         if (r.algorithm() != null) {
             sb.append(" (").append(r.algorithm()).append(')');
         }
