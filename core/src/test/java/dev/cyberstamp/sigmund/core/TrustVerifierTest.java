@@ -191,29 +191,17 @@ class TrustVerifierTest {
 
     // --- Helpers ---
 
-    private static ArtifactIdentity artifact(String ns, String name, String version) {
-        return new ArtifactIdentity() {
-            public String namespace() {
-                return ns;
-            }
-
-            public String name() {
-                return name;
-            }
-
-            public String version() {
-                return version;
-            }
-        };
+    private static ArtifactCoords artifact(String ns, String name, String version) {
+        return new ArtifactCoords(ns, name, "", "jar", version);
     }
 
     private static TrustPolicy policyFor(SignerIdentity signer, ListedEvidencePolicy listedEvidence) {
         return new TrustPolicy() {
-            public List<SignerIdentity> expectedSigners(ArtifactIdentity a) {
+            public List<SignerIdentity> expectedSigners(ArtifactCoords a) {
                 return List.of(signer);
             }
 
-            public boolean isUnsignedAllowed(ArtifactIdentity a) {
+            public boolean isUnsignedAllowed(ArtifactCoords a) {
                 return false;
             }
 
@@ -233,11 +221,11 @@ class TrustVerifierTest {
 
     private static TrustPolicy emptyPolicy() {
         return new TrustPolicy() {
-            public List<SignerIdentity> expectedSigners(ArtifactIdentity a) {
+            public List<SignerIdentity> expectedSigners(ArtifactCoords a) {
                 return List.of();
             }
 
-            public boolean isUnsignedAllowed(ArtifactIdentity a) {
+            public boolean isUnsignedAllowed(ArtifactCoords a) {
                 return false;
             }
 

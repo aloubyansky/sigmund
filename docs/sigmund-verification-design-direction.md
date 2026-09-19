@@ -751,10 +751,26 @@ tooling remains a technology preview.
 
 ### Cross-ecosystem
 
-Treated as a **constraint on the data model, not a delivery scope**. Keep the
-internal identity type abstract with a purl projection, keep attester role
-first-class, emit purl-keyed output. Costs nothing now, forecloses nothing
-later. No adapters shipped.
+Treated as a **constraint on the output, not a delivery scope**. **purl is the
+cross-ecosystem identity; the internal coordinate is the repository's own.**
+
+An abstract internal coordinate would be the wrong generalization. What
+ecosystems share is namespace, name and version plus *some* set of variant
+qualifiers, and those qualifiers differ: Maven has classifier and extension,
+PyPI has wheel tags and sdist-versus-wheel, RPM and Debian have architecture
+(and RPM epoch and release), while npm, Go and NuGet have no file-level variant
+at all. A type covering all of them degenerates into a qualifier map — which is
+exactly what purl is, and why purl belongs on output rather than in matching
+(§8).
+
+So the internal coordinate is Maven's, named in purl's vocabulary (`namespace`,
+`name`, `version`) so the projection is a mapping rather than a translation.
+What carries across ecosystems is the purl emitted in results, VSAs and
+SBOM-facing output, plus a first-class attester role (§3.3), which is the
+dimension that would otherwise be flattened into a misleading
+`trusted-signer: X` (§8). Another ecosystem would bring its own coordinate type
+and its own purl projection, rather than contorting this one. Costs nothing now,
+forecloses nothing later. No adapters shipped.
 
 ---
 
@@ -908,6 +924,7 @@ cross-ecosystem adapters.
 | Time | Three clocks; evaluation basis per claim kind; Sigstore basis inherited from `sigstore-java` |
 | Revocation | Honour reason codes — compromise and unspecified retroactive, rotation forward-only; expiry judged at signature time; identity matching independent of keyserver-served user IDs; separate key TTL |
 | Scope | Artifacts in Maven repositories, whatever the language; the repository format defines what is verified, each build tool where; core uses repository concepts, never build-tool types |
+| Cross-ecosystem | purl on output is the portable identity; the internal coordinate stays the repository's own, named in purl's vocabulary |
 | Insertion points | Three, not two; keep plugin and extension both; coverage recorded in the result and the VSA; `ArtifactResolverPostProcessor` a candidate extension hook; evidence and policy resolution bypass verification; extension scope limited to build tooling versus project |
 | Vocabulary | Evidence = file, claim = assertion; rename `VerificationUnit` → `Claim` |
 | Credentials | Two kinds — key material, and an attested identity of subject plus issuer; a bare email is not an identity; identity assertions only from policy-named issuers; key source recorded always |

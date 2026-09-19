@@ -1,7 +1,7 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.Algorithms;
-import dev.cyberstamp.sigmund.core.ArtifactIdentity;
+import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.AssessmentRequest;
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.DiscoveryConfig;
@@ -68,7 +68,7 @@ public class VerifyMojo extends AbstractDependencyMojo {
             List<ArtifactCoords> toAssess = new ArrayList<>();
             List<String> skippedCoords = new ArrayList<>();
             for (ArtifactCoords artifact : artifacts) {
-                ArtifactIdentity id = MavenArtifactIdentity.from(artifact);
+                ArtifactCoords id = artifact;
                 if (trustPolicy.isUnsignedAllowed(id)) {
                     skippedCoords.add(artifact.toString());
                 } else {
@@ -92,7 +92,7 @@ public class VerifyMojo extends AbstractDependencyMojo {
                 if (resolved == null) {
                     throw new MojoFailureException("Could not resolve artifact " + coords);
                 }
-                ArtifactIdentity identity = MavenArtifactIdentity.from(coords);
+                ArtifactCoords identity = coords;
                 requests.add(new AssessmentRequest(identity, resolved.artifactFile(),
                         resolved.evidenceFiles()));
                 assessedCoords.add(coords);
@@ -129,13 +129,13 @@ public class VerifyMojo extends AbstractDependencyMojo {
         Set<String> seen = new LinkedHashSet<>();
         List<ArtifactCoords> poms = new ArrayList<>();
         for (ArtifactCoords artifact : artifacts) {
-            if ("pom".equals(artifact.type())) {
+            if ("pom".equals(artifact.extension())) {
                 continue;
             }
-            String key = artifact.groupId() + ":" + artifact.artifactId() + ":" + artifact.version();
+            String key = artifact.namespace() + ":" + artifact.name() + ":" + artifact.version();
             if (seen.add(key)) {
                 poms.add(new ArtifactCoords(
-                        artifact.groupId(), artifact.artifactId(), "", "pom", artifact.version()));
+                        artifact.namespace(), artifact.name(), "", "pom", artifact.version()));
             }
         }
         artifacts.addAll(poms);
@@ -727,12 +727,12 @@ public class VerifyMojo extends AbstractDependencyMojo {
             UntrustedPolicy onUntrusted) implements TrustPolicy {
 
         @Override
-        public List<SignerIdentity> expectedSigners(ArtifactIdentity artifact) {
+        public List<SignerIdentity> expectedSigners(ArtifactCoords artifact) {
             return delegate.expectedSigners(artifact);
         }
 
         @Override
-        public boolean isUnsignedAllowed(ArtifactIdentity artifact) {
+        public boolean isUnsignedAllowed(ArtifactCoords artifact) {
             return delegate.isUnsignedAllowed(artifact);
         }
     }

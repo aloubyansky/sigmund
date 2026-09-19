@@ -13,7 +13,7 @@ import java.util.List;
  */
 public class TrustResult {
 
-    private final ArtifactIdentity artifact;
+    private final ArtifactCoords artifact;
     private final TrustVerdict verdict;
     private final List<MatchedEvidence> matchedEvidence;
     private final List<EvidenceResult> unmatchedEvidence;
@@ -26,7 +26,7 @@ public class TrustResult {
      * @param matchedEvidence evidence that matched an expected signer
      * @param unmatchedEvidence valid evidence that did not match any expected signer
      */
-    public TrustResult(ArtifactIdentity artifact, TrustVerdict verdict,
+    public TrustResult(ArtifactCoords artifact, TrustVerdict verdict,
             List<MatchedEvidence> matchedEvidence, List<EvidenceResult> unmatchedEvidence) {
         this.artifact = artifact;
         this.verdict = verdict;
@@ -39,7 +39,7 @@ public class TrustResult {
      *
      * @return the artifact identity
      */
-    public ArtifactIdentity artifact() {
+    public ArtifactCoords artifact() {
         return artifact;
     }
 

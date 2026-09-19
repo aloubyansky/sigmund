@@ -1,7 +1,7 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.Algorithms;
-import dev.cyberstamp.sigmund.core.ArtifactIdentity;
+import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.GpgRunner;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
@@ -484,7 +484,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             String coords = entry.getKey();
             List<SignedArtifact> sigEntries = entry.getValue();
 
-            ArtifactIdentity identity = MavenArtifactIdentity.fromCoords(coords);
+            ArtifactCoords identity = ArtifactCoords.parse(coords);
             if (trustPolicy.isUnsignedAllowed(identity)
                     || !trustPolicy.expectedSigners(identity).isEmpty()) {
                 continue;

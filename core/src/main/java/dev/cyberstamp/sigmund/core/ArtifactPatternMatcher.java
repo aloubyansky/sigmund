@@ -1,7 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
 /**
- * Matches {@link ArtifactIdentity} instances against colon-separated patterns.
+ * Matches {@link ArtifactCoords} instances against colon-separated patterns.
  * <p>
  * Patterns use 1–3 parts: {@code namespace}, {@code namespace:name}, or
  * {@code namespace:name:version}. Wildcards ({@code *}) match any value.
@@ -21,7 +21,7 @@ public final class ArtifactPatternMatcher {
      * @param patterns the candidate patterns
      * @return the most specific matching pattern, or {@code null} if none match
      */
-    public static String findBestMatch(ArtifactIdentity artifact, Iterable<String> patterns) {
+    public static String findBestMatch(ArtifactCoords artifact, Iterable<String> patterns) {
         String best = null;
         int bestScore = -1;
         for (String pattern : patterns) {
@@ -34,7 +34,7 @@ public final class ArtifactPatternMatcher {
         return best;
     }
 
-    static int matchScore(ArtifactIdentity artifact, String pattern) {
+    static int matchScore(ArtifactCoords artifact, String pattern) {
         String[] parts = pattern.split(":", -1);
         return switch (parts.length) {
             case 1 -> scoreSegment(parts[0], artifact.namespace()) >= 0
@@ -46,7 +46,7 @@ public final class ArtifactPatternMatcher {
         };
     }
 
-    private static int scoreTwoParts(String[] parts, ArtifactIdentity artifact) {
+    private static int scoreTwoParts(String[] parts, ArtifactCoords artifact) {
         int ns = scoreSegment(parts[0], artifact.namespace());
         int name = scoreSegment(parts[1], artifact.name());
         if (ns < 0 || name < 0) {
@@ -55,7 +55,7 @@ public final class ArtifactPatternMatcher {
         return scoreNamespace(parts[0], artifact.namespace()) + name;
     }
 
-    private static int scoreThreeParts(String[] parts, ArtifactIdentity artifact) {
+    private static int scoreThreeParts(String[] parts, ArtifactCoords artifact) {
         int ns = scoreSegment(parts[0], artifact.namespace());
         int name = scoreSegment(parts[1], artifact.name());
         int ver = scoreSegment(parts[2], artifact.version());

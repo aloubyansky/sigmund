@@ -34,7 +34,7 @@ public interface TrustPolicy {
      * @param artifact the artifact to look up
      * @return the expected signers, or an empty list if not configured
      */
-    List<SignerIdentity> expectedSigners(ArtifactIdentity artifact);
+    List<SignerIdentity> expectedSigners(ArtifactCoords artifact);
 
     /**
      * Checks whether this artifact is explicitly marked as unsigned-ok.
@@ -42,7 +42,7 @@ public interface TrustPolicy {
      * @param artifact the artifact to check
      * @return {@code true} if the artifact is allowed to be unsigned
      */
-    boolean isUnsignedAllowed(ArtifactIdentity artifact);
+    boolean isUnsignedAllowed(ArtifactCoords artifact);
 
     /**
      * Returns the policy for evaluating listed evidence.

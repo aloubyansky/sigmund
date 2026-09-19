@@ -46,7 +46,7 @@ public class DefaultTrustPolicy implements TrustPolicy {
     }
 
     @Override
-    public List<SignerIdentity> expectedSigners(ArtifactIdentity artifact) {
+    public List<SignerIdentity> expectedSigners(ArtifactCoords artifact) {
         String bestPattern = ArtifactPatternMatcher.findBestMatch(artifact, trustMappings.keySet());
         if (bestPattern == null) {
             return List.of();
@@ -55,7 +55,7 @@ public class DefaultTrustPolicy implements TrustPolicy {
     }
 
     @Override
-    public boolean isUnsignedAllowed(ArtifactIdentity artifact) {
+    public boolean isUnsignedAllowed(ArtifactCoords artifact) {
         return ArtifactPatternMatcher.findBestMatch(artifact, unsignedPatterns) != null;
     }
 

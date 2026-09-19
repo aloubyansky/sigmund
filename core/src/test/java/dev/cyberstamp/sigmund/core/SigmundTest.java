@@ -418,7 +418,7 @@ class SigmundTest {
 
             Path artifact = createTempFile("test.jar");
             Path sigFile = createTempFile("test.jar.asc", "signature");
-            ArtifactIdentity artifactId = testArtifact("org.example", "lib", "1.0");
+            ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
 
             TrustResult trustResult = verifier.assess(artifactId, artifact, List.of(sigFile));
             assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.TRUSTED);
@@ -443,7 +443,7 @@ class SigmundTest {
 
             Path artifact = createTempFile("test2.jar");
             Path sigFile = createTempFile("test2.jar.asc", "signature");
-            ArtifactIdentity artifactId = testArtifact("org.example", "lib", "1.0");
+            ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
 
             TrustResult trustResult = verifier.assess(artifactId, artifact, List.of(sigFile));
             assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.UNTRUSTED);
@@ -457,7 +457,7 @@ class SigmundTest {
             TrustVerifier verifier = sigmund.verifier(DefaultTrustPolicy.EMPTY);
 
             Path artifact = createTempFile("test3.jar");
-            ArtifactIdentity artifactId = testArtifact("org.example", "lib", "1.0");
+            ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
 
             TrustResult trustResult = verifier.assess(artifactId, artifact, List.of());
             assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.NOT_CONFIGURED);
@@ -1136,23 +1136,8 @@ class SigmundTest {
         }
     }
 
-    private static ArtifactIdentity testArtifact(String ns, String name, String version) {
-        return new ArtifactIdentity() {
-            @Override
-            public String namespace() {
-                return ns;
-            }
-
-            @Override
-            public String name() {
-                return name;
-            }
-
-            @Override
-            public String version() {
-                return version;
-            }
-        };
+    private static ArtifactCoords testArtifact(String ns, String name, String version) {
+        return new ArtifactCoords(ns, name, "", "jar", version);
     }
 
     /**

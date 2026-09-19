@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.Algorithms;
+import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.FileSignatureReport;
 import dev.cyberstamp.sigmund.core.KeyImporter;

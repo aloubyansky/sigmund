@@ -54,7 +54,7 @@ public class TrustVerifier {
      * @param evidenceFiles the evidence files to verify
      * @return the trust assessment result
      */
-    public TrustResult assess(ArtifactIdentity artifact, Path artifactFile,
+    public TrustResult assess(ArtifactCoords artifact, Path artifactFile,
             List<Path> evidenceFiles) {
         List<SignerIdentity> expectedSigners = resolveExpectedSigners(artifact);
         List<EvidenceResult> allEvidence = collectEvidence(artifactFile, evidenceFiles);
@@ -89,11 +89,11 @@ public class TrustVerifier {
         return results;
     }
 
-    private List<SignerIdentity> resolveExpectedSigners(ArtifactIdentity artifact) {
+    private List<SignerIdentity> resolveExpectedSigners(ArtifactCoords artifact) {
         return policy.expectedSigners(artifact);
     }
 
-    private TrustResult checkUnsignedOrNotConfigured(ArtifactIdentity artifact,
+    private TrustResult checkUnsignedOrNotConfigured(ArtifactCoords artifact,
             List<Path> evidenceFiles, List<EvidenceResult> allEvidence) {
         if (policy.isUnsignedAllowed(artifact) && (evidenceFiles == null || evidenceFiles.isEmpty())) {
             return new TrustResult(artifact, TrustVerdict.TRUSTED, List.of(), List.of());
@@ -121,7 +121,7 @@ public class TrustVerifier {
                 .anyMatch(e -> e.verdict() == Verdict.FAIL);
     }
 
-    private TrustResult matchCredentials(ArtifactIdentity artifact,
+    private TrustResult matchCredentials(ArtifactCoords artifact,
             List<SignerIdentity> expectedSigners, List<EvidenceResult> allEvidence) {
         List<MatchedEvidence> matched = new ArrayList<>();
         List<EvidenceResult> unmatched = new ArrayList<>();

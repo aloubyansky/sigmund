@@ -3,6 +3,7 @@ package dev.cyberstamp.sigmund.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
 import dev.cyberstamp.sigmund.core.UnverifiedResult;
 import dev.cyberstamp.sigmund.core.Verdict;

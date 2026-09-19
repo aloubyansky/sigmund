@@ -2,6 +2,7 @@ package dev.cyberstamp.sigmund.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Nested;
@@ -27,14 +28,14 @@ class VerifyMojoTest {
 
             assertThat(artifacts.size()).isEqualTo(4);
             ArtifactCoords pomA = artifacts.get(2);
-            assertThat(pomA.groupId()).isEqualTo("com.example");
-            assertThat(pomA.artifactId()).isEqualTo("lib-a");
-            assertThat(pomA.type()).isEqualTo("pom");
+            assertThat(pomA.namespace()).isEqualTo("com.example");
+            assertThat(pomA.name()).isEqualTo("lib-a");
+            assertThat(pomA.extension()).isEqualTo("pom");
             assertThat(pomA.version()).isEqualTo("1.0");
 
             ArtifactCoords pomB = artifacts.get(3);
-            assertThat(pomB.artifactId()).isEqualTo("lib-b");
-            assertThat(pomB.type()).isEqualTo("pom");
+            assertThat(pomB.name()).isEqualTo("lib-b");
+            assertThat(pomB.extension()).isEqualTo("pom");
         }
 
         @Test
@@ -47,7 +48,7 @@ class VerifyMojoTest {
             mojo.addPomArtifacts(artifacts);
 
             assertThat(artifacts.size()).isEqualTo(3);
-            assertThat(artifacts.get(2).type()).isEqualTo("pom");
+            assertThat(artifacts.get(2).extension()).isEqualTo("pom");
         }
 
         @Test
