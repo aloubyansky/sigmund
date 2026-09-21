@@ -24,9 +24,6 @@ import java.nio.file.Path;
  */
 public record EvidenceRef(Path file, DigestSet digest, String source) {
 
-    /** Evidence published alongside the artifact, as {@code .asc} and bundles are. */
-    public static final String SOURCE_SIDECAR = "sidecar";
-
     /**
      * Rejects references that cannot identify the evidence they describe.
      *

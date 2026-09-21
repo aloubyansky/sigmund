@@ -195,12 +195,12 @@ class SignerTest {
             }
 
             @Override
-            public boolean canHandleByContent(Path f) {
+            public boolean canHandleByContent(Evidence e) {
                 return true;
             }
 
             @Override
-            public List<Claim> parse(Path f) {
+            public List<Claim> parse(Evidence e) {
                 return List.of();
             }
 

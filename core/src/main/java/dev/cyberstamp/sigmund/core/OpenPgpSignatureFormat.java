@@ -39,39 +39,35 @@ public class OpenPgpSignatureFormat implements SignatureFormat {
     }
 
     /**
-     * Checks whether the file contains ASCII-armored OpenPGP data by inspecting its content.
-     * <p>
-     * Reads the file and checks for the presence of a {@code -----BEGIN PGP } marker.
-     * Called by {@link SignatureFormat#canHandle(Path)} when the file extension does not match.
+     * Checks whether the evidence contains ASCII-armored OpenPGP data.
      *
-     * @param signatureFile the path to the signature file
-     * @return {@code true} if the file contains OpenPGP armored data
+     * <p>
+     * Looks for a {@code -----BEGIN PGP } marker in content that was already read. Called by
+     * {@link SignatureFormat#canHandle(Evidence)} when the file extension does not match.
+     *
+     * @param evidence the evidence to check
+     * @return {@code true} if it contains OpenPGP armored data
      */
     @Override
-    public boolean canHandleByContent(Path signatureFile) {
-        try {
-            String content = Files.readString(signatureFile);
-            return content.contains(BEGIN_PGP);
-        } catch (IOException e) {
-            return false;
-        }
+    public boolean canHandleByContent(Evidence evidence) {
+        return evidence.text().contains(BEGIN_PGP);
     }
 
     /**
-     * Parses an ASCII-armored signature file into individually verifiable claims.
-     * <p>
-     * Extracts all armored blocks, inspects each block's signature packet for
-     * version, algorithm ID, and issuer fingerprint, and wraps each into an
-     * {@link OpenPgpClaim}.
+     * Parses ASCII-armored evidence into individually verifiable claims.
      *
-     * @param signatureFile the path to the {@code .asc} file
+     * <p>
+     * Extracts all armored blocks, inspects each block's signature packet for version,
+     * algorithm ID, issuer fingerprint and creation time, and wraps each into an
+     * {@link OpenPgpClaim}. A hybrid {@code .asc} carrying a classic and a post-quantum
+     * block therefore yields two claims, verified independently.
+     *
+     * @param evidence the evidence to parse
      * @return the parsed claims, one per armored block
-     * @throws ToolExecutionException if the file cannot be read
      */
     @Override
-    public List<Claim> parse(Path signatureFile) {
-        String content = readFile(signatureFile);
-        List<String> blocks = AscCombiner.extractAllBlocks(content);
+    public List<Claim> parse(Evidence evidence) {
+        List<String> blocks = AscCombiner.extractAllBlocks(evidence.text());
         List<Claim> claims = new ArrayList<>(blocks.size());
         for (String block : blocks) {
             claims.add(parseBlock(block));
@@ -120,11 +116,4 @@ public class OpenPgpSignatureFormat implements SignatureFormat {
                 info.creationTime());
     }
 
-    private String readFile(Path file) {
-        try {
-            return Files.readString(file);
-        } catch (IOException e) {
-            throw new ToolExecutionException("Failed to read signature file: " + file, e);
-        }
-    }
 }

@@ -28,7 +28,7 @@ class BcRunnerTest {
             signer.sign(artifact, signature);
 
             OpenPgpClaim signed = (OpenPgpClaim) new OpenPgpSignatureFormat()
-                    .parse(signature).get(0);
+                    .parse(Evidence.read(signature, Evidence.SOURCE_SIDECAR)).get(0);
             // the same signature, claiming to predate the key it was made with
             OpenPgpClaim backdated = new OpenPgpClaim(signed.armoredBlock(),
                     signed.packetVersion(), signed.issuerFingerprint(), signed.algorithmId(),
@@ -47,7 +47,7 @@ class BcRunnerTest {
             signer.sign(artifact, signature);
 
             OpenPgpClaim claim = (OpenPgpClaim) new OpenPgpSignatureFormat()
-                    .parse(signature).get(0);
+                    .parse(Evidence.read(signature, Evidence.SOURCE_SIDECAR)).get(0);
 
             assertThat(signer.verify(artifact, claim).isVerified()).isTrue();
         }

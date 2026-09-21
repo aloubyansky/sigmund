@@ -1036,12 +1036,12 @@ class SigmundTest {
             }
 
             @Override
-            public boolean canHandleByContent(Path f) {
+            public boolean canHandleByContent(Evidence e) {
                 return canHandle;
             }
 
             @Override
-            public List<Claim> parse(Path f) {
+            public List<Claim> parse(Evidence e) {
                 return claims;
             }
         };

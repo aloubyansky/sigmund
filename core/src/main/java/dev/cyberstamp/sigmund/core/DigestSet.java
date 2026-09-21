@@ -90,6 +90,16 @@ public record DigestSet(Map<String, String> values) {
     }
 
     /**
+     * Computes the SHA-256 digest of content already in memory.
+     *
+     * @param content the bytes to hash
+     * @return a digest set containing their SHA-256 digest
+     */
+    public static DigestSet sha256(byte[] content) {
+        return sha256(HexFormat.of().formatHex(sha256Digest().digest(content)));
+    }
+
+    /**
      * Returns the SHA-256 value, or {@code null} when this set does not carry one.
      *
      * @return the SHA-256 digest in lower-case hexadecimal, or {@code null}

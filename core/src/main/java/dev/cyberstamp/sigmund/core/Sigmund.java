@@ -361,11 +361,12 @@ public class Sigmund implements AutoCloseable {
     }
 
     private FileSignatureReport verifySingleFile(Path artifactFile, Path signatureFile) {
-        SignatureFormat format = findFormat(signatureFile);
+        Evidence evidence = Evidence.read(signatureFile, Evidence.SOURCE_SIDECAR);
+        SignatureFormat format = findFormat(evidence);
         if (format == null) {
             return new FileSignatureReport(signatureFile, "unknown", List.of());
         }
-        List<Claim> claims = format.parse(signatureFile);
+        List<Claim> claims = format.parse(evidence);
         List<VerifyResult> results = new ArrayList<>();
         for (Claim claim : claims) {
             VerifyResult result = verifyClaim(artifactFile, claim);
@@ -376,9 +377,9 @@ public class Sigmund implements AutoCloseable {
         return new FileSignatureReport(signatureFile, format.name(), results);
     }
 
-    private SignatureFormat findFormat(Path signatureFile) {
+    private SignatureFormat findFormat(Evidence evidence) {
         for (SignatureFormat format : formats) {
-            if (format.canHandle(signatureFile)) {
+            if (format.canHandle(evidence)) {
                 return format;
             }
         }

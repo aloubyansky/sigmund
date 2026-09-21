@@ -2,17 +2,32 @@ package dev.cyberstamp.sigmund.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class TrustVerifierTest {
+
+    @TempDir
+    static Path fixtures;
+
+    /** Real evidence on disk: the verifier reads each file to digest what it verified. */
+    static Path EVIDENCE_FILE;
+
+    @BeforeAll
+    static void createFixtures() throws IOException {
+        EVIDENCE_FILE = Files.writeString(fixtures.resolve("lib.jar.asc"), "evidence bytes");
+    }
 
     private static final EvidenceRef EVIDENCE_REF = new EvidenceRef(
             Path.of("artifact.jar.asc"),
             DigestSet.sha256("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
-            EvidenceRef.SOURCE_SIDECAR);
+            Evidence.SOURCE_SIDECAR);
 
     private static final SignerIdentity ALICE = new SignerIdentity("alice", "Alice",
             List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23")));
@@ -30,7 +45,7 @@ class TrustVerifierTest {
             var result = verifier.assess(
                     artifact("org.example", "lib", "1.0"),
                     Path.of("lib.jar"),
-                    List.of(Path.of("lib.jar.asc")));
+                    List.of(EVIDENCE_FILE));
 
             assertThat(result.verdict()).isEqualTo(TrustVerdict.TRUSTED);
             assertThat(result.matchedEvidence().size()).isEqualTo(1);
@@ -46,7 +61,7 @@ class TrustVerifierTest {
             var result = verifier.assess(
                     artifact("org.example", "lib", "1.0"),
                     Path.of("lib.jar"),
-                    List.of(Path.of("lib.jar.asc")));
+                    List.of(EVIDENCE_FILE));
 
             assertThat(result.verdict()).isEqualTo(TrustVerdict.UNTRUSTED);
         }
@@ -86,7 +101,7 @@ class TrustVerifierTest {
             var result = verifier.assess(
                     artifact("org.example", "lib", "1.0"),
                     Path.of("lib.jar"),
-                    List.of(Path.of("lib.jar.asc")));
+                    List.of(EVIDENCE_FILE));
 
             assertThat(result.verdict()).isEqualTo(TrustVerdict.VERIFICATION_FAILED);
         }
@@ -110,7 +125,7 @@ class TrustVerifierTest {
             var result = verifier.assess(
                     artifact("org.example", "lib", "1.0"),
                     Path.of("lib.jar"),
-                    List.of(Path.of("lib.jar.asc")));
+                    List.of(EVIDENCE_FILE));
 
             assertThat(result.verdict()).isEqualTo(TrustVerdict.UNTRUSTED);
         }
@@ -130,7 +145,7 @@ class TrustVerifierTest {
             var result = verifier.assess(
                     artifact("org.example", "lib", "1.0"),
                     Path.of("lib.jar"),
-                    List.of(Path.of("lib.jar.asc")));
+                    List.of(EVIDENCE_FILE));
 
             assertThat(result.verdict()).isEqualTo(TrustVerdict.TRUSTED);
             assertThat(result.unmatchedEvidence().size()).isEqualTo(1);
@@ -155,7 +170,7 @@ class TrustVerifierTest {
             var result = verifier.assess(
                     artifact("org.example", "lib", "1.0"),
                     Path.of("lib.jar"),
-                    List.of(Path.of("lib.jar.asc")));
+                    List.of(EVIDENCE_FILE));
 
             assertThat(result.verdict()).isEqualTo(TrustVerdict.UNTRUSTED);
             assertThat(result.unmatchedEvidence().size()).isEqualTo(1);
@@ -171,7 +186,7 @@ class TrustVerifierTest {
             var result = verifier.assess(
                     artifact("org.example", "lib", "1.0"),
                     Path.of("lib.jar"),
-                    List.of(Path.of("lib.jar.asc")));
+                    List.of(EVIDENCE_FILE));
 
             assertThat(result.verdict()).isEqualTo(TrustVerdict.NOT_CONFIGURED);
             assertThat(result.unmatchedEvidence().isEmpty()).isFalse();
@@ -261,11 +276,11 @@ class TrustVerifierTest {
                 return true;
             }
 
-            public boolean canHandle(Path f) {
+            public boolean canHandle(Evidence e) {
                 return true;
             }
 
-            public List<EvidenceResult> verify(Path a, Path e) {
+            public List<EvidenceResult> verify(Path a, Evidence e) {
                 return List.of(new EvidenceResult(PGP_PASS,
                         List.of(proven), mechanism, EVIDENCE_REF, TrustRootRef.unknown()));
             }
@@ -282,11 +297,11 @@ class TrustVerifierTest {
                 return true;
             }
 
-            public boolean canHandle(Path f) {
+            public boolean canHandle(Evidence e) {
                 return true;
             }
 
-            public List<EvidenceResult> verify(Path a, Path e) {
+            public List<EvidenceResult> verify(Path a, Evidence e) {
                 return List.of(new EvidenceResult(new UnverifiedResult(ClaimOutcome.FAILED, null), List.of(), "openpgp",
                         EVIDENCE_REF, TrustRootRef.unknown()));
             }
@@ -303,11 +318,11 @@ class TrustVerifierTest {
                 return true;
             }
 
-            public boolean canHandle(Path f) {
+            public boolean canHandle(Evidence e) {
                 return true;
             }
 
-            public List<EvidenceResult> verify(Path a, Path e) {
+            public List<EvidenceResult> verify(Path a, Evidence e) {
                 return List.of(results);
             }
         };

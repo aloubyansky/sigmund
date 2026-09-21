@@ -19,7 +19,7 @@ import java.time.Instant;
  * This is intentional — a new format introduces new packet structures and verification
  * semantics that warrant review as part of core.
  *
- * @see SignatureFormat#parse(java.nio.file.Path)
+ * @see SignatureFormat#parse(Evidence)
  * @see SignatureTool#canVerify(Claim)
  */
 public sealed interface Claim permits OpenPgpClaim, SigstoreClaim {

@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -40,21 +41,23 @@ class OpenPgpSignatureFormatTest {
         void validAscFile(@TempDir Path tmp) throws IOException {
             Path file = tmp.resolve("sig.asc");
             Files.writeString(file, "-----BEGIN PGP SIGNATURE-----\ndata\n-----END PGP SIGNATURE-----\n");
-            assertThat(format.canHandle(file)).isTrue();
+            assertThat(format.canHandle(Evidence.read(file, Evidence.SOURCE_SIDECAR))).isTrue();
         }
 
         @Test
         void nonPgpFile(@TempDir Path tmp) throws IOException {
             Path file = tmp.resolve("bundle.json");
             Files.writeString(file, "{\"mediaType\": \"application/vnd.dev.sigstore.bundle.v0.3+json\"}");
-            assertThat(format.canHandle(file)).isFalse();
+            assertThat(format.canHandle(Evidence.read(file, Evidence.SOURCE_SIDECAR))).isFalse();
         }
 
         @Test
-        void missingFile(@TempDir Path tmp) {
+        void missingFileCannotBeRead(@TempDir Path tmp) {
+            // Detection reads the evidence rather than guessing from the name, so a file that
+            // is not there fails when it is read, not silently later
             Path file = tmp.resolve("nonexistent.asc");
-            // Extension-first detection returns true for .asc files regardless of existence
-            assertThat(format.canHandle(file)).isTrue();
+            assertThatThrownBy(() -> Evidence.read(file, Evidence.SOURCE_SIDECAR))
+                    .isInstanceOf(ToolExecutionException.class);
         }
     }
 
@@ -65,20 +68,21 @@ class OpenPgpSignatureFormatTest {
         void returnsTrueForValidPgpContent(@TempDir Path tmp) throws IOException {
             Path file = tmp.resolve("sig.bin");
             Files.writeString(file, "-----BEGIN PGP SIGNATURE-----\ndata\n-----END PGP SIGNATURE-----\n");
-            assertThat(format.canHandleByContent(file)).isTrue();
+            assertThat(format.canHandleByContent(Evidence.read(file, Evidence.SOURCE_SIDECAR))).isTrue();
         }
 
         @Test
         void returnsFalseForNonPgpContent(@TempDir Path tmp) throws IOException {
             Path file = tmp.resolve("data.bin");
             Files.writeString(file, "This is not a PGP signature file.");
-            assertThat(format.canHandleByContent(file)).isFalse();
+            assertThat(format.canHandleByContent(Evidence.read(file, Evidence.SOURCE_SIDECAR))).isFalse();
         }
 
         @Test
-        void returnsFalseForMissingFile(@TempDir Path tmp) {
+        void missingFileCannotBeRead(@TempDir Path tmp) {
             Path file = tmp.resolve("missing.bin");
-            assertThat(format.canHandleByContent(file)).isFalse();
+            assertThatThrownBy(() -> Evidence.read(file, Evidence.SOURCE_SIDECAR))
+                    .isInstanceOf(ToolExecutionException.class);
         }
     }
 
@@ -91,7 +95,7 @@ class OpenPgpSignatureFormatTest {
             Path file = tmp.resolve("sig.asc");
             Files.writeString(file, block);
 
-            List<Claim> claims = format.parse(file);
+            List<Claim> claims = format.parse(Evidence.read(file, Evidence.SOURCE_SIDECAR));
             assertThat(claims).hasSize(1);
             assertThat(claims.get(0)).isInstanceOf(OpenPgpClaim.class);
         }
@@ -103,7 +107,7 @@ class OpenPgpSignatureFormatTest {
             Path file = tmp.resolve("combined.asc");
             Files.writeString(file, block1 + block2);
 
-            List<Claim> claims = format.parse(file);
+            List<Claim> claims = format.parse(Evidence.read(file, Evidence.SOURCE_SIDECAR));
             assertThat(claims).hasSize(2);
         }
 
@@ -113,7 +117,7 @@ class OpenPgpSignatureFormatTest {
             Path file = tmp.resolve("sig.asc");
             Files.writeString(file, block);
 
-            OpenPgpClaim claim = (OpenPgpClaim) format.parse(file).get(0);
+            OpenPgpClaim claim = (OpenPgpClaim) format.parse(Evidence.read(file, Evidence.SOURCE_SIDECAR)).get(0);
             assertThat(claim.armoredBlock()).contains("BEGIN PGP SIGNATURE");
         }
     }

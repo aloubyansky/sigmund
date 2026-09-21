@@ -4,14 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.cyberstamp.sigmund.core.Claim;
+import dev.cyberstamp.sigmund.core.Evidence;
 import dev.cyberstamp.sigmund.core.SignatureFormat;
 import dev.cyberstamp.sigmund.core.SigstoreClaim;
-import dev.cyberstamp.sigmund.core.ToolExecutionException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 
@@ -64,33 +59,25 @@ public class SigstoreSignatureFormat implements SignatureFormat {
      * bytes.
      *
      * <p>
-     * A file that does not begin with <code>{</code> is rejected without further reading.
-     * Otherwise the first {@value #SNIFF_LENGTH} bytes must carry a {@code "mediaType"} field
+     * Content that does not begin with <code>{</code> is rejected immediately. Otherwise the
+     * first {@value #SNIFF_LENGTH} characters must carry a {@code "mediaType"} field
      * whose value starts with {@code "application/vnd.dev.sigstore.bundle"}, which every
      * bundle version declares.
      *
-     * @param signatureFile the file to check
-     * @return {@code true} when the file appears to be a Sigstore bundle
+     * @param evidence the evidence to check
+     * @return {@code true} when it appears to be a Sigstore bundle
      */
     @Override
-    public boolean canHandleByContent(Path signatureFile) {
-        try {
-            byte[] buf = new byte[SNIFF_LENGTH];
-            int n;
-            try (InputStream is = Files.newInputStream(signatureFile)) {
-                n = is.read(buf);
-            }
-            if (n <= 0)
-                return false;
-            String content = new String(buf, 0, n, StandardCharsets.UTF_8).trim();
-            if (!content.startsWith("{")) {
-                return false;
-            }
-            return content.contains("\"mediaType\"")
-                    && content.contains(SIGSTORE_MEDIA_TYPE_PREFIX);
-        } catch (IOException e) {
+    public boolean canHandleByContent(Evidence evidence) {
+        String content = evidence.text();
+        String head = content.length() > SNIFF_LENGTH
+                ? content.substring(0, SNIFF_LENGTH)
+                : content;
+        head = head.trim();
+        if (!head.startsWith("{")) {
             return false;
         }
+        return head.contains("\"mediaType\"") && head.contains(SIGSTORE_MEDIA_TYPE_PREFIX);
     }
 
     /**
@@ -106,19 +93,13 @@ public class SigstoreSignatureFormat implements SignatureFormat {
      * an outcome — a bundle that will not verify, or will not even parse, still yields a claim
      * and the tool reports why.
      *
-     * @param signatureFile the Sigstore bundle file
+     * @param evidence the Sigstore bundle
      * @return a single-element list containing the claim
-     * @throws ToolExecutionException if the file cannot be read
      */
     @Override
-    public List<Claim> parse(Path signatureFile) {
-        try {
-            String json = Files.readString(signatureFile);
-            return List.of(new SigstoreClaim(json, extractIntegratedTime(json)));
-        } catch (IOException e) {
-            throw new ToolExecutionException(
-                    "Failed to read Sigstore bundle: " + signatureFile, e);
-        }
+    public List<Claim> parse(Evidence evidence) {
+        String json = evidence.text();
+        return List.of(new SigstoreClaim(json, extractIntegratedTime(json)));
     }
 
     /**

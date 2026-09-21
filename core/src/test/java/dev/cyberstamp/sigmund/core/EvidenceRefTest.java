@@ -22,17 +22,17 @@ class EvidenceRefTest {
         void digestsTheEvidenceThatWasConsumed(@TempDir Path dir) throws IOException {
             Path evidence = Files.writeString(dir.resolve("lib.jar.asc"), "abc");
 
-            EvidenceRef ref = EvidenceRef.of(evidence, EvidenceRef.SOURCE_SIDECAR);
+            EvidenceRef ref = EvidenceRef.of(evidence, Evidence.SOURCE_SIDECAR);
 
             assertThat(ref.file()).isEqualTo(evidence);
             assertThat(ref.digest().sha256()).isEqualTo(ABC_SHA256);
-            assertThat(ref.source()).isEqualTo(EvidenceRef.SOURCE_SIDECAR);
+            assertThat(ref.source()).isEqualTo(Evidence.SOURCE_SIDECAR);
         }
 
         @Test
         void unreadableEvidenceIsAnError(@TempDir Path dir) {
             assertThatThrownBy(
-                    () -> EvidenceRef.of(dir.resolve("absent.asc"), EvidenceRef.SOURCE_SIDECAR))
+                    () -> EvidenceRef.of(dir.resolve("absent.asc"), Evidence.SOURCE_SIDECAR))
                     .isInstanceOf(SigmundException.class);
         }
     }
@@ -50,7 +50,7 @@ class EvidenceRefTest {
         @Test
         void digestIsRequired(@TempDir Path dir) {
             assertThatThrownBy(() -> new EvidenceRef(dir.resolve("x.asc"), null,
-                    EvidenceRef.SOURCE_SIDECAR))
+                    Evidence.SOURCE_SIDECAR))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }

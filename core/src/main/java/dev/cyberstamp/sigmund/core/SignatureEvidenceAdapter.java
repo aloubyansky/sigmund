@@ -14,8 +14,8 @@ import java.util.List;
  *
  * <h2>Verification flow</h2>
  * <ol>
- * <li>{@link SignatureFormat#canHandle(Path)} → detection</li>
- * <li>{@link SignatureFormat#parse(Path)} → {@link Claim}s</li>
+ * <li>{@link SignatureFormat#canHandle(Evidence)} → detection</li>
+ * <li>{@link SignatureFormat#parse(Evidence)} → {@link Claim}s</li>
  * <li>For each claim, find a {@link SignatureTool} where {@code canVerify(claim)} is true</li>
  * <li>{@link SignatureTool#verify(Path, Claim)} → {@link VerifyResult}</li>
  * <li>If the key is unavailable, ask the tool to fetch it (when it implements
@@ -75,11 +75,11 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
     /**
      * {@inheritDoc}
      * <p>
-     * Delegates to the underlying {@link SignatureFormat#canHandle(Path)}.
+     * Delegates to the underlying {@link SignatureFormat#canHandle(Evidence)}.
      */
     @Override
-    public boolean canHandle(Path evidenceFile) {
-        return format.canHandle(evidenceFile);
+    public boolean canHandle(Evidence evidence) {
+        return format.canHandle(evidence);
     }
 
     /**
@@ -90,24 +90,24 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * into {@link EvidenceResult}s.
      */
     @Override
-    public List<EvidenceResult> verify(Path artifactFile, Path evidenceFile) {
-        EvidenceRef evidence = EvidenceRef.of(evidenceFile, EvidenceRef.SOURCE_SIDECAR);
-        List<Claim> claims = parseClaims(evidenceFile);
+    public List<EvidenceResult> verify(Path artifactFile, Evidence evidence) {
+        EvidenceRef ref = evidence.ref();
+        List<Claim> claims = parseClaims(evidence);
         List<EvidenceResult> results = new ArrayList<>(claims.size());
         for (Claim claim : claims) {
-            results.add(verifyClaim(artifactFile, claim, evidence));
+            results.add(verifyClaim(artifactFile, claim, ref));
         }
         return results;
     }
 
     /**
-     * Parses the evidence file into individual claims using the underlying format.
+     * Parses the evidence into individual claims using the underlying format.
      *
-     * @param evidenceFile path to the signature/evidence file
+     * @param evidence the evidence, already read
      * @return the parsed claims
      */
-    private List<Claim> parseClaims(Path evidenceFile) {
-        return format.parse(evidenceFile);
+    private List<Claim> parseClaims(Evidence evidence) {
+        return format.parse(evidence);
     }
 
     /**
@@ -124,8 +124,7 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * @param claim the claim to verify
      * @return the evidence result for this claim
      */
-    private EvidenceResult verifyClaim(Path artifactFile, Claim claim,
-            EvidenceRef evidence) {
+    private EvidenceResult verifyClaim(Path artifactFile, Claim claim, EvidenceRef ref) {
         EvidenceResult best = null;
         VerifyResult bestResult = null;
         for (SignatureTool tool : tools) {
@@ -140,11 +139,11 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
                 result = fetchKeyAndRetry(artifactFile, claim, tool, result);
             }
             if (result.isVerified()) {
-                return wrapAsEvidence(tool, result, evidence);
+                return wrapAsEvidence(tool, result, ref);
             }
             if (bestResult == null || result.isMoreConclusiveThan(bestResult)) {
                 bestResult = result;
-                best = wrapAsEvidence(tool, result, evidence);
+                best = wrapAsEvidence(tool, result, ref);
             }
         }
         if (best != null) {
@@ -153,7 +152,7 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
         return new EvidenceResult(
                 new UnverifiedResult(ClaimOutcome.INDETERMINATE,
                         IndeterminateReason.UNSUPPORTED_ALGORITHM),
-                List.of(), name(), evidence, TrustRootRef.unknown());
+                List.of(), name(), ref, TrustRootRef.unknown());
     }
 
     /**
@@ -204,8 +203,8 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * @return the evidence result containing the verification outcome and extracted credentials
      */
     private EvidenceResult wrapAsEvidence(SignatureTool tool, VerifyResult result,
-            EvidenceRef evidence) {
+            EvidenceRef ref) {
         List<Credential> credentials = tool.extractCredentials(result);
-        return new EvidenceResult(result, credentials, name(), evidence, tool.trustRoot());
+        return new EvidenceResult(result, credentials, name(), ref, tool.trustRoot());
     }
 }

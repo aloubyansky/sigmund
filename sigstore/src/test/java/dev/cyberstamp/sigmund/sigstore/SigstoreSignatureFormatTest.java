@@ -1,10 +1,13 @@
 package dev.cyberstamp.sigmund.sigstore;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.cyberstamp.sigmund.core.Claim;
 import dev.cyberstamp.sigmund.core.ClaimTimeSource;
+import dev.cyberstamp.sigmund.core.Evidence;
 import dev.cyberstamp.sigmund.core.SigstoreClaim;
+import dev.cyberstamp.sigmund.core.ToolExecutionException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,7 +48,7 @@ class SigstoreSignatureFormatTest {
         void matchesByExtension() throws IOException {
             Path file = tempDir.resolve("artifact.jar.sigstore.json");
             Files.writeString(file, "{}");
-            assertThat(format.canHandle(file)).isTrue();
+            assertThat(format.canHandle(Evidence.read(file, Evidence.SOURCE_SIDECAR))).isTrue();
         }
 
         @Test
@@ -53,7 +56,7 @@ class SigstoreSignatureFormatTest {
             Path file = tempDir.resolve("artifact.jar.sig");
             Files.writeString(file,
                     "{\"mediaType\":\"application/vnd.dev.sigstore.bundle.v0.3+json\"}");
-            assertThat(format.canHandleByContent(file)).isTrue();
+            assertThat(format.canHandleByContent(Evidence.read(file, Evidence.SOURCE_SIDECAR))).isTrue();
         }
 
         @Test
@@ -61,41 +64,44 @@ class SigstoreSignatureFormatTest {
             Path file = tempDir.resolve("artifact.sig");
             Files.writeString(file,
                     "{\"mediaType\":\"application/vnd.dev.sigstore.bundle.v0.1+json\"}");
-            assertThat(format.canHandleByContent(file)).isTrue();
+            assertThat(format.canHandleByContent(Evidence.read(file, Evidence.SOURCE_SIDECAR))).isTrue();
         }
 
         @Test
         void rejectsNonJsonFile() throws IOException {
             Path file = tempDir.resolve("artifact.jar.asc");
             Files.writeString(file, "-----BEGIN PGP SIGNATURE-----");
-            assertThat(format.canHandleByContent(file)).isFalse();
+            assertThat(format.canHandleByContent(Evidence.read(file, Evidence.SOURCE_SIDECAR))).isFalse();
         }
 
         @Test
         void rejectsJsonWithoutMediaType() throws IOException {
             Path file = tempDir.resolve("data.json");
             Files.writeString(file, "{\"key\":\"value\"}");
-            assertThat(format.canHandleByContent(file)).isFalse();
+            assertThat(format.canHandleByContent(Evidence.read(file, Evidence.SOURCE_SIDECAR))).isFalse();
         }
 
         @Test
         void rejectsJsonWithWrongMediaType() throws IOException {
             Path file = tempDir.resolve("data.json");
             Files.writeString(file, "{\"mediaType\":\"application/json\"}");
-            assertThat(format.canHandleByContent(file)).isFalse();
+            assertThat(format.canHandleByContent(Evidence.read(file, Evidence.SOURCE_SIDECAR))).isFalse();
         }
 
         @Test
         void rejectsEmptyFile() throws IOException {
             Path file = tempDir.resolve("empty.json");
             Files.writeString(file, "");
-            assertThat(format.canHandleByContent(file)).isFalse();
+            assertThat(format.canHandleByContent(Evidence.read(file, Evidence.SOURCE_SIDECAR))).isFalse();
         }
 
         @Test
-        void handlesMissingFile() {
+        void missingFileCannotBeRead() {
+            // Detection works from evidence that was read, so a missing file fails at the
+            // read rather than being reported as "not a bundle"
             Path file = tempDir.resolve("nonexistent.json");
-            assertThat(format.canHandleByContent(file)).isFalse();
+            assertThatThrownBy(() -> Evidence.read(file, Evidence.SOURCE_SIDECAR))
+                    .isInstanceOf(ToolExecutionException.class);
         }
     }
 
@@ -108,7 +114,7 @@ class SigstoreSignatureFormatTest {
             Path file = tempDir.resolve("artifact.jar.sigstore.json");
             Files.writeString(file, bundle);
 
-            List<Claim> claims = format.parse(file);
+            List<Claim> claims = format.parse(Evidence.read(file, Evidence.SOURCE_SIDECAR));
 
             assertThat(claims.size()).isEqualTo(1);
             assertThat(claims.get(0)).isInstanceOf(SigstoreClaim.class);
@@ -125,7 +131,7 @@ class SigstoreSignatureFormatTest {
             Path file = tempDir.resolve("artifact.jar.sigstore.json");
             Files.writeString(file, bundle);
 
-            SigstoreClaim claim = (SigstoreClaim) format.parse(file).get(0);
+            SigstoreClaim claim = (SigstoreClaim) format.parse(Evidence.read(file, Evidence.SOURCE_SIDECAR)).get(0);
 
             assertThat(claim.claimTime()).isNull();
             assertThat(claim.claimTimeSource()).isEqualTo(ClaimTimeSource.TRANSPARENCY_LOG);
@@ -136,7 +142,7 @@ class SigstoreSignatureFormatTest {
             Path file = tempDir.resolve("artifact.jar.sigstore.json");
             Files.writeString(file, bundleWithIntegratedTime(1_700_000_000L));
 
-            SigstoreClaim claim = (SigstoreClaim) format.parse(file).get(0);
+            SigstoreClaim claim = (SigstoreClaim) format.parse(Evidence.read(file, Evidence.SOURCE_SIDECAR)).get(0);
 
             assertThat(claim.claimTime()).isEqualTo(Instant.ofEpochSecond(1_700_000_000L));
         }
@@ -147,7 +153,7 @@ class SigstoreSignatureFormatTest {
             Path file = tempDir.resolve("bundle.sigstore.json");
             Files.writeString(file, bundle);
 
-            List<Claim> claims = format.parse(file);
+            List<Claim> claims = format.parse(Evidence.read(file, Evidence.SOURCE_SIDECAR));
 
             assertThat(((SigstoreClaim) claims.get(0)).jsonBundle())
                     .isEqualTo(bundle);
