@@ -9,6 +9,11 @@ import org.junit.jupiter.api.Test;
 
 class TrustVerifierTest {
 
+    private static final EvidenceRef EVIDENCE_REF = new EvidenceRef(
+            Path.of("artifact.jar.asc"),
+            DigestSet.sha256("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+            EvidenceRef.SOURCE_SIDECAR);
+
     private static final SignerIdentity ALICE = new SignerIdentity("alice", "Alice",
             List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23")));
 
@@ -96,10 +101,10 @@ class TrustVerifierTest {
             var provider = multiResultProvider(
                     new EvidenceResult(PGP_PASS,
                             List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23")),
-                            "openpgp"),
+                            "openpgp", EVIDENCE_REF, TrustRootRef.unknown()),
                     new EvidenceResult(PGP_PASS,
                             List.of(new FingerprintCredential("openpgp6", "UNKNOWNFINGERPRINT")),
-                            "openpgp"));
+                            "openpgp", EVIDENCE_REF, TrustRootRef.unknown()));
             var verifier = new TrustVerifier(policy, List.of(provider));
 
             var result = verifier.assess(
@@ -116,10 +121,10 @@ class TrustVerifierTest {
             var provider = multiResultProvider(
                     new EvidenceResult(PGP_PASS,
                             List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23")),
-                            "openpgp"),
+                            "openpgp", EVIDENCE_REF, TrustRootRef.unknown()),
                     new EvidenceResult(PGP_PASS,
                             List.of(new FingerprintCredential("openpgp6", "UNKNOWNFINGERPRINT")),
-                            "openpgp"));
+                            "openpgp", EVIDENCE_REF, TrustRootRef.unknown()));
             var verifier = new TrustVerifier(policy, List.of(provider));
 
             var result = verifier.assess(
@@ -144,7 +149,7 @@ class TrustVerifierTest {
             var provider = multiResultProvider(
                     new EvidenceResult(noKeyResult,
                             List.of(new FingerprintCredential("openpgp4", "DEADBEEFDEADBEEF")),
-                            "openpgp"));
+                            "openpgp", EVIDENCE_REF, TrustRootRef.unknown()));
             var verifier = new TrustVerifier(policy, List.of(provider));
 
             var result = verifier.assess(
@@ -262,7 +267,7 @@ class TrustVerifierTest {
 
             public List<EvidenceResult> verify(Path a, Path e) {
                 return List.of(new EvidenceResult(PGP_PASS,
-                        List.of(proven), mechanism));
+                        List.of(proven), mechanism, EVIDENCE_REF, TrustRootRef.unknown()));
             }
         };
     }
@@ -282,7 +287,8 @@ class TrustVerifierTest {
             }
 
             public List<EvidenceResult> verify(Path a, Path e) {
-                return List.of(new EvidenceResult(new UnverifiedResult(ClaimOutcome.FAILED, null), List.of(), "openpgp"));
+                return List.of(new EvidenceResult(new UnverifiedResult(ClaimOutcome.FAILED, null), List.of(), "openpgp",
+                        EVIDENCE_REF, TrustRootRef.unknown()));
             }
         };
     }

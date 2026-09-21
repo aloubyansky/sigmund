@@ -108,7 +108,7 @@ class OpenPgpSignatureFormatTest {
         }
 
         @Test
-        void parsedUnitRetainsArmoredBlock(@TempDir Path tmp) throws IOException {
+        void parsedClaimRetainsArmoredBlock(@TempDir Path tmp) throws IOException {
             String block = "-----BEGIN PGP SIGNATURE-----\n\niQEzBAABCgAdFiEE\n=test\n-----END PGP SIGNATURE-----\n";
             Path file = tmp.resolve("sig.asc");
             Files.writeString(file, block);

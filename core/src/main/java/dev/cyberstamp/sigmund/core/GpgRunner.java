@@ -547,6 +547,18 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
 
     /**
      * {@inheritDoc}
+     *
+     * <p>
+     * GnuPG verifies against the keyring in its home directory, which is the default home
+     * when none was configured.
+     */
+    @Override
+    public TrustRootRef trustRoot() {
+        return TrustRootRef.keyring(gpgHome);
+    }
+
+    /**
+     * {@inheritDoc}
      * <p>
      * Writes the armored block to a temp file, verifies via GPG, and wraps
      * the result into an {@link OpenPgpVerifyResult}.
@@ -561,42 +573,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
 
     @Override
     public List<Credential> extractCredentials(VerifyResult result) {
-        if (!result.isVerified()) {
-            return List.of();
-        }
-        if (result instanceof OpenPgpVerifyResult opvr && opvr.fingerprint() != null) {
-            List<Credential> creds = new ArrayList<>(2);
-            creds.add(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, opvr.fingerprint()));
-            String email = extractEmail(result.signerDisplayName());
-            if (email != null) {
-                creds.add(new EmailCredential(email));
-            }
-            return List.copyOf(creds);
-        }
-        return List.of();
-    }
-
-    /**
-     * Extracts the email address from an OpenPGP user ID string
-     * in the format {@code "Name <email>"}.
-     *
-     * @param uid the user ID string, may be {@code null}
-     * @return the extracted email, or {@code null} if not found
-     */
-    public static String extractEmail(String uid) {
-        if (uid == null) {
-            return null;
-        }
-        int lt = uid.indexOf('<');
-        int gt = uid.indexOf('>', lt + 1);
-        if (lt >= 0 && gt > lt + 1) {
-            return uid.substring(lt + 1, gt).trim();
-        }
-        String trimmed = uid.trim();
-        if (trimmed.contains("@") && !trimmed.contains(" ")) {
-            return trimmed;
-        }
-        return null;
+        return OpenPgpCredentials.from(result);
     }
 
     /**

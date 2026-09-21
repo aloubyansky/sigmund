@@ -229,6 +229,18 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      * {@inheritDoc}
      *
      * <p>
+     * Bouncy Castle verifies against the cert-d store, plus any key fetched into the
+     * in-memory cache for this session.
+     */
+    @Override
+    public TrustRootRef trustRoot() {
+        return TrustRootRef.keyring(keyStore.certDHome());
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
      * Accepts any {@link OpenPgpClaim} — handles all packet versions.
      */
     @Override
@@ -247,7 +259,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
         if (!(claim instanceof OpenPgpClaim opgu)) {
             return OpenPgpVerifyResult.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
         }
-        return verifyOpenPgpUnit(artifactFile, opgu);
+        return verifyOpenPgpClaim(artifactFile, opgu);
     }
 
     /**
@@ -275,22 +287,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
 
     @Override
     public List<Credential> extractCredentials(VerifyResult result) {
-        if (!result.isVerified()) {
-            return List.of();
-        }
-        if (result instanceof OpenPgpVerifyResult opvr && opvr.fingerprint() != null) {
-            String credType = opvr.version() < 6
-                    ? Credential.TYPE_OPENPGP_V4
-                    : Credential.TYPE_OPENPGP_V6;
-            List<Credential> creds = new ArrayList<>(2);
-            creds.add(new FingerprintCredential(credType, opvr.fingerprint()));
-            String email = GpgRunner.extractEmail(result.signerDisplayName());
-            if (email != null) {
-                creds.add(new EmailCredential(email));
-            }
-            return List.copyOf(creds);
-        }
-        return List.of();
+        return OpenPgpCredentials.from(result);
     }
 
     /**
@@ -574,7 +571,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
     /**
      * Verifies a single OpenPGP signature block against an artifact.
      */
-    private OpenPgpVerifyResult verifyOpenPgpUnit(Path artifactFile, OpenPgpClaim opgu) {
+    private OpenPgpVerifyResult verifyOpenPgpClaim(Path artifactFile, OpenPgpClaim opgu) {
         int version = opgu.packetVersion();
         String fingerprint = opgu.issuerFingerprint();
         String algorithm = resolveAlgorithm(opgu.algorithmId());

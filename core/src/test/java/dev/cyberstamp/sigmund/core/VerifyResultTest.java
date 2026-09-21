@@ -3,11 +3,17 @@ package dev.cyberstamp.sigmund.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 class VerifyResultTest {
+
+    private static final EvidenceRef EVIDENCE_REF = new EvidenceRef(
+            Path.of("artifact.jar.asc"),
+            DigestSet.sha256("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+            EvidenceRef.SOURCE_SIDECAR);
 
     @Nested
     class Factories {
@@ -73,7 +79,7 @@ class VerifyResultTest {
 
         @Test
         void nullVerifyResultThrows() {
-            assertThatThrownBy(() -> new EvidenceResult(null, List.of(), "test"))
+            assertThatThrownBy(() -> new EvidenceResult(null, List.of(), "test", EVIDENCE_REF, TrustRootRef.unknown()))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }

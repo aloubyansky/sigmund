@@ -102,7 +102,7 @@ class SigstoreSignatureFormatTest {
     @Nested
     class Parse {
         @Test
-        void returnsSingleUnit() throws IOException {
+        void returnsSingleClaim() throws IOException {
             String bundle = "{\"mediaType\":\"application/vnd.dev.sigstore.bundle.v0.3+json\","
                     + "\"content\":\"test\"}";
             Path file = tempDir.resolve("artifact.jar.sigstore.json");

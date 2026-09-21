@@ -19,7 +19,8 @@ import java.util.List;
  * @see EvidenceProvider
  * @see TrustResult
  */
-public record EvidenceResult(VerifyResult verifyResult, List<Credential> provenCredentials, String provider) {
+public record EvidenceResult(VerifyResult verifyResult, List<Credential> provenCredentials,
+        String provider, EvidenceRef evidence, TrustRootRef trustRoot) {
 
     /** Validates arguments and defensively copies the credential list. */
     public EvidenceResult {
@@ -27,6 +28,7 @@ public record EvidenceResult(VerifyResult verifyResult, List<Credential> provenC
             throw new IllegalArgumentException("verifyResult must not be null");
         }
         provenCredentials = provenCredentials != null ? List.copyOf(provenCredentials) : List.of();
+        trustRoot = trustRoot != null ? trustRoot : TrustRootRef.unknown();
     }
 
     /**

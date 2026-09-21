@@ -107,6 +107,21 @@ public interface SignatureTool {
     boolean canVerify(Claim claim);
 
     /**
+     * Returns the trust root this tool verifies against.
+     *
+     * <p>
+     * The root is a property of how the tool was configured, not of an individual claim, so
+     * it is reported once rather than per result. Recording it is what lets two runs that
+     * disagree about the same artifact be told apart: one machine's keyring held the signer's
+     * key, another's did not.
+     *
+     * @return the trust root, or {@link TrustRootRef#unknown()} when the tool cannot say
+     */
+    default TrustRootRef trustRoot() {
+        return TrustRootRef.unknown();
+    }
+
+    /**
      * Signs an artifact file and writes the signature to the output path.
      * <p>
      * The signing credential is embedded in the tool at construction time.

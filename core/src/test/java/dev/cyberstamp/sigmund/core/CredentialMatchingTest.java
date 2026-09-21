@@ -2,10 +2,16 @@ package dev.cyberstamp.sigmund.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class CredentialMatchingTest {
+
+    private static final EvidenceRef EVIDENCE_REF = new EvidenceRef(
+            Path.of("artifact.jar.asc"),
+            DigestSet.sha256("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+            EvidenceRef.SOURCE_SIDECAR);
 
     private static final VerifyResult PGP_PASS = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, null, null, 4, null,
             null);
@@ -20,7 +26,7 @@ class CredentialMatchingTest {
         var evidence = new EvidenceResult(PGP_PASS, List.of(
                 new FingerprintCredential("openpgp4",
                         "AB01CD23EF45678901234AEE18F83AFDEB23")),
-                "openpgp");
+                "openpgp", EVIDENCE_REF, TrustRootRef.unknown());
 
         assertThat(matchesAny(signer, evidence)).isTrue();
     }
@@ -36,7 +42,7 @@ class CredentialMatchingTest {
                         .subject("alice@example.com")
                         .build(),
                 new EmailCredential("alice@example.com")),
-                "sigstore");
+                "sigstore", EVIDENCE_REF, TrustRootRef.unknown());
 
         assertThat(matchesAny(signer, evidence)).isTrue();
     }
@@ -54,7 +60,7 @@ class CredentialMatchingTest {
                         .issuer("https://token.actions.githubusercontent.com")
                         .subject("https://github.com/org/repo")
                         .build()),
-                "sigstore");
+                "sigstore", EVIDENCE_REF, TrustRootRef.unknown());
 
         assertThat(matchesAny(signer, evidence)).isTrue();
     }
@@ -72,7 +78,7 @@ class CredentialMatchingTest {
                         .issuer("https://evil-issuer.com")
                         .subject("https://github.com/org/repo")
                         .build()),
-                "sigstore");
+                "sigstore", EVIDENCE_REF, TrustRootRef.unknown());
 
         assertThat(matchesAny(signer, evidence)).isFalse();
     }
@@ -84,7 +90,7 @@ class CredentialMatchingTest {
 
         var evidence = new EvidenceResult(SIGSTORE_PASS, List.of(
                 new EmailCredential("alice@example.com")),
-                "sigstore");
+                "sigstore", EVIDENCE_REF, TrustRootRef.unknown());
 
         assertThat(matchesAny(signer, evidence)).isFalse();
     }
@@ -98,7 +104,7 @@ class CredentialMatchingTest {
 
         var evidence = new EvidenceResult(PGP_PASS, List.of(
                 new FingerprintCredential("openpgp6", "ABCD1234ABCD1234")),
-                "openpgp");
+                "openpgp", EVIDENCE_REF, TrustRootRef.unknown());
 
         assertThat(matchesAny(signer, evidence)).isTrue();
     }
@@ -108,7 +114,7 @@ class CredentialMatchingTest {
         var signer = new SignerIdentity("empty", "Empty", List.of());
         var evidence = new EvidenceResult(SIGSTORE_PASS, List.of(
                 new EmailCredential("alice@example.com")),
-                "sigstore");
+                "sigstore", EVIDENCE_REF, TrustRootRef.unknown());
 
         assertThat(matchesAny(signer, evidence)).isFalse();
     }

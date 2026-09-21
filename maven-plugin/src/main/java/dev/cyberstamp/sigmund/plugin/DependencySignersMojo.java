@@ -4,8 +4,8 @@ import dev.cyberstamp.sigmund.core.Algorithms;
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ArtifactPattern;
 import dev.cyberstamp.sigmund.core.DiscoveryConfig;
-import dev.cyberstamp.sigmund.core.GpgRunner;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
+import dev.cyberstamp.sigmund.core.OpenPgpCredentials;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
 import dev.cyberstamp.sigmund.core.PolicyConfigException;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
@@ -448,10 +448,6 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
     }
 
     /**
-     * Strips the version (and type/classifier if default) from a coordinate string,
-     * leaving just {@code groupId:artifactId}.
-     */
-    /**
      * Updates an existing config by parsing it, finding artifacts not yet
      * configured, and appending their signers and trust entries.
      */
@@ -756,12 +752,12 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             if (vr instanceof OpenPgpVerifyResult opvr) {
                 classifyKey(opvr);
             }
-            this.email = GpgRunner.extractEmail(vr.signerDisplayName());
+            this.email = OpenPgpCredentials.email(vr.signerDisplayName());
         }
 
         void merge(VerifyResult vr) {
             if (email == null && vr.signerDisplayName() != null) {
-                email = GpgRunner.extractEmail(vr.signerDisplayName());
+                email = OpenPgpCredentials.email(vr.signerDisplayName());
             }
             if (vr instanceof OpenPgpVerifyResult opvr) {
                 classifyKey(opvr);

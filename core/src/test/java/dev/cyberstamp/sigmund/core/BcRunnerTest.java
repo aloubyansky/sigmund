@@ -117,14 +117,14 @@ class BcRunnerTest {
     }
 
     @Test
-    void canVerifyAcceptsAnyOpenPgpUnit() {
+    void canVerifyAcceptsAnyOpenPgpClaim() {
         BcRunner runner = createVerifyOnly(Path.of(System.getProperty("java.io.tmpdir")));
         assertThat(runner.canVerify(new OpenPgpClaim("block", 4, "FP", 27, null))).isTrue();
         assertThat(runner.canVerify(new OpenPgpClaim("block", 6, "FP", 27, null))).isTrue();
     }
 
     @Test
-    void canVerifyRejectsSigstoreUnit() {
+    void canVerifyRejectsSigstoreClaim() {
         BcRunner runner = createVerifyOnly(Path.of(System.getProperty("java.io.tmpdir")));
         assertThat(runner.canVerify(new SigstoreClaim("{}", null))).isFalse();
     }
@@ -202,11 +202,11 @@ class BcRunnerTest {
 
         // Create a claim with null fingerprint, simulating a v4 signature
         // without Issuer Fingerprint subpacket (type 33)
-        OpenPgpClaim unitNoFp = new OpenPgpClaim(
+        OpenPgpClaim claimNoFp = new OpenPgpClaim(
                 armored, info.version(), null, info.algorithmId(), null);
 
         // BC should extract the key ID from the signature bytes and find the key
-        VerifyResult result = runner.verify(artifact, unitNoFp);
+        VerifyResult result = runner.verify(artifact, claimNoFp);
         assertThat(result.isVerified()).isTrue();
     }
 
@@ -233,10 +233,10 @@ class BcRunnerTest {
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
 
         // Verify with null fingerprint against the empty store
-        OpenPgpClaim unitNoFp = new OpenPgpClaim(
+        OpenPgpClaim claimNoFp = new OpenPgpClaim(
                 armored, info.version(), null, info.algorithmId(), null);
 
-        VerifyResult result = runner.verify(artifact, unitNoFp);
+        VerifyResult result = runner.verify(artifact, claimNoFp);
         assertThat(result.isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
         assertThat(((OpenPgpVerifyResult) result).fingerprint()).isNotNull();
     }

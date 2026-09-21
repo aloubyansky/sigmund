@@ -91,10 +91,11 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      */
     @Override
     public List<EvidenceResult> verify(Path artifactFile, Path evidenceFile) {
+        EvidenceRef evidence = EvidenceRef.of(evidenceFile, EvidenceRef.SOURCE_SIDECAR);
         List<Claim> claims = parseClaims(evidenceFile);
         List<EvidenceResult> results = new ArrayList<>(claims.size());
         for (Claim claim : claims) {
-            results.add(verifyClaim(artifactFile, claim));
+            results.add(verifyClaim(artifactFile, claim, evidence));
         }
         return results;
     }
@@ -123,7 +124,8 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * @param claim the claim to verify
      * @return the evidence result for this claim
      */
-    private EvidenceResult verifyClaim(Path artifactFile, Claim claim) {
+    private EvidenceResult verifyClaim(Path artifactFile, Claim claim,
+            EvidenceRef evidence) {
         EvidenceResult best = null;
         VerifyResult bestResult = null;
         for (SignatureTool tool : tools) {
@@ -138,18 +140,20 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
                 result = fetchKeyAndRetry(artifactFile, claim, tool, result);
             }
             if (result.isVerified()) {
-                return wrapAsEvidence(tool, result);
+                return wrapAsEvidence(tool, result, evidence);
             }
             if (bestResult == null || result.isMoreConclusiveThan(bestResult)) {
                 bestResult = result;
-                best = wrapAsEvidence(tool, result);
+                best = wrapAsEvidence(tool, result, evidence);
             }
         }
         if (best != null) {
             return best;
         }
-        return new EvidenceResult(new UnverifiedResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM),
-                List.of(), name());
+        return new EvidenceResult(
+                new UnverifiedResult(ClaimOutcome.INDETERMINATE,
+                        IndeterminateReason.UNSUPPORTED_ALGORITHM),
+                List.of(), name(), evidence, TrustRootRef.unknown());
     }
 
     /**
@@ -199,8 +203,9 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * @param result the verification result to wrap
      * @return the evidence result containing the verification outcome and extracted credentials
      */
-    private EvidenceResult wrapAsEvidence(SignatureTool tool, VerifyResult result) {
+    private EvidenceResult wrapAsEvidence(SignatureTool tool, VerifyResult result,
+            EvidenceRef evidence) {
         List<Credential> credentials = tool.extractCredentials(result);
-        return new EvidenceResult(result, credentials, name());
+        return new EvidenceResult(result, credentials, name(), evidence, tool.trustRoot());
     }
 }

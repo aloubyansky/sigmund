@@ -13,6 +13,7 @@ import dev.cyberstamp.sigmund.core.SigstoreClaim;
 import dev.cyberstamp.sigmund.core.SigstoreCredential;
 import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
 import dev.cyberstamp.sigmund.core.ToolExecutionException;
+import dev.cyberstamp.sigmund.core.TrustRootRef;
 import dev.cyberstamp.sigmund.core.VerifyResult;
 import dev.sigstore.KeylessSigner;
 import dev.sigstore.KeylessSignerException;
@@ -70,6 +71,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
     private final KeylessSigner signer;
     private final KeylessVerifier verifier;
     private final String sigstoreSubject;
+    private final TrustRootRef trustRoot;
 
     /**
      * Creates a new Sigstore tool.
@@ -79,11 +81,40 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
      * @param verifier the keyless verifier
      * @param sigstoreSubject the expected OIDC subject for signing info display, or {@code null}
      */
-    SigstoreTool(SigstoreSignatureFormat format, KeylessSigner signer, KeylessVerifier verifier, String sigstoreSubject) {
+    SigstoreTool(SigstoreSignatureFormat format, KeylessSigner signer, KeylessVerifier verifier,
+            String sigstoreSubject) {
+        this(format, signer, verifier, sigstoreSubject, TrustRootRef.unknown());
+    }
+
+    /**
+     * Creates a tool that records which Sigstore trust root it verifies against.
+     *
+     * @param format the bundle format
+     * @param signer the keyless signer, or {@code null} when verify-only
+     * @param verifier the keyless verifier, or {@code null} when sign-only
+     * @param sigstoreSubject the expected OIDC subject for signing info display, or {@code null}
+     * @param trustRoot the trust root the verifier was built with
+     */
+    SigstoreTool(SigstoreSignatureFormat format, KeylessSigner signer, KeylessVerifier verifier,
+            String sigstoreSubject, TrustRootRef trustRoot) {
+        this.trustRoot = trustRoot;
         this.format = format;
         this.signer = signer;
         this.verifier = verifier;
         this.sigstoreSubject = sigstoreSubject;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * Sigstore verification is local, but which certificates it accepts depends entirely on
+     * the TUF-distributed trust root the verifier was built with — the public-good instance,
+     * staging, or a private deployment.
+     */
+    @Override
+    public TrustRootRef trustRoot() {
+        return trustRoot;
     }
 
     @Override

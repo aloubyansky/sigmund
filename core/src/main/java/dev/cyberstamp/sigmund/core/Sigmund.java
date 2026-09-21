@@ -709,8 +709,12 @@ public class Sigmund implements AutoCloseable {
         private static final List<SignatureToolFactory> BUILTIN_FACTORIES = List.of(
                 new BcToolFactory(), new GpgToolFactory(), new SqToolFactory());
 
+        /** Built-in factories followed by ServiceLoader-discovered ones, resolved once. */
+        private static final List<SignatureToolFactory> ALL_FACTORIES = loadAllFactories();
+
         /**
          * Returns all factories: built-in factories followed by ServiceLoader-discovered ones.
+         *
          * <p>
          * Discovered factories whose {@link SignatureToolFactory#supportedCredentialTypes()}
          * overlap with a built-in factory's types are included. When such overlap exists and
@@ -719,8 +723,6 @@ public class Sigmund implements AutoCloseable {
          *
          * @return the combined list of factories
          */
-        private static final List<SignatureToolFactory> ALL_FACTORIES = loadAllFactories();
-
         private static List<SignatureToolFactory> loadAllFactories() {
             List<SignatureToolFactory> all = new ArrayList<>(BUILTIN_FACTORIES);
             ServiceLoader.load(SignatureToolFactory.class).forEach(all::add);

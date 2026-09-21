@@ -703,6 +703,20 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
 
     /**
      * {@inheritDoc}
+     *
+     * <p>
+     * Sequoia verifies against its certificate store, which is the configured
+     * {@code SEQUOIA_HOME} when operations are isolated and sq's own default store otherwise.
+     */
+    @Override
+    public TrustRootRef trustRoot() {
+        String home = sqEnv.get(SEQUOIA_HOME);
+        return new TrustRootRef(TrustRootRef.KIND_OPENPGP_KEYRING,
+                home != null ? home : "sq default store");
+    }
+
+    /**
+     * {@inheritDoc}
      * <p>
      * Verifies an OpenPGP v5+ signature block by resolving the issuer certificate
      * from the Sequoia cert store.
@@ -712,28 +726,15 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
         if (!(claim instanceof OpenPgpClaim opgu)) {
             return OpenPgpVerifyResult.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
         }
-        return verifyOpenPgpUnit(artifactFile, opgu);
+        return verifyOpenPgpClaim(artifactFile, opgu);
     }
 
     @Override
     public List<Credential> extractCredentials(VerifyResult result) {
-        if (!result.isVerified()) {
-            return List.of();
-        }
-        if (result instanceof OpenPgpVerifyResult opvr && opvr.fingerprint() != null) {
-            String credType = opvr.version() < 6 ? Credential.TYPE_OPENPGP_V4 : Credential.TYPE_OPENPGP_V6;
-            List<Credential> creds = new ArrayList<>(2);
-            creds.add(new FingerprintCredential(credType, opvr.fingerprint()));
-            String email = GpgRunner.extractEmail(result.signerDisplayName());
-            if (email != null) {
-                creds.add(new EmailCredential(email));
-            }
-            return List.copyOf(creds);
-        }
-        return List.of();
+        return OpenPgpCredentials.from(result);
     }
 
-    private OpenPgpVerifyResult verifyOpenPgpUnit(Path artifactFile, OpenPgpClaim opgu) {
+    private OpenPgpVerifyResult verifyOpenPgpClaim(Path artifactFile, OpenPgpClaim opgu) {
         int version = opgu.packetVersion();
         String fingerprint = opgu.issuerFingerprint();
         int algoId = opgu.algorithmId();

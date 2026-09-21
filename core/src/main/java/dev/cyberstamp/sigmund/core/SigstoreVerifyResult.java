@@ -38,11 +38,6 @@ public final class SigstoreVerifyResult extends VerifyResult {
     }
 
     /**
-     * Returns the extracted Sigstore certificate credential, or {@code null}.
-     *
-     * @return the Sigstore credential, or {@code null}
-     */
-    /**
      * Creates a result for a bundle that could not be verified, carrying nothing but the
      * reason.
      *
@@ -58,6 +53,11 @@ public final class SigstoreVerifyResult extends VerifyResult {
                 null, -1);
     }
 
+    /**
+     * Returns the extracted Sigstore certificate credential, or {@code null}.
+     *
+     * @return the Sigstore credential, or {@code null}
+     */
     public SigstoreCredential sigstoreCredential() {
         return sigstoreCredential;
     }

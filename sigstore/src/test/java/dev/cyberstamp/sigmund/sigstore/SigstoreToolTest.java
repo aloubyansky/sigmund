@@ -69,13 +69,13 @@ class SigstoreToolTest {
     @Nested
     class CanVerify {
         @Test
-        void acceptsSigstoreUnit() {
+        void acceptsSigstoreClaim() {
             assertThat(metadataOnlyTool().canVerify(
                     new SigstoreClaim("{}", null))).isTrue();
         }
 
         @Test
-        void rejectsOpenPgpUnit() {
+        void rejectsOpenPgpClaim() {
             assertThat(metadataOnlyTool().canVerify(
                     new OpenPgpClaim("block", 4, null, 0, null))).isFalse();
         }
