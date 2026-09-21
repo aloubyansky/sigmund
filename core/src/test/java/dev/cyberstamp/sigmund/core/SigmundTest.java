@@ -26,14 +26,15 @@ class SigmundTest {
         void signerReturnsAllSigningTools() throws IOException {
             var signing = mockTool("gpg", true, true, Set.of("openpgp4"));
             var verifyOnly = mockTool("sq", true, false, Set.of("openpgp6"));
-            var sigmund = Sigmund.builder().addTool(signing).addTool(verifyOnly).build();
+            try (var sigmund = Sigmund.builder().addTool(signing).addTool(verifyOnly).build()) {
 
-            Signer signer = sigmund.signer();
-            Path artifact = createTempFile("test.jar");
-            SigningOutput output = signer.sign(artifact, tempDir);
+                Signer signer = sigmund.signer();
+                Path artifact = createTempFile("test.jar");
+                SigningOutput output = signer.sign(artifact, tempDir);
 
-            assertThat(output.files().size()).isEqualTo(1);
-            assertThat(output.files().get(0).toolName()).isEqualTo("gpg");
+                assertThat(output.files().size()).isEqualTo(1);
+                assertThat(output.files().get(0).toolName()).isEqualTo("gpg");
+            }
         }
 
         @Test
@@ -43,15 +44,16 @@ class SigmundTest {
             var config = new SigmundConfig(1, null, null, null,
                     new SigningConfig(null, List.of("bc"), List.of(), Map.of()),
                     null, null);
-            var sigmund = Sigmund.builder().config(config)
-                    .addTool(bc).addTool(gpg).build();
+            try (var sigmund = Sigmund.builder().config(config)
+                    .addTool(bc).addTool(gpg).build()) {
 
-            Signer signer = sigmund.signer();
-            Path artifact = createTempFile("configured-only.jar");
-            SigningOutput output = signer.sign(artifact, tempDir);
+                Signer signer = sigmund.signer();
+                Path artifact = createTempFile("configured-only.jar");
+                SigningOutput output = signer.sign(artifact, tempDir);
 
-            assertThat(output.files().size()).isEqualTo(1);
-            assertThat(output.files().get(0).toolName()).isEqualTo("bc");
+                assertThat(output.files().size()).isEqualTo(1);
+                assertThat(output.files().get(0).toolName()).isEqualTo("bc");
+            }
         }
 
         @Test
@@ -60,13 +62,14 @@ class SigmundTest {
             var config = new SigmundConfig(1, null, null, null,
                     new SigningConfig(null, List.of("bc"), List.of(), Map.of()),
                     null, null);
-            var sigmund = Sigmund.builder().config(config)
-                    .addTool(bc).build();
+            try (var sigmund = Sigmund.builder().config(config)
+                    .addTool(bc).build()) {
 
-            assertThatThrownBy(sigmund::signer)
-                    .isInstanceOf(SigmundException.class)
-                    .hasMessageContaining("bc")
-                    .hasMessageContaining("not signing-capable");
+                assertThatThrownBy(sigmund::signer)
+                        .isInstanceOf(SigmundException.class)
+                        .hasMessageContaining("bc")
+                        .hasMessageContaining("not signing-capable");
+            }
         }
 
         @Test
@@ -76,15 +79,16 @@ class SigmundTest {
             var config = new SigmundConfig(1, null, null, null,
                     new SigningConfig(null, List.of(), List.of("openpgp6"), Map.of()),
                     null, null);
-            var sigmund = Sigmund.builder().config(config)
-                    .addTool(v4Tool).addTool(v6Tool).build();
+            try (var sigmund = Sigmund.builder().config(config)
+                    .addTool(v4Tool).addTool(v6Tool).build()) {
 
-            Signer signer = sigmund.signer();
-            Path artifact = createTempFile("test.jar");
-            SigningOutput output = signer.sign(artifact, tempDir);
+                Signer signer = sigmund.signer();
+                Path artifact = createTempFile("test.jar");
+                SigningOutput output = signer.sign(artifact, tempDir);
 
-            assertThat(output.files().size()).isEqualTo(1);
-            assertThat(output.files().get(0).toolName()).isEqualTo("sq");
+                assertThat(output.files().size()).isEqualTo(1);
+                assertThat(output.files().get(0).toolName()).isEqualTo("sq");
+            }
         }
 
         @Test
@@ -96,21 +100,22 @@ class SigmundTest {
                             Map.of("v6-only", List.of("openpgp6"),
                                     "classical", List.of("openpgp4"))),
                     null, null);
-            var sigmund = Sigmund.builder().config(config)
-                    .addTool(v4Tool).addTool(v6Tool).build();
+            try (var sigmund = Sigmund.builder().config(config)
+                    .addTool(v4Tool).addTool(v6Tool).build()) {
 
-            Signer v6Signer = sigmund.signer("v6-only");
-            Path artifact = createTempFile("test.jar");
-            SigningOutput output = v6Signer.sign(artifact, tempDir);
+                Signer v6Signer = sigmund.signer("v6-only");
+                Path artifact = createTempFile("test.jar");
+                SigningOutput output = v6Signer.sign(artifact, tempDir);
 
-            assertThat(output.files().size()).isEqualTo(1);
-            assertThat(output.files().get(0).toolName()).isEqualTo("sq");
+                assertThat(output.files().size()).isEqualTo(1);
+                assertThat(output.files().get(0).toolName()).isEqualTo("sq");
 
-            Signer classicalSigner = sigmund.signer("classical");
-            SigningOutput classicalOutput = classicalSigner.sign(artifact, tempDir);
+                Signer classicalSigner = sigmund.signer("classical");
+                SigningOutput classicalOutput = classicalSigner.sign(artifact, tempDir);
 
-            assertThat(classicalOutput.files().size()).isEqualTo(1);
-            assertThat(classicalOutput.files().get(0).toolName()).isEqualTo("gpg");
+                assertThat(classicalOutput.files().size()).isEqualTo(1);
+                assertThat(classicalOutput.files().get(0).toolName()).isEqualTo("gpg");
+            }
         }
 
         @Test
@@ -119,21 +124,23 @@ class SigmundTest {
                     new SigningConfig(null, List.of(), List.of(),
                             Map.of("v6-only", List.of("openpgp6"))),
                     null, null);
-            var sigmund = Sigmund.builder().config(config)
-                    .addTool(mockTool("gpg", true, true, Set.of("openpgp4"))).build();
+            try (var sigmund = Sigmund.builder().config(config)
+                    .addTool(mockTool("gpg", true, true, Set.of("openpgp4"))).build()) {
 
-            assertThatThrownBy(() -> sigmund.signer("nonexistent"))
-                    .isInstanceOf(SigmundException.class)
-                    .hasMessageContaining("nonexistent");
+                assertThatThrownBy(() -> sigmund.signer("nonexistent"))
+                        .isInstanceOf(SigmundException.class)
+                        .hasMessageContaining("nonexistent");
+            }
         }
 
         @Test
         void signerWithNoSigningConfigThrows() {
-            var sigmund = Sigmund.builder()
-                    .addTool(mockTool("gpg", true, true, Set.of("openpgp4"))).build();
+            try (var sigmund = Sigmund.builder()
+                    .addTool(mockTool("gpg", true, true, Set.of("openpgp4"))).build()) {
 
-            assertThatThrownBy(() -> sigmund.signer("any-profile"))
-                    .isInstanceOf(SigmundException.class);
+                assertThatThrownBy(() -> sigmund.signer("any-profile"))
+                        .isInstanceOf(SigmundException.class);
+            }
         }
     }
 
@@ -146,17 +153,18 @@ class SigmundTest {
             Path sigFile = createTempFile("test.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1, null);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice", "RSA", 4, "KEY", "FP"));
-            var sigmund = Sigmund.builder().addTool(tool).build();
+            try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
-            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+                SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-            assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
-            assertThat(report.files().size()).isEqualTo(1);
-            assertThat(report.files().get(0).format()).isEqualTo("openpgp");
+                assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+                assertThat(report.files().size()).isEqualTo(1);
+                assertThat(report.files().get(0).format()).isEqualTo("openpgp");
+            }
         }
 
         @Test
@@ -165,21 +173,22 @@ class SigmundTest {
             Path sigFile = createTempFile("fallthrough.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1, null);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var skippingTool = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null,
                             4, null, null));
             var passingTool = mockVerifyingTool("gpg", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice", "RSA", 4, "KEY", "FP"));
-            var sigmund = Sigmund.builder().addTool(skippingTool).addTool(passingTool).build();
+            try (var sigmund = Sigmund.builder().addTool(skippingTool).addTool(passingTool).build()) {
 
-            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+                SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-            assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
-            assertThat(report.files().size()).isEqualTo(1);
-            assertThat(report.files().get(0).results().size()).isEqualTo(1);
-            assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
+                assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+                assertThat(report.files().size()).isEqualTo(1);
+                assertThat(report.files().get(0).results().size()).isEqualTo(1);
+                assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
+            }
         }
 
         @Test
@@ -188,20 +197,21 @@ class SigmundTest {
             Path sigFile = createTempFile("nokey.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1, null);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var noKeyTool = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null, "RSA", 4,
                             "KEY", "FP"));
             var passingTool = mockVerifyingTool("gpg", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice", "RSA", 4, "KEY", "FP"));
-            var sigmund = Sigmund.builder().addTool(noKeyTool).addTool(passingTool).build();
+            try (var sigmund = Sigmund.builder().addTool(noKeyTool).addTool(passingTool).build()) {
 
-            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+                SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-            assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
-            assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
-            assertThat(report.files().get(0).results().get(0).signerDisplayName()).isEqualTo("Alice");
+                assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+                assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
+                assertThat(report.files().get(0).results().get(0).signerDisplayName()).isEqualTo("Alice");
+            }
         }
 
         @Test
@@ -210,18 +220,19 @@ class SigmundTest {
             Path sigFile = createTempFile("fail.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1, null);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var failTool = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.FAILED, null, null, "RSA", 4, "KEY", "FP"));
             var passingTool = mockVerifyingTool("gpg", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice", "RSA", 4, "KEY", "FP"));
-            var sigmund = Sigmund.builder().addTool(failTool).addTool(passingTool).build();
+            try (var sigmund = Sigmund.builder().addTool(failTool).addTool(passingTool).build()) {
 
-            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+                SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-            assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
-            assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
+                assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+                assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
+            }
         }
 
         @Test
@@ -230,18 +241,19 @@ class SigmundTest {
             Path sigFile = createTempFile("best.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1, null);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var noKeyTool = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null, null, 4,
                             "KEY", "FP"));
             var failTool = mockVerifyingTool("gpg", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.FAILED, null, null, "RSA", 4, "KEY", "FP"));
-            var sigmund = Sigmund.builder().addTool(noKeyTool).addTool(failTool).build();
+            try (var sigmund = Sigmund.builder().addTool(noKeyTool).addTool(failTool).build()) {
 
-            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+                SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-            assertThat(report.files().get(0).results().get(0).isFailed()).isTrue();
+                assertThat(report.files().get(0).results().get(0).isFailed()).isTrue();
+            }
         }
 
         @Test
@@ -250,7 +262,7 @@ class SigmundTest {
             Path sigFile = createTempFile("allnokey.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1, null);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool1 = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null, null, 4,
@@ -258,12 +270,14 @@ class SigmundTest {
             var tool2 = mockVerifyingTool("gpg", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE, null, null, 4,
                             "KEY", "FP"));
-            var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2).build();
+            try (var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2).build()) {
 
-            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+                SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-            assertThat(report.files().get(0).results().size()).isEqualTo(1);
-            assertThat(report.files().get(0).results().get(0).isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
+                assertThat(report.files().get(0).results().size()).isEqualTo(1);
+                assertThat(report.files().get(0).results().get(0).isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE))
+                        .isTrue();
+            }
         }
 
         @Test
@@ -272,7 +286,7 @@ class SigmundTest {
             Path sigFile = createTempFile("allskip.jar.asc",
                     "-----BEGIN PGP SIGNATURE-----\ntest\n-----END PGP SIGNATURE-----\n");
 
-            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1, null);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool1 = mockVerifyingTool("bc", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null,
@@ -280,12 +294,13 @@ class SigmundTest {
             var tool2 = mockVerifyingTool("gpg", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null,
                             4, null, null));
-            var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2).build();
+            try (var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2).build()) {
 
-            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+                SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-            assertThat(report.verdict()).isEqualTo(ReportVerdict.NONE_PASSED);
-            assertThat(report.files().get(0).results().isEmpty()).isTrue();
+                assertThat(report.verdict()).isEqualTo(ReportVerdict.NONE_PASSED);
+                assertThat(report.files().get(0).results().isEmpty()).isTrue();
+            }
         }
 
         @Test
@@ -295,11 +310,12 @@ class SigmundTest {
 
             var format = mockFormat("openpgp", ".asc", false, List.of());
             var tool = mockVerifyingTool("gpg", format, false, null);
-            var sigmund = Sigmund.builder().addTool(tool).build();
+            try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
-            SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
+                SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-            assertThat(report.verdict()).isEqualTo(ReportVerdict.NONE_PASSED);
+                assertThat(report.verdict()).isEqualTo(ReportVerdict.NONE_PASSED);
+            }
         }
 
         @Test
@@ -308,16 +324,17 @@ class SigmundTest {
             Path sig1 = createTempFile("test.jar.asc", "sig1");
             Path sig2 = createTempFile("test2.jar.asc", "sig2");
 
-            var claim = new OpenPgpClaim("armored", 4, "FP", 1);
+            var claim = new OpenPgpClaim("armored", 4, "FP", 1, null);
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, null, "RSA", 4, null, null));
-            var sigmund = Sigmund.builder().addTool(tool).build();
+            try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
-            SignatureVerificationReport report = sigmund.verifyAll(artifact, List.of(sig1, sig2));
+                SignatureVerificationReport report = sigmund.verifyAll(artifact, List.of(sig1, sig2));
 
-            assertThat(report.files().size()).isEqualTo(2);
-            assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+                assertThat(report.files().size()).isEqualTo(2);
+                assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+            }
         }
     }
 
@@ -327,12 +344,13 @@ class SigmundTest {
         @Test
         void signatureFileExtensionsReturnsRegisteredFormats() {
             var tool = mockTool("gpg", true, false, Set.of("openpgp4"));
-            var sigmund = Sigmund.builder().addTool(tool).build();
+            try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
-            Set<String> extensions = sigmund.signatureFileExtensions();
+                Set<String> extensions = sigmund.signatureFileExtensions();
 
-            assertThat(extensions).isNotNull();
-            assertThat(extensions.contains(".asc")).isTrue();
+                assertThat(extensions).isNotNull();
+                assertThat(extensions.contains(".asc")).isTrue();
+            }
         }
 
         @Test
@@ -341,22 +359,24 @@ class SigmundTest {
             var sigstoreFormat = mockFormat("sigstore", ".sigstore.json", false, List.of());
             var pgpTool = mockToolWithFormat("gpg", openpgpFormat, true, false, Set.of("openpgp4"));
             var sigstoreTool = mockToolWithFormat("sigstore", sigstoreFormat, true, false, Set.of("sigstore"));
-            var sigmund = Sigmund.builder().addTool(pgpTool).addTool(sigstoreTool).build();
+            try (var sigmund = Sigmund.builder().addTool(pgpTool).addTool(sigstoreTool).build()) {
 
-            Set<String> extensions = sigmund.signatureFileExtensions();
+                Set<String> extensions = sigmund.signatureFileExtensions();
 
-            assertThat(extensions.size()).isEqualTo(2);
-            assertThat(extensions.contains(".asc")).isTrue();
-            assertThat(extensions.contains(".sigstore.json")).isTrue();
+                assertThat(extensions.size()).isEqualTo(2);
+                assertThat(extensions.contains(".asc")).isTrue();
+                assertThat(extensions.contains(".sigstore.json")).isTrue();
+            }
         }
 
         @Test
         void signatureFileExtensionsIsImmutable() {
             var tool = mockTool("gpg", true, false, Set.of("openpgp4"));
-            var sigmund = Sigmund.builder().addTool(tool).build();
+            try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
-            assertThatThrownBy(() -> sigmund.signatureFileExtensions().add(".sig"))
-                    .isInstanceOf(UnsupportedOperationException.class);
+                assertThatThrownBy(() -> sigmund.signatureFileExtensions().add(".sig"))
+                        .isInstanceOf(UnsupportedOperationException.class);
+            }
         }
     }
 
@@ -367,40 +387,44 @@ class SigmundTest {
         void toolByName() {
             var gpg = mockTool("gpg", true, false, Set.of("openpgp4"));
             var sq = mockTool("sq", true, false, Set.of("openpgp6"));
-            var sigmund = Sigmund.builder().addTool(gpg).addTool(sq).build();
+            try (var sigmund = Sigmund.builder().addTool(gpg).addTool(sq).build()) {
 
-            assertThat(sigmund.tool("gpg")).isNotNull();
-            assertThat(sigmund.tool("gpg").name()).isEqualTo("gpg");
-            assertThat(sigmund.tool("sigstore")).isNull();
+                assertThat(sigmund.tool("gpg")).isNotNull();
+                assertThat(sigmund.tool("gpg").name()).isEqualTo("gpg");
+                assertThat(sigmund.tool("sigstore")).isNull();
+            }
         }
 
         @Test
         void findToolByCapability() {
             var tool = new MockKeyGeneratorTool("sq");
-            var sigmund = Sigmund.builder().addTool(tool)
-                    .discoveryConfig(noAutoDiscovery()).build();
+            try (var sigmund = Sigmund.builder().addTool(tool)
+                    .discoveryConfig(noAutoDiscovery()).build()) {
 
-            assertThat(sigmund.findTool(KeyGenerator.class)).isNotNull();
-            assertThat(sigmund.findTool(KeyImporter.class)).isNull();
+                assertThat(sigmund.findTool(KeyGenerator.class)).isNotNull();
+                assertThat(sigmund.findTool(KeyImporter.class)).isNull();
+            }
         }
 
         @Test
         void findToolByCapabilityAndName() {
             var sq = new MockKeyGeneratorTool("sq");
             var other = new MockKeyGeneratorTool("other");
-            var sigmund = Sigmund.builder().addTool(sq).addTool(other).build();
+            try (var sigmund = Sigmund.builder().addTool(sq).addTool(other).build()) {
 
-            assertThat(sigmund.findTool(KeyGenerator.class, "sq")).isNotNull();
-            assertThat(sigmund.findTool(KeyGenerator.class, "nonexistent")).isNull();
+                assertThat(sigmund.findTool(KeyGenerator.class, "sq")).isNotNull();
+                assertThat(sigmund.findTool(KeyGenerator.class, "nonexistent")).isNull();
+            }
         }
 
         @Test
         void toolsListIsUnmodifiable() {
-            var sigmund = Sigmund.builder()
-                    .addTool(mockTool("gpg", true, false, Set.of())).build();
+            try (var sigmund = Sigmund.builder()
+                    .addTool(mockTool("gpg", true, false, Set.of())).build()) {
 
-            assertThatThrownBy(() -> sigmund.tools().add(null))
-                    .isInstanceOf(UnsupportedOperationException.class);
+                assertThatThrownBy(() -> sigmund.tools().add(null))
+                        .isInstanceOf(UnsupportedOperationException.class);
+            }
         }
     }
 
@@ -409,63 +433,66 @@ class SigmundTest {
 
         @Test
         void verifierAssessTrusted() throws IOException {
-            var claim = new OpenPgpClaim("armored", 4, null, 1);
+            var claim = new OpenPgpClaim("armored", 4, null, 1, null);
             var result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice <alice@example.com>", "RSA",
                     4, "4AEE18F83AFDEB23", "4AEE18F83AFDEB23");
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true, result);
-            var sigmund = Sigmund.builder().addTool(tool).build();
+            try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
-            var policy = new DefaultTrustPolicy(
-                    Map.of("org.example:*", List.of(new SignerIdentity("alice", "Alice",
-                            List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23"))))),
-                    List.of(), ListedEvidencePolicy.ANY, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
-            TrustVerifier verifier = sigmund.verifier(policy);
+                var policy = new DefaultTrustPolicy(
+                        Map.of("org.example:*", List.of(new SignerIdentity("alice", "Alice",
+                                List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23"))))),
+                        List.of(), ListedEvidencePolicy.ANY, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
+                TrustVerifier verifier = sigmund.verifier(policy);
 
-            Path artifact = createTempFile("test.jar");
-            Path sigFile = createTempFile("test.jar.asc", "signature");
-            ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
+                Path artifact = createTempFile("test.jar");
+                Path sigFile = createTempFile("test.jar.asc", "signature");
+                ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
 
-            TrustResult trustResult = verifier.assess(artifactId, artifact, List.of(sigFile));
-            assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.TRUSTED);
-            assertThat(trustResult.matchedEvidence().size()).isEqualTo(1);
+                TrustResult trustResult = verifier.assess(artifactId, artifact, List.of(sigFile));
+                assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.TRUSTED);
+                assertThat(trustResult.matchedEvidence().size()).isEqualTo(1);
+            }
         }
 
         @Test
         void verifierAssessUntrusted() throws IOException {
-            var claim = new OpenPgpClaim("armored", 4, null, 1);
+            var claim = new OpenPgpClaim("armored", 4, null, 1, null);
             var result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Bob <bob@example.com>", "RSA",
                     4, "DIFFERENT18F83AFD", "DIFFERENT18F83AFD");
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true, result);
-            var sigmund = Sigmund.builder().addTool(tool).build();
+            try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
-            var policy = new DefaultTrustPolicy(
-                    Map.of("org.example:*", List.of(new SignerIdentity("alice", "Alice",
-                            List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23"))))),
-                    List.of(), ListedEvidencePolicy.ANY, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
-            TrustVerifier verifier = sigmund.verifier(policy);
+                var policy = new DefaultTrustPolicy(
+                        Map.of("org.example:*", List.of(new SignerIdentity("alice", "Alice",
+                                List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23"))))),
+                        List.of(), ListedEvidencePolicy.ANY, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
+                TrustVerifier verifier = sigmund.verifier(policy);
 
-            Path artifact = createTempFile("test2.jar");
-            Path sigFile = createTempFile("test2.jar.asc", "signature");
-            ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
+                Path artifact = createTempFile("test2.jar");
+                Path sigFile = createTempFile("test2.jar.asc", "signature");
+                ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
 
-            TrustResult trustResult = verifier.assess(artifactId, artifact, List.of(sigFile));
-            assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.UNTRUSTED);
+                TrustResult trustResult = verifier.assess(artifactId, artifact, List.of(sigFile));
+                assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.UNTRUSTED);
+            }
         }
 
         @Test
         void verifierAssessNotConfigured() throws IOException {
-            var sigmund = Sigmund.builder()
+            try (var sigmund = Sigmund.builder()
                     .addTool(mockTool("gpg", true, false, Set.of("openpgp4")))
-                    .build();
-            TrustVerifier verifier = sigmund.verifier(DefaultTrustPolicy.EMPTY);
+                    .build()) {
+                TrustVerifier verifier = sigmund.verifier(DefaultTrustPolicy.EMPTY);
 
-            Path artifact = createTempFile("test3.jar");
-            ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
+                Path artifact = createTempFile("test3.jar");
+                ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
 
-            TrustResult trustResult = verifier.assess(artifactId, artifact, List.of());
-            assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.NOT_CONFIGURED);
+                TrustResult trustResult = verifier.assess(artifactId, artifact, List.of());
+                assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.NOT_CONFIGURED);
+            }
         }
     }
 
@@ -487,20 +514,23 @@ class SigmundTest {
             var tool = mockTool("gpg", true, false, Set.of("openpgp4"));
             var discoveryConfig = new DiscoveryConfig(false, false, List.of(),
                     List.of("nonexistent", "gpg"));
-            var sigmund = Sigmund.builder().addTool(tool).discoveryConfig(discoveryConfig).build();
-            assertThat(sigmund.tools().size()).isEqualTo(1);
-            assertThat(sigmund.tools().get(0).name()).isEqualTo("gpg");
+            try (var sigmund = Sigmund.builder().addTool(tool)
+                    .discoveryConfig(discoveryConfig).build()) {
+                assertThat(sigmund.tools().size()).isEqualTo(1);
+                assertThat(sigmund.tools().get(0).name()).isEqualTo("gpg");
+            }
         }
 
         @Test
         void addToolReplacesExistingByName() {
             var tool1 = mockTool("gpg", true, false, Set.of("openpgp4"));
             var tool2 = mockTool("gpg", true, true, Set.of("openpgp4"));
-            var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2)
-                    .discoveryConfig(noAutoDiscovery()).build();
+            try (var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2)
+                    .discoveryConfig(noAutoDiscovery()).build()) {
 
-            assertThat(sigmund.tools().size()).isEqualTo(1);
-            assertThat(sigmund.tools().get(0).canSign()).isTrue();
+                assertThat(sigmund.tools().size()).isEqualTo(1);
+                assertThat(sigmund.tools().get(0).canSign()).isTrue();
+            }
         }
     }
 
@@ -512,10 +542,11 @@ class SigmundTest {
             // Build with default config. The builder should discover the three
             // built-in factories (bc, gpg, sq) and register at least the tools
             // that are available on this system. BC (pure Java) is always available.
-            var sigmund = Sigmund.builder().build();
+            try (var sigmund = Sigmund.builder().build()) {
 
-            assertThat(sigmund.tool("bc"))
-                    .as("bc tool should always be available (pure Java)").isNotNull();
+                assertThat(sigmund.tool("bc"))
+                        .as("bc tool should always be available (pure Java)").isNotNull();
+            }
         }
     }
 
@@ -532,11 +563,12 @@ class SigmundTest {
 
             builder.enforceExclusiveSigners(List.of(exclusiveFactory("bc")));
 
-            var sigmund = builder.build();
-            var signers = sigmund.tools().stream()
-                    .filter(SignatureTool::canSign).toList();
-            assertThat(signers.size()).isEqualTo(1);
-            assertThat(signers.get(0).name()).isEqualTo("bc");
+            try (var sigmund = builder.build()) {
+                var signers = sigmund.tools().stream()
+                        .filter(SignatureTool::canSign).toList();
+                assertThat(signers.size()).isEqualTo(1);
+                assertThat(signers.get(0).name()).isEqualTo("bc");
+            }
         }
 
         @Test
@@ -549,10 +581,11 @@ class SigmundTest {
 
             builder.enforceExclusiveSigners(List.of(exclusiveFactory("bc")));
 
-            var sigmund = builder.build();
-            assertThat(sigmund.tools().size()).isEqualTo(2);
-            assertThat(sigmund.tool("gpg")).isNotNull();
-            assertThat(sigmund.tool("gpg").canSign()).isFalse();
+            try (var sigmund = builder.build()) {
+                assertThat(sigmund.tools().size()).isEqualTo(2);
+                assertThat(sigmund.tool("gpg")).isNotNull();
+                assertThat(sigmund.tool("gpg").canSign()).isFalse();
+            }
         }
 
         @Test
@@ -568,10 +601,11 @@ class SigmundTest {
 
             builder.enforceExclusiveSigners(List.of(exclusiveFactory("bc")));
 
-            var sigmund = builder.build();
-            var signers = sigmund.tools().stream()
-                    .filter(SignatureTool::canSign).toList();
-            assertThat(signers.size()).isEqualTo(2);
+            try (var sigmund = builder.build()) {
+                var signers = sigmund.tools().stream()
+                        .filter(SignatureTool::canSign).toList();
+                assertThat(signers.size()).isEqualTo(2);
+            }
         }
 
         @Test
@@ -587,12 +621,13 @@ class SigmundTest {
 
             builder.enforceExclusiveSigners(List.of(exclusiveFactory("bc")));
 
-            var sigmund = builder.build();
-            Signer signer = sigmund.signer();
-            Path artifact = createTempFile("exclusive.jar");
-            SigningOutput output = signer.sign(artifact, tempDir);
-            assertThat(output.files().size()).isEqualTo(1);
-            assertThat(output.files().get(0).toolName()).isEqualTo("bc");
+            try (var sigmund = builder.build()) {
+                Signer signer = sigmund.signer();
+                Path artifact = createTempFile("exclusive.jar");
+                SigningOutput output = signer.sign(artifact, tempDir);
+                assertThat(output.files().size()).isEqualTo(1);
+                assertThat(output.files().get(0).toolName()).isEqualTo("bc");
+            }
         }
 
         @Test
@@ -751,54 +786,58 @@ class SigmundTest {
         @Test
         void inspectSignerUsesCapableTool() {
             var tool = mockInspectionTool("bc", true);
-            var sigmund = Sigmund.builder().addTool(tool).build();
+            try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
-            var report = sigmund.inspectSigner(
-                    new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
-                    null);
+                var report = sigmund.inspectSigner(
+                        new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                        null);
 
-            assertThat(report).isNotNull();
-            assertThat(report.results().isEmpty()).isFalse();
-            assertThat(report.results().stream().anyMatch(SignerSourceResult::found)).isTrue();
+                assertThat(report).isNotNull();
+                assertThat(report.results().isEmpty()).isFalse();
+                assertThat(report.results().stream().anyMatch(SignerSourceResult::found)).isTrue();
+            }
         }
 
         @Test
         void inspectSignerFiltersToolByName() {
             var bc = mockInspectionTool("bc", true);
             var gpg = mockInspectionTool("gpg", false);
-            var sigmund = Sigmund.builder().addTool(bc).addTool(gpg).build();
+            try (var sigmund = Sigmund.builder().addTool(bc).addTool(gpg).build()) {
 
-            var report = sigmund.inspectSigner(
-                    new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
-                    "gpg");
+                var report = sigmund.inspectSigner(
+                        new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                        "gpg");
 
-            assertThat(report).isNotNull();
-            assertThat(report.results().stream().noneMatch(SignerSourceResult::found)).isTrue();
+                assertThat(report).isNotNull();
+                assertThat(report.results().stream().noneMatch(SignerSourceResult::found)).isTrue();
+            }
         }
 
         @Test
         void inspectSignerReturnsEmptyWhenNoCapableTool() {
             var tool = mockTool("bc", true, false, Set.of("openpgp4"));
-            var sigmund = Sigmund.builder().addTool(tool).build();
+            try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
-            var report = sigmund.inspectSigner(
-                    new FingerprintCredential("openpgp4", "AABB"), null);
+                var report = sigmund.inspectSigner(
+                        new FingerprintCredential("openpgp4", "AABB"), null);
 
-            assertThat(report).isNotNull();
-            assertThat(report.results().isEmpty()).isTrue();
+                assertThat(report).isNotNull();
+                assertThat(report.results().isEmpty()).isTrue();
+            }
         }
 
         @Test
         void inspectSignerCollectsFromAllCapableTools() {
             var bc = mockInspectionTool("bc", true);
             var sq = mockInspectionTool("sq", true);
-            var sigmund = Sigmund.builder().addTool(bc).addTool(sq).build();
+            try (var sigmund = Sigmund.builder().addTool(bc).addTool(sq).build()) {
 
-            var report = sigmund.inspectSigner(
-                    new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
-                    null);
+                var report = sigmund.inspectSigner(
+                        new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                        null);
 
-            assertThat(report.results().size()).isEqualTo(2);
+                assertThat(report.results().size()).isEqualTo(2);
+            }
         }
     }
 
@@ -1225,8 +1264,8 @@ class SigmundTest {
         }
 
         @Override
-        public void close() throws Exception {
-            throw new Exception("Tool close failed");
+        public void close() throws IOException {
+            throw new IOException("Tool close failed");
         }
 
         @Override

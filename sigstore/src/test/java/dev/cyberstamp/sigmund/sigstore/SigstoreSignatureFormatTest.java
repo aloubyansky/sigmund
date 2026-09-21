@@ -3,10 +3,12 @@ package dev.cyberstamp.sigmund.sigstore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.cyberstamp.sigmund.core.Claim;
+import dev.cyberstamp.sigmund.core.ClaimTimeSource;
 import dev.cyberstamp.sigmund.core.SigstoreClaim;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -115,6 +117,31 @@ class SigstoreSignatureFormatTest {
         }
 
         @Test
+        void unparseableBundleStillYieldsAClaimWithoutAClaimTime() throws IOException {
+            // claim time is evidence Sigmund reads, not evidence it requires: a bundle that
+            // will not parse is still handed to the tool, which decides the outcome
+            String bundle = "{\"mediaType\":\"application/vnd.dev.sigstore.bundle.v0.3+json\","
+                    + "\"content\":\"test\"}";
+            Path file = tempDir.resolve("artifact.jar.sigstore.json");
+            Files.writeString(file, bundle);
+
+            SigstoreClaim claim = (SigstoreClaim) format.parse(file).get(0);
+
+            assertThat(claim.claimTime()).isNull();
+            assertThat(claim.claimTimeSource()).isEqualTo(ClaimTimeSource.TRANSPARENCY_LOG);
+        }
+
+        @Test
+        void claimTimeComesFromTheTransparencyLogEntry() throws IOException {
+            Path file = tempDir.resolve("artifact.jar.sigstore.json");
+            Files.writeString(file, bundleWithIntegratedTime(1_700_000_000L));
+
+            SigstoreClaim claim = (SigstoreClaim) format.parse(file).get(0);
+
+            assertThat(claim.claimTime()).isEqualTo(Instant.ofEpochSecond(1_700_000_000L));
+        }
+
+        @Test
         void preservesExactJsonContent() throws IOException {
             String bundle = "  { \"mediaType\" : \"test\" , \"extra\" : true }  ";
             Path file = tempDir.resolve("bundle.sigstore.json");
@@ -125,5 +152,15 @@ class SigstoreSignatureFormatTest {
             assertThat(((SigstoreClaim) claims.get(0)).jsonBundle())
                     .isEqualTo(bundle);
         }
+    }
+
+    /**
+     * Builds the fragment of a Sigstore bundle that carries the log entry's integrated
+     * time, in protobuf's JSON encoding where an int64 is rendered as a string.
+     */
+    private static String bundleWithIntegratedTime(long epochSeconds) {
+        return "{\"mediaType\":\"application/vnd.dev.sigstore.bundle.v0.3+json\","
+                + "\"verificationMaterial\":{\"tlogEntries\":[{"
+                + "\"logIndex\":\"42\",\"integratedTime\":\"" + epochSeconds + "\"}]}}";
     }
 }

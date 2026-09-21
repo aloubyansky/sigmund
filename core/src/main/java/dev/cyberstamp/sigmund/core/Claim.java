@@ -1,5 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
+import java.time.Instant;
+
 /**
  * A single verifiable piece extracted from a signature file.
  * <p>
@@ -20,6 +22,23 @@ package dev.cyberstamp.sigmund.core;
  * @see SignatureFormat#parse(java.nio.file.Path)
  * @see SignatureTool#canVerify(Claim)
  */
-public sealed interface Claim
-        permits OpenPgpClaim, SigstoreClaim {
+public sealed interface Claim permits OpenPgpClaim, SigstoreClaim {
+
+    /**
+     * Returns when the claim was made, as recorded in the evidence.
+     *
+     * <p>
+     * This is the instant a claim's validity is judged against (§3.4), not the instant it was
+     * verified. How much the value is worth depends on {@link #claimTimeSource()}.
+     *
+     * @return the claim time, or {@code null} when the evidence records none
+     */
+    Instant claimTime();
+
+    /**
+     * Returns who asserted {@link #claimTime()}, which is a property of the claim kind.
+     *
+     * @return the claim time's source
+     */
+    ClaimTimeSource claimTimeSource();
 }

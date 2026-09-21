@@ -123,7 +123,7 @@ class BcSqCrossToolTest {
         assertThat(info.version() > 0).as("Failed to parse signature packet").isTrue();
 
         OpenPgpClaim claim = new OpenPgpClaim(
-                armored, info.version(), info.issuerFingerprint(), info.algorithmId());
+                armored, info.version(), info.issuerFingerprint(), info.algorithmId(), null);
         return runner.verify(artifact, claim);
     }
 }

@@ -109,7 +109,7 @@ public record ClaimResult(
         TrustRootRef trustRoot,
         EvidenceRef evidence,
         Instant claimTime,                 // null when the claim carries none
-        EvaluationBasis basis,
+        ClaimTimeSource claimTimeSource,
         Instant verificationTime,
         String algorithm,
         String verifiedBy) { }             // tool that produced the outcome
@@ -133,7 +133,7 @@ public enum IndeterminateReason {
 
 public enum AttesterRole { PUBLISHER, BUILDER, REGISTRY, THIRD_PARTY_VERIFIER, UNKNOWN }
 
-public enum EvaluationBasis { LOG_ASSERTED, PUBLISHER_ASSERTED }
+public enum ClaimTimeSource { TRANSPARENCY_LOG, SIGNER }
 
 public record EvidenceRef(Path file, DigestSet digest, String source) { }
 
@@ -147,9 +147,11 @@ own, because satisfaction is a property of requirements over a set of claims.
 `isTransient` is what lets operators triage (§3.5): transient reasons are
 retried and may be downgraded from cache, permanent ones are not.
 
-`EvaluationBasis` records whether the time used came from a transparency log or
+`ClaimTimeSource` records whether the time used came from a transparency log or
 from the signer (§3.4), which is what makes the OpenPGP backdating risk visible
-in the record rather than implied (§1.1).
+in the record rather than implied (§1.1). §3.4 calls the instant itself the
+evaluation basis; the type here names its source, which is the part a result has
+to carry.
 
 ### Artifact result
 

@@ -37,7 +37,7 @@ class BcInteropTest {
         assertThat(info.version() > 0).isTrue();
 
         OpenPgpClaim claim = new OpenPgpClaim(
-                armored, info.version(), info.issuerFingerprint(), info.algorithmId());
+                armored, info.version(), info.issuerFingerprint(), info.algorithmId(), null);
 
         VerifyResult result = signer.verify(artifact, claim);
         assertThat(result.isVerified()).isTrue();
@@ -63,7 +63,7 @@ class BcInteropTest {
         String armored = Files.readString(sigFile);
         OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
         OpenPgpClaim claim = new OpenPgpClaim(
-                armored, info.version(), info.issuerFingerprint(), info.algorithmId());
+                armored, info.version(), info.issuerFingerprint(), info.algorithmId(), null);
 
         VerifyResult result = signer.verify(artifact, claim);
         assertThat(result.isFailed()).isTrue();
@@ -78,11 +78,12 @@ class BcInteropTest {
         String fp = bcRunner.generateKey("Test <test@example.com>", cipherSuite);
         BcRunner signer = new BcRunner(store, fp, null);
 
-        Sigmund sigmund = Sigmund.builder()
+        try (Sigmund sigmund = Sigmund.builder()
                 .addTool(signer)
-                .build();
+                .build()) {
 
-        assertThat(sigmund.tool("bc")).isNotNull();
-        assertThat(sigmund.tool("bc").isAvailable()).isTrue();
+            assertThat(sigmund.tool("bc")).isNotNull();
+            assertThat(sigmund.tool("bc").isAvailable()).isTrue();
+        }
     }
 }

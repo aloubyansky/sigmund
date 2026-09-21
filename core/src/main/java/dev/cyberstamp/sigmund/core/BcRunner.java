@@ -29,6 +29,7 @@ import org.bouncycastle.bcpg.AEADAlgorithmTags;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
 import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
+import org.bouncycastle.bcpg.PublicKeyPacket;
 import org.bouncycastle.bcpg.S2K;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
 import org.bouncycastle.bcpg.sig.KeyFlags;
@@ -69,6 +70,13 @@ import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyEncryptorBuilder;
  * Handles v4 and v6 signatures for classic algorithms (Ed25519, Ed448,
  * RSA, ECDSA). Always available — no external process dependencies.
  *
+ * <p>
+ * Instances are obtained from {@link BcToolFactory}, not constructed directly: the
+ * constructors take a package-private {@link BcKeyStore}, so the factory is the only way to
+ * build one from configuration. That keeps key-store layout — GnuPG home, cert-d store,
+ * private key directory — an implementation detail of core rather than part of the API.
+ *
+ * @see BcToolFactory
  * @see BcKeyStore
  */
 public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
@@ -108,7 +116,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      * @param signingFingerprint the fingerprint of the key to sign with, or {@code null}
      * @param tskFile the path to a TSK file for signing, or {@code null}
      */
-    public BcRunner(BcKeyStore keyStore, String signingFingerprint, Path tskFile) {
+    BcRunner(BcKeyStore keyStore, String signingFingerprint, Path tskFile) {
         this(keyStore, signingFingerprint, tskFile, null, null, false, false, List.of());
     }
 
@@ -120,7 +128,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      * @param tskFile the path to a TSK file for signing, or {@code null}
      * @param passphraseProvider provides passphrases for encrypted keys, or {@code null}
      */
-    public BcRunner(BcKeyStore keyStore, String signingFingerprint, Path tskFile,
+    BcRunner(BcKeyStore keyStore, String signingFingerprint, Path tskFile,
             PassphraseProvider passphraseProvider) {
         this(keyStore, signingFingerprint, tskFile, null, passphraseProvider, false, false, List.of());
     }
@@ -137,7 +145,7 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      * @param importToKeyring whether to persist fetched keys to disk (cert-d) or cache in memory
      * @param keyservers keyserver URLs to fetch from
      */
-    public BcRunner(BcKeyStore keyStore, String signingFingerprint, Path tskFile,
+    BcRunner(BcKeyStore keyStore, String signingFingerprint, Path tskFile,
             byte[] tskBytes, PassphraseProvider passphraseProvider,
             boolean resolveSigners, boolean importToKeyring, List<String> keyservers) {
         this.api = new BcOpenPGPApi();
@@ -622,6 +630,14 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
                         fingerprint, fingerprint);
             }
 
+            // Judged at the claim time, not now: a signature made while the key was valid
+            // stays valid after the key expires, and one dated outside that window did not
+            // come from a valid key however well the bytes verify.
+            if (!KeyValidity.isValidAt(verifyKey, opgu.claimTime())) {
+                return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint,
+                        fingerprint);
+            }
+
             boolean valid = verifyDetachedSignature(signature, verifyKey, artifactFile);
             return new OpenPgpVerifyResult(
                     valid ? ClaimOutcome.VERIFIED : ClaimOutcome.FAILED, null,
@@ -889,7 +905,10 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC", new BouncyCastleProvider());
         kpg.initialize(new ECGenParameterSpec(curveName), new SecureRandom());
 
+        // The key version is stated rather than defaulted: this fallback produces v4 keys,
+        // which is what makes these NIST P-curve keys importable into GnuPG.
         PGPKeyPair keyPair = new JcaPGPKeyPair(
+                PublicKeyPacket.VERSION_4,
                 PublicKeyAlgorithmTags.ECDSA,
                 kpg.generateKeyPair(),
                 new Date());

@@ -116,7 +116,8 @@ public class OpenPgpSignatureFormat implements SignatureFormat {
                 block,
                 info.version(),
                 info.issuerFingerprint(),
-                info.algorithmId());
+                info.algorithmId(),
+                info.creationTime());
     }
 
     private String readFile(Path file) {

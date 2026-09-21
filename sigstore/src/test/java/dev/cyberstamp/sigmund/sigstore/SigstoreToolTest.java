@@ -71,13 +71,13 @@ class SigstoreToolTest {
         @Test
         void acceptsSigstoreUnit() {
             assertThat(metadataOnlyTool().canVerify(
-                    new SigstoreClaim("{}"))).isTrue();
+                    new SigstoreClaim("{}", null))).isTrue();
         }
 
         @Test
         void rejectsOpenPgpUnit() {
             assertThat(metadataOnlyTool().canVerify(
-                    new OpenPgpClaim("block", 4, null, 0))).isFalse();
+                    new OpenPgpClaim("block", 4, null, 0, null))).isFalse();
         }
     }
 
@@ -171,7 +171,7 @@ class SigstoreToolTest {
 
         @Test
         void verifyThrowsWithoutVerifier() {
-            assertThatThrownBy(() -> metadataOnlyTool().verify(null, new SigstoreClaim("{}")))
+            assertThatThrownBy(() -> metadataOnlyTool().verify(null, new SigstoreClaim("{}", null)))
                     .isInstanceOf(IllegalStateException.class);
         }
     }

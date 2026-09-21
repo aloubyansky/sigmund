@@ -13,7 +13,7 @@ class SignatureEvidenceAdapterTest {
     private static final Path ARTIFACT = Path.of("artifact.jar");
     private static final Path EVIDENCE = Path.of("artifact.jar.asc");
     private static final String FP = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
-    private static final OpenPgpClaim V4_UNIT = new OpenPgpClaim("armored", 4, FP, 1);
+    private static final OpenPgpClaim V4_UNIT = new OpenPgpClaim("armored", 4, FP, 1, null);
 
     @Nested
     class BasicVerification {
@@ -83,7 +83,7 @@ class SignatureEvidenceAdapterTest {
         @Test
         void multipleUnitsRoutedIndependently() {
             var format = mockFormat("openpgp", ".asc", true,
-                    List.of(V4_UNIT, new OpenPgpClaim("armored2", 6, "FP2", 1)));
+                    List.of(V4_UNIT, new OpenPgpClaim("armored2", 6, "FP2", 1, null)));
             var v4Tool = mockToolForVersion("gpg", 4, passVerifyResult(),
                     List.of(new FingerprintCredential("openpgp4", FP)));
             var v6Tool = mockToolForVersion("sq", 6, passVerifyResult(),
