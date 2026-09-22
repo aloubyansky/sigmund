@@ -284,13 +284,15 @@ earlier ones did not decide.
 1. **Any claim `FAILED` → `FAILED`.** A valid claim alongside a failing one does
    not mask it. This matches RPMv6 (§7), where every signature on a package must
    verify, and it is why `FAILED` cannot be overridden.
-2. **No requirement applies → `NOT_CONFIGURED`.**
-3. **Claims no available verifier supports are set aside** — recorded in the
-   result, excluded from evaluation. This is the graceful degradation that makes
-   hybrid `.asc` work: a verifier without PQC support evaluates the classic
-   block exactly as an older RPM system does. If policy explicitly requires a
-   claim of that kind, the requirement cannot be met and the outcome is
-   `INDETERMINATE` with `unsupported-algorithm`.
+2. **Claims no available verifier supports are set aside** — recorded in the
+   result, excluded from evaluation. This happens before requirements are
+   evaluated, because evaluation only ever sees claims that verified. It is the
+   graceful degradation that makes hybrid `.asc` work: a verifier without PQC
+   support evaluates the classic block exactly as an older RPM system does. If
+   policy explicitly requires a claim of that kind, the requirement cannot be met
+   and the outcome is `INDETERMINATE` with `unsupported-algorithm`.
+3. **No requirement applies → `NOT_CONFIGURED`**, with the set-aside claims still
+   recorded.
 4. **Requirements met → `SATISFIED`**, subject to the claim-set mode. Under the
    default *all-claims* mode, every remaining claim must also be verified and
    accepted by policy. Under the lenient *any-claim* mode, remaining claims are
@@ -301,7 +303,7 @@ earlier ones did not decide.
    - any remaining `INDETERMINATE` claim → `INDETERMINATE` with that claim's
      reason, because the verdict cannot be decided without it;
    - any verified claim → `UNSATISFIED`;
-   - claims set aside in step 3 → `INDETERMINATE` with `unsupported-algorithm`;
+   - claims set aside in step 2 → `INDETERMINATE` with `unsupported-algorithm`;
    - nothing found → `NO_CLAIM`.
 
 Setting aside unsupported claims cannot make an untrusted artifact pass:

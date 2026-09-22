@@ -36,8 +36,9 @@ public class SignatureVerificationReport {
                     case VERIFIED -> anyPass = true;
                     case FAILED -> anyFail = true;
                     case INDETERMINATE -> anySkip = true;
-                    default -> {
-                    }
+                    // an outcome nobody counted would quietly change what the summary means
+                    default -> throw new IllegalStateException(
+                            "unhandled claim outcome: " + r.outcome());
                 }
             }
         }
