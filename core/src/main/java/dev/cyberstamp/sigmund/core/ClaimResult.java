@@ -81,14 +81,17 @@ public record ClaimResult(
      * Records the verification of a claim by a tool.
      *
      * <p>
-     * The claim supplies its kind and its time; the tool's result supplies the outcome and the
-     * credentials it proved. Role is left {@link AttesterRole#UNKNOWN} here — deriving it is a
+     * The claim supplies its kind and its time; the tool's result supplies the outcome, and the
+     * tool itself supplies the credentials the claim proved — that mapping belongs to the tool
+     * ({@link SignatureTool#extractCredentials(VerifyResult)}), because only it knows what its
+     * own result type establishes. Role is left {@link AttesterRole#UNKNOWN} here — deriving it is a
      * policy-time decision, because the issuer that asserted an identity is what says in which
      * capacity it was acting.
      *
      * @param claim the claim that was verified
      * @param kind the format that produced the claim
      * @param result what the tool established
+     * @param provenCredentials the credentials the tool says the claim proved
      * @param evidence the evidence the claim was parsed from
      * @param trustRoot the trust root the tool verified against
      * @param verifiedBy the tool's name
@@ -96,9 +99,9 @@ public record ClaimResult(
      * @return the claim result
      */
     public static ClaimResult of(Claim claim, String kind, VerifyResult result,
-            EvidenceRef evidence, TrustRootRef trustRoot, String verifiedBy,
-            Instant verifiedAt) {
-        return new ClaimResult(kind, result.outcome(), result.reason(), credentialsOf(result),
+            List<Credential> provenCredentials, EvidenceRef evidence, TrustRootRef trustRoot,
+            String verifiedBy, Instant verifiedAt) {
+        return new ClaimResult(kind, result.outcome(), result.reason(), provenCredentials,
                 result.signerDisplayName(), AttesterRole.UNKNOWN, trustRoot, evidence,
                 claim.claimTime(), claim.claimTimeSource(), verifiedAt, result.algorithm(),
                 verifiedBy);
@@ -112,11 +115,5 @@ public record ClaimResult(
      */
     public boolean isIndeterminateBecause(IndeterminateReason expected) {
         return outcome == ClaimOutcome.INDETERMINATE && reason == expected;
-    }
-
-    private static List<Credential> credentialsOf(VerifyResult result) {
-        return result instanceof OpenPgpVerifyResult
-                ? OpenPgpCredentials.from(result)
-                : List.of();
     }
 }

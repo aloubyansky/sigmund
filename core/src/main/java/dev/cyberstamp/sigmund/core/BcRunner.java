@@ -955,15 +955,6 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
         return HashAlgorithmTags.SHA256;
     }
 
-    /**
-     * Extracts public key ring from secret key ring (used by ECDSA fallback).
-     */
-    private PGPPublicKeyRing extractPublicKeyRing(PGPSecretKeyRing secretRing) {
-        List<PGPPublicKey> pubKeys = new ArrayList<>();
-        secretRing.getPublicKeys().forEachRemaining(pubKeys::add);
-        return new PGPPublicKeyRing(pubKeys);
-    }
-
     // --- HKP key import internals ---
 
     /**

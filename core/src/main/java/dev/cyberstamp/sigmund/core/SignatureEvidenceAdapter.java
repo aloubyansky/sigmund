@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,7 +23,7 @@ import java.util.List;
  * {@link KeyImporter}) and re-verify; if it is still unavailable, continue to the next
  * tool</li>
  * <li>{@link SignatureTool#extractCredentials(VerifyResult)} → proven credentials</li>
- * <li>Wrap into {@link EvidenceResult}</li>
+ * <li>Wrap into {@link ClaimResult}</li>
  * </ol>
  *
  * <h2>Key fetching</h2>
@@ -87,13 +88,13 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * <p>
      * Parses the evidence file into claims, verifies each claim with
      * the appropriate tool, optionally fetches missing keys, and wraps results
-     * into {@link EvidenceResult}s.
+     * into {@link ClaimResult}s.
      */
     @Override
-    public List<EvidenceResult> verify(Path artifactFile, Evidence evidence) {
+    public List<ClaimResult> verify(Path artifactFile, Evidence evidence) {
         EvidenceRef ref = evidence.ref();
         List<Claim> claims = parseClaims(evidence);
-        List<EvidenceResult> results = new ArrayList<>(claims.size());
+        List<ClaimResult> results = new ArrayList<>(claims.size());
         for (Claim claim : claims) {
             results.add(verifyClaim(artifactFile, claim, ref));
         }
@@ -124,8 +125,8 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
      * @param claim the claim to verify
      * @return the evidence result for this claim
      */
-    private EvidenceResult verifyClaim(Path artifactFile, Claim claim, EvidenceRef ref) {
-        EvidenceResult best = null;
+    private ClaimResult verifyClaim(Path artifactFile, Claim claim, EvidenceRef ref) {
+        ClaimResult best = null;
         VerifyResult bestResult = null;
         for (SignatureTool tool : tools) {
             if (!tool.canVerify(claim)) {
@@ -139,20 +140,20 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
                 result = fetchKeyAndRetry(artifactFile, claim, tool, result);
             }
             if (result.isVerified()) {
-                return wrapAsEvidence(tool, result, ref);
+                return asClaimResult(tool, claim, result, ref);
             }
             if (bestResult == null || result.isMoreConclusiveThan(bestResult)) {
                 bestResult = result;
-                best = wrapAsEvidence(tool, result, ref);
+                best = asClaimResult(tool, claim, result, ref);
             }
         }
         if (best != null) {
             return best;
         }
-        return new EvidenceResult(
+        return ClaimResult.of(claim, name(),
                 new UnverifiedResult(ClaimOutcome.INDETERMINATE,
                         IndeterminateReason.UNSUPPORTED_ALGORITHM),
-                List.of(), name(), ref, TrustRootRef.unknown());
+                List.of(), ref, TrustRootRef.unknown(), null, Instant.now());
     }
 
     /**
@@ -195,16 +196,16 @@ public class SignatureEvidenceAdapter implements EvidenceProvider {
     }
 
     /**
-     * Wraps a verification result into an {@link EvidenceResult} by extracting
+     * Wraps a verification result into an {@link ClaimResult} by extracting
      * proven credentials from the tool.
      *
      * @param tool the tool that performed the verification
      * @param result the verification result to wrap
      * @return the evidence result containing the verification outcome and extracted credentials
      */
-    private EvidenceResult wrapAsEvidence(SignatureTool tool, VerifyResult result,
+    private ClaimResult asClaimResult(SignatureTool tool, Claim claim, VerifyResult result,
             EvidenceRef ref) {
-        List<Credential> credentials = tool.extractCredentials(result);
-        return new EvidenceResult(result, credentials, name(), ref, tool.trustRoot());
+        return ClaimResult.of(claim, name(), result, tool.extractCredentials(result), ref,
+                tool.trustRoot(), tool.name(), Instant.now());
     }
 }

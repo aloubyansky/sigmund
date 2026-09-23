@@ -42,7 +42,7 @@ class SignatureEvidenceAdapterTest {
             var adapter = adapterWith(singleClaimFormat(),
                     List.of(mockTool("bc", true, true, passVerifyResult(), List.of())));
 
-            List<EvidenceResult> results = adapter.verify(dir.resolve("lib.jar"),
+            List<ClaimResult> results = adapter.verify(dir.resolve("lib.jar"),
                     Evidence.read(evidence, Evidence.SOURCE_SIDECAR));
 
             EvidenceRef ref = results.get(0).evidence();
@@ -59,7 +59,7 @@ class SignatureEvidenceAdapterTest {
             var adapter = adapterWith(singleClaimFormat(),
                     List.of(mockTool("bc", true, true, passVerifyResult(), List.of(), root)));
 
-            List<EvidenceResult> results = adapter.verify(dir.resolve("lib.jar"),
+            List<ClaimResult> results = adapter.verify(dir.resolve("lib.jar"),
                     Evidence.read(evidence, Evidence.SOURCE_SIDECAR));
 
             assertThat(results.get(0).trustRoot()).isEqualTo(root);
@@ -75,13 +75,13 @@ class SignatureEvidenceAdapterTest {
                     List.of(new FingerprintCredential("openpgp4", FP)));
             var adapter = adapterWith(singleClaimFormat(), List.of(tool));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
             assertThat(results).hasSize(1);
-            assertThat(results.get(0).isVerified()).isTrue();
-            assertThat(results.get(0).provenCredentials()).hasSize(1);
-            assertThat(results.get(0).provenCredentials().get(0).type()).isEqualTo("openpgp4");
-            assertThat(results.get(0).provider()).isEqualTo("openpgp");
+            assertThat((results.get(0).outcome() == ClaimOutcome.VERIFIED)).isTrue();
+            assertThat(results.get(0).attesterCredentials()).hasSize(1);
+            assertThat(results.get(0).attesterCredentials().get(0).type()).isEqualTo("openpgp4");
+            assertThat(results.get(0).kind()).isEqualTo("openpgp");
         }
 
         @Test
@@ -89,11 +89,11 @@ class SignatureEvidenceAdapterTest {
             var tool = mockTool("gpg", true, false, null, List.of());
             var adapter = adapterWith(singleClaimFormat(), List.of(tool));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
             assertThat(results).hasSize(1);
-            assertThat(results.get(0).isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM)).isTrue();
-            assertThat(results.get(0).provenCredentials()).isEmpty();
+            assertThat(results.get(0).isIndeterminateBecause(IndeterminateReason.UNSUPPORTED_ALGORITHM)).isTrue();
+            assertThat(results.get(0).attesterCredentials()).isEmpty();
         }
 
         @Test
@@ -106,11 +106,11 @@ class SignatureEvidenceAdapterTest {
                     List.of(new FingerprintCredential("openpgp4", FP)));
             var adapter = adapterWith(singleClaimFormat(), List.of(skipping, passing));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
             assertThat(results).hasSize(1);
-            assertThat(results.get(0).isVerified()).isTrue();
-            assertThat(results.get(0).provenCredentials()).hasSize(1);
+            assertThat((results.get(0).outcome() == ClaimOutcome.VERIFIED)).isTrue();
+            assertThat(results.get(0).attesterCredentials()).hasSize(1);
         }
 
         @Test
@@ -125,10 +125,10 @@ class SignatureEvidenceAdapterTest {
                     List.of());
             var adapter = adapterWith(singleClaimFormat(), List.of(tool1, tool2));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
             assertThat(results).hasSize(1);
-            assertThat(results.get(0).isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM)).isTrue();
+            assertThat(results.get(0).isIndeterminateBecause(IndeterminateReason.UNSUPPORTED_ALGORITHM)).isTrue();
         }
 
         @Test
@@ -141,11 +141,11 @@ class SignatureEvidenceAdapterTest {
                     List.of(new FingerprintCredential("openpgp6", "FP2")));
             var adapter = adapterWith(format, List.of(v4Tool, v6Tool));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
             assertThat(results).hasSize(2);
-            assertThat(results.get(0).provenCredentials().get(0).type()).isEqualTo("openpgp4");
-            assertThat(results.get(1).provenCredentials().get(0).type()).isEqualTo("openpgp6");
+            assertThat(results.get(0).attesterCredentials().get(0).type()).isEqualTo("openpgp4");
+            assertThat(results.get(1).attesterCredentials().get(0).type()).isEqualTo("openpgp6");
         }
     }
 
@@ -187,9 +187,9 @@ class SignatureEvidenceAdapterTest {
             var tool = mockTool("gpg", true, true, noKeyVerifyResult(), List.of());
             var adapter = adapterWith(singleClaimFormat(), List.of(tool));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
-            assertThat(results.get(0).isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
+            assertThat(results.get(0).isIndeterminateBecause(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
         }
 
         @Test
@@ -197,9 +197,9 @@ class SignatureEvidenceAdapterTest {
             var importingTool = mockImportingTool("bc", true);
             var adapter = adapterWith(singleClaimFormat(), List.of(importingTool));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
-            assertThat(results.get(0).isVerified()).isTrue();
+            assertThat((results.get(0).outcome() == ClaimOutcome.VERIFIED)).isTrue();
         }
 
         @Test
@@ -207,9 +207,9 @@ class SignatureEvidenceAdapterTest {
             var importingTool = mockImportingTool("bc", false);
             var adapter = adapterWith(singleClaimFormat(), List.of(importingTool));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
-            assertThat(results.get(0).isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
+            assertThat(results.get(0).isIndeterminateBecause(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
         }
 
         @Test
@@ -218,9 +218,9 @@ class SignatureEvidenceAdapterTest {
             var passingTool = mockImportingTool("bc", true);
             var adapter = adapterWith(singleClaimFormat(), List.of(failingTool, passingTool));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
-            assertThat(results.get(0).isVerified()).isTrue();
+            assertThat((results.get(0).outcome() == ClaimOutcome.VERIFIED)).isTrue();
         }
 
         @Test
@@ -229,9 +229,9 @@ class SignatureEvidenceAdapterTest {
             var tool2 = mockImportingTool("bc", false);
             var adapter = adapterWith(singleClaimFormat(), List.of(tool1, tool2));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
-            assertThat(results.get(0).isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
+            assertThat(results.get(0).isIndeterminateBecause(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
         }
 
         @Test
@@ -241,9 +241,9 @@ class SignatureEvidenceAdapterTest {
                     List.of(new FingerprintCredential("openpgp4", FP)));
             var adapter = adapterWith(singleClaimFormat(), List.of(failTool, passingTool));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
-            assertThat(results.get(0).isVerified()).isTrue();
+            assertThat((results.get(0).outcome() == ClaimOutcome.VERIFIED)).isTrue();
         }
 
         @Test
@@ -252,9 +252,9 @@ class SignatureEvidenceAdapterTest {
             var failTool = mockTool("gpg", true, true, failVerifyResult(), List.of());
             var adapter = adapterWith(singleClaimFormat(), List.of(noKeyTool, failTool));
 
-            List<EvidenceResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+            List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
-            assertThat(results.get(0).isFailed()).isTrue();
+            assertThat((results.get(0).outcome() == ClaimOutcome.FAILED)).isTrue();
         }
     }
 

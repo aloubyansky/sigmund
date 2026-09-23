@@ -37,9 +37,9 @@ public final class OutcomeRollup {
      * @param evaluator decides whether the verified claims satisfy the applicable rule
      * @param requiredKind the claim kind a rule demands, by format name, or {@code null}
      * @param mode what to do with claims beyond those that satisfied the requirements
-     * @return the outcome, the reason where one applies, and the claims set aside
+     * @return the outcome and, where one applies, the reason it could not be decided
      */
-    public static Result of(ArtifactCoords coords, List<ClaimResult> claims,
+    public static Result derive(ArtifactCoords coords, List<ClaimResult> claims,
             RequirementEvaluator evaluator, String requiredKind, ClaimSetMode mode) {
         List<ClaimResult> found = claims == null ? List.of() : claims;
 
@@ -47,19 +47,19 @@ public final class OutcomeRollup {
         // requirements are evaluated - which is what lets a hybrid signature verify on its
         // classic block when the post-quantum tooling is absent - and the rest are sorted
         // into what verified and why anything else did not.
-        List<ClaimResult> setAside = null;
+        boolean anySetAside = false;
         List<ClaimResult> verified = null;
         IndeterminateReason unresolvedReason = null;
         for (ClaimResult claim : found) {
             switch (claim.outcome()) {
                 case FAILED -> {
                     // an attack signal is never masked by evidence that did verify
-                    return new Result(ArtifactOutcome.FAILED, null, List.of());
+                    return new Result(ArtifactOutcome.FAILED, null);
                 }
                 case VERIFIED -> verified = append(verified, claim);
                 case INDETERMINATE -> {
                     if (claim.reason() == IndeterminateReason.UNSUPPORTED_ALGORITHM) {
-                        setAside = append(setAside, claim);
+                        anySetAside = true;
                     } else if (unresolvedReason == null) {
                         unresolvedReason = claim.reason();
                     }
@@ -73,45 +73,46 @@ public final class OutcomeRollup {
         }
 
         // no rule applies to this artifact
-        RequirementEvaluator.Evaluation evaluation = evaluator == null ? null : evaluator.evaluate(coords, orEmpty(verified));
+        RequirementEvaluator.Evaluation evaluation = evaluator == null ? null
+                : evaluator.evaluate(coords, verified == null ? List.of() : verified);
         if (evaluation == null) {
-            return new Result(ArtifactOutcome.NOT_CONFIGURED, null, orEmpty(setAside));
+            return new Result(ArtifactOutcome.NOT_CONFIGURED, null);
         }
 
         // the rule demanded a claim kind that nothing installed could check
-        if (requiredKind != null && setAside != null && !evaluation.satisfied()) {
-            return indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM, setAside);
+        if (requiredKind != null && anySetAside && !evaluation.satisfied()) {
+            return indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
         }
 
         // requirements met, subject to what the claim-set mode says about the rest
         if (evaluation.satisfied()) {
             if (mode == ClaimSetMode.ANY_CLAIM) {
-                return new Result(ArtifactOutcome.SATISFIED, null, orEmpty(setAside));
+                return new Result(ArtifactOutcome.SATISFIED, null);
             }
             if (!evaluation.unaccepted().isEmpty()) {
-                return new Result(ArtifactOutcome.UNSATISFIED, null, orEmpty(setAside));
+                return new Result(ArtifactOutcome.UNSATISFIED, null);
             }
             if (unresolvedReason != null) {
-                return indeterminate(unresolvedReason, setAside);
+                return indeterminate(unresolvedReason);
             }
-            return new Result(ArtifactOutcome.SATISFIED, null, orEmpty(setAside));
+            return new Result(ArtifactOutcome.SATISFIED, null);
         }
 
         // requirements unmet: report whichever remaining state tells an operator the most
         if (unresolvedReason != null) {
-            return indeterminate(unresolvedReason, setAside);
+            return indeterminate(unresolvedReason);
         }
         if (verified != null) {
-            return new Result(ArtifactOutcome.UNSATISFIED, null, orEmpty(setAside));
+            return new Result(ArtifactOutcome.UNSATISFIED, null);
         }
-        if (setAside != null) {
-            return indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM, setAside);
+        if (anySetAside) {
+            return indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
         }
-        return new Result(ArtifactOutcome.NO_CLAIM, null, List.of());
+        return new Result(ArtifactOutcome.NO_CLAIM, null);
     }
 
-    private static Result indeterminate(IndeterminateReason reason, List<ClaimResult> setAside) {
-        return new Result(ArtifactOutcome.INDETERMINATE, reason, orEmpty(setAside));
+    private static Result indeterminate(IndeterminateReason reason) {
+        return new Result(ArtifactOutcome.INDETERMINATE, reason);
     }
 
     private static List<ClaimResult> append(List<ClaimResult> claims, ClaimResult claim) {
@@ -120,23 +121,16 @@ public final class OutcomeRollup {
         return target;
     }
 
-    private static List<ClaimResult> orEmpty(List<ClaimResult> claims) {
-        return claims == null ? List.of() : claims;
-    }
-
     /**
      * What the roll-up decided.
      *
+     * <p>
+     * Claims set aside for an unsupported algorithm are not repeated here: they stay in the
+     * artifact's claim list, where {@link ClaimResult#isIndeterminateBecause} identifies them.
+     *
      * @param outcome the artifact's outcome
      * @param reason why it could not be decided, {@code null} unless indeterminate
-     * @param setAside claims excluded from evaluation because no tool supports them
      */
-    public record Result(ArtifactOutcome outcome, IndeterminateReason reason,
-            List<ClaimResult> setAside) {
-
-        /** Defensively copies the set-aside claims. */
-        public Result {
-            setAside = setAside == null ? List.of() : List.copyOf(setAside);
-        }
+    public record Result(ArtifactOutcome outcome, IndeterminateReason reason) {
     }
 }

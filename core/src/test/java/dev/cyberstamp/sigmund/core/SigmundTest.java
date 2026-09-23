@@ -450,9 +450,9 @@ class SigmundTest {
                 Path sigFile = createTempFile("test.jar.asc", "signature");
                 ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
 
-                TrustResult trustResult = verifier.assess(artifactId, artifact, List.of(sigFile));
-                assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.TRUSTED);
-                assertThat(trustResult.matchedEvidence().size()).isEqualTo(1);
+                ArtifactResult assessed = verifier.assess(artifactId, artifact, List.of(sigFile));
+                assertThat(assessed.outcome()).isEqualTo(ArtifactOutcome.SATISFIED);
+                assertThat(assessed.claims()).hasSize(1);
             }
         }
 
@@ -475,8 +475,8 @@ class SigmundTest {
                 Path sigFile = createTempFile("test2.jar.asc", "signature");
                 ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
 
-                TrustResult trustResult = verifier.assess(artifactId, artifact, List.of(sigFile));
-                assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.UNTRUSTED);
+                ArtifactResult assessed = verifier.assess(artifactId, artifact, List.of(sigFile));
+                assertThat(assessed.outcome()).isEqualTo(ArtifactOutcome.UNSATISFIED);
             }
         }
 
@@ -490,8 +490,8 @@ class SigmundTest {
                 Path artifact = createTempFile("test3.jar");
                 ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
 
-                TrustResult trustResult = verifier.assess(artifactId, artifact, List.of());
-                assertThat(trustResult.verdict()).isEqualTo(TrustVerdict.NOT_CONFIGURED);
+                ArtifactResult result = verifier.assess(artifactId, artifact, List.of());
+                assertThat(result.outcome()).isEqualTo(ArtifactOutcome.NOT_CONFIGURED);
             }
         }
     }

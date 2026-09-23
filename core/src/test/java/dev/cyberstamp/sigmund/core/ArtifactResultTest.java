@@ -93,7 +93,7 @@ class ArtifactResultTest {
         void takesTheOutcomeAndReasonTheRollupDecided() {
             ClaimResult unresolved = claim(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE);
             OutcomeRollup.Result rollup = new OutcomeRollup.Result(ArtifactOutcome.INDETERMINATE,
-                    IndeterminateReason.KEY_UNAVAILABLE, List.of());
+                    IndeterminateReason.KEY_UNAVAILABLE);
 
             ArtifactResult result = ArtifactResult.of(SUBJECT, rollup, List.of(unresolved),
                     Instant.EPOCH);

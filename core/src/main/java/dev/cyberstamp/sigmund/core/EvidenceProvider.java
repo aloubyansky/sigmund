@@ -7,7 +7,7 @@ import java.util.List;
  * The general interface for anything that can verify evidence of identity.
  * <p>
  * This is the Layer 1 (identity verification) interface — it takes a file and returns
- * proven credentials via {@link EvidenceResult}. It operates at a higher level than
+ * proven credentials via {@link ClaimResult}. It operates at a higher level than
  * the Layer 2 {@code SignatureTool} interface, which works with parsed
  * {@code Claim}s.
  *
@@ -20,7 +20,7 @@ import java.util.List;
  * SBOM verification, etc. implement this interface directly.</li>
  * </ul>
  *
- * @see EvidenceResult
+ * @see ClaimResult
  */
 public interface EvidenceProvider {
 
@@ -61,5 +61,5 @@ public interface EvidenceProvider {
      * @throws ToolExecutionException if verification cannot be attempted due to
      *         infrastructure failure
      */
-    List<EvidenceResult> verify(Path artifactFile, Evidence evidence);
+    List<ClaimResult> verify(Path artifactFile, Evidence evidence);
 }

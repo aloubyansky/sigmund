@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
-import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -70,16 +69,6 @@ class VerifyResultTest {
         void aConclusiveOutcomeCannotCarryAReason() {
             assertThatThrownBy(() -> new OpenPgpVerifyResult(ClaimOutcome.VERIFIED,
                     IndeterminateReason.KEY_UNAVAILABLE, null, null, 4, null, null))
-                    .isInstanceOf(IllegalArgumentException.class);
-        }
-    }
-
-    @Nested
-    class EvidenceResultTests {
-
-        @Test
-        void nullVerifyResultThrows() {
-            assertThatThrownBy(() -> new EvidenceResult(null, List.of(), "test", EVIDENCE_REF, TrustRootRef.unknown()))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }

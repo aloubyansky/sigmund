@@ -33,7 +33,7 @@ class ClaimResultTest {
                     Instant.ofEpochSecond(1_700_000_000L));
             VerifyResult result = OpenPgpVerifyResult.verified("Alice", "RSA", 4, FP, FP);
 
-            ClaimResult claimResult = ClaimResult.of(claim, "openpgp", result, REF,
+            ClaimResult claimResult = ClaimResult.of(claim, "openpgp", result, OpenPgpCredentials.from(result), REF,
                     TrustRootRef.unknown(), "bc", Instant.ofEpochSecond(1_700_000_100L));
 
             assertThat(claimResult.kind()).isEqualTo("openpgp");
@@ -48,7 +48,7 @@ class ClaimResultTest {
             OpenPgpClaim claim = new OpenPgpClaim("armored", 4, FP, 1, null);
             VerifyResult result = OpenPgpVerifyResult.verified("Alice <alice@example.com>", "RSA", 4, FP, FP);
 
-            ClaimResult claimResult = ClaimResult.of(claim, "openpgp", result, REF,
+            ClaimResult claimResult = ClaimResult.of(claim, "openpgp", result, OpenPgpCredentials.from(result), REF,
                     TrustRootRef.unknown(), "bc", Instant.now());
 
             assertThat(claimResult.attesterCredentials()).containsExactly(
@@ -62,7 +62,7 @@ class ClaimResultTest {
             VerifyResult result = OpenPgpVerifyResult.indeterminate(
                     IndeterminateReason.KEY_UNAVAILABLE, null, "RSA", 4, FP, FP);
 
-            ClaimResult claimResult = ClaimResult.of(claim, "openpgp", result, REF,
+            ClaimResult claimResult = ClaimResult.of(claim, "openpgp", result, OpenPgpCredentials.from(result), REF,
                     TrustRootRef.unknown(), "bc", Instant.now());
 
             assertThat(claimResult.outcome()).isEqualTo(ClaimOutcome.INDETERMINATE);
@@ -75,7 +75,7 @@ class ClaimResultTest {
             SigstoreClaim claim = new SigstoreClaim("{}", Instant.ofEpochSecond(1_700_000_000L));
             VerifyResult result = SigstoreVerifyResult.indeterminate(IndeterminateReason.EVIDENCE_MALFORMED);
 
-            ClaimResult claimResult = ClaimResult.of(claim, "sigstore", result, REF,
+            ClaimResult claimResult = ClaimResult.of(claim, "sigstore", result, List.of(), REF,
                     TrustRootRef.sigstore("public-good"), "sigstore", Instant.now());
 
             assertThat(claimResult.kind()).isEqualTo("sigstore");
