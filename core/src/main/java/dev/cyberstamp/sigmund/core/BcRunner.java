@@ -924,15 +924,25 @@ public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
 
     /**
      * Builds a PGP key ring from a key pair (used by ECDSA fallback).
+     *
+     * <p>
+     * The self-signature states the key's capabilities explicitly. Implementations differ on
+     * what an unflagged key may do: GnuPG and Bouncy Castle infer signing capability from the
+     * key itself, while Sequoia refuses to verify with a key that does not say it can sign
+     * ("key is not signing capable"). Stating the flags is what makes a key generated here
+     * usable by every backend.
      */
     private PGPSecretKeyRing buildKeyRing(PGPKeyPair keyPair, String userId) throws PGPException {
         int hashAlgo = selectHashForKey(keyPair.getPublicKey());
+        PGPSignatureSubpacketGenerator capabilities = new PGPSignatureSubpacketGenerator();
+        capabilities.setKeyFlags(false, KeyFlags.CERTIFY_OTHER | KeyFlags.SIGN_DATA);
+
         PGPKeyRingGenerator keyRingGen = new PGPKeyRingGenerator(
                 PGPSignature.POSITIVE_CERTIFICATION,
                 keyPair,
                 userId,
                 new JcaPGPDigestCalculatorProviderBuilder().build().get(hashAlgo),
-                null,
+                capabilities.generate(),
                 null,
                 new JcaPGPContentSignerBuilder(
                         keyPair.getPublicKey().getAlgorithm(), hashAlgo),

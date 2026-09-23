@@ -161,7 +161,7 @@ class SigmundTest {
 
                 SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-                assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+                assertThat(report.isPass()).isTrue();
                 assertThat(report.files().size()).isEqualTo(1);
                 assertThat(report.files().get(0).format()).isEqualTo("openpgp");
             }
@@ -184,7 +184,7 @@ class SigmundTest {
 
                 SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-                assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+                assertThat(report.isPass()).isTrue();
                 assertThat(report.files().size()).isEqualTo(1);
                 assertThat(report.files().get(0).results().size()).isEqualTo(1);
                 assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
@@ -208,7 +208,7 @@ class SigmundTest {
 
                 SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-                assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+                assertThat(report.isPass()).isTrue();
                 assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
                 assertThat(report.files().get(0).results().get(0).signerDisplayName()).isEqualTo("Alice");
             }
@@ -230,7 +230,7 @@ class SigmundTest {
 
                 SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-                assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+                assertThat(report.isPass()).isTrue();
                 assertThat(report.files().get(0).results().get(0).isVerified()).isTrue();
             }
         }
@@ -298,7 +298,7 @@ class SigmundTest {
 
                 SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-                assertThat(report.verdict()).isEqualTo(ReportVerdict.NONE_PASSED);
+                assertThat(report.isLenientPass()).isFalse();
                 assertThat(report.files().get(0).results().isEmpty()).isTrue();
             }
         }
@@ -314,7 +314,7 @@ class SigmundTest {
 
                 SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
-                assertThat(report.verdict()).isEqualTo(ReportVerdict.NONE_PASSED);
+                assertThat(report.isLenientPass()).isFalse();
             }
         }
 
@@ -333,7 +333,7 @@ class SigmundTest {
                 SignatureVerificationReport report = sigmund.verifyAll(artifact, List.of(sig1, sig2));
 
                 assertThat(report.files().size()).isEqualTo(2);
-                assertThat(report.verdict()).isEqualTo(ReportVerdict.ALL_PASS);
+                assertThat(report.isPass()).isTrue();
             }
         }
     }
