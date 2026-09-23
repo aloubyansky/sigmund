@@ -14,7 +14,7 @@ import java.util.Map;
  * the most specific one wins (exact matches score higher than wildcards,
  * and more segments score higher than fewer).
  */
-public class DefaultTrustPolicy implements TrustPolicy {
+class DefaultTrustPolicy implements TrustPolicy {
 
     static final DefaultTrustPolicy EMPTY = new DefaultTrustPolicy(
             Map.of(), List.of(), ListedEvidencePolicy.ALL, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);

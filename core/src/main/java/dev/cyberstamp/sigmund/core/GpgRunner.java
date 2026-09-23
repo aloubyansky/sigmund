@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
  *
  * @see #isAvailable()
  */
-public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
+class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
 
     private static final Pattern GPG_KEY_PATTERN = Pattern.compile(
             "using (\\w+) key\\s+([0-9A-Fa-f]{16,40})", Pattern.MULTILINE);
@@ -140,7 +140,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
     /**
      * Constructs a GpgRunner using the default "gpg" executable and default key.
      */
-    public GpgRunner() {
+    GpgRunner() {
         this("gpg", null, null);
     }
 
@@ -150,7 +150,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
      * @param keyName the key name/ID to use with --local-user, or null to use
      *        GPG's default key
      */
-    public GpgRunner(String keyName) {
+    GpgRunner(String keyName) {
         this("gpg", keyName, null);
     }
 
@@ -162,7 +162,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
      *        GPG's default key
      * @throws IllegalArgumentException if gpgExecutable is null or empty
      */
-    public GpgRunner(String gpgExecutable, String keyName) {
+    GpgRunner(String gpgExecutable, String keyName) {
         this(gpgExecutable, keyName, null);
     }
 
@@ -175,7 +175,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
      * @param home the GPG home directory, or null to use the default
      * @throws IllegalArgumentException if gpgExecutable is null or empty
      */
-    public GpgRunner(String gpgExecutable, String keyName, String home) {
+    GpgRunner(String gpgExecutable, String keyName, String home) {
         this(gpgExecutable, keyName, home, null, false, false, List.of());
     }
 
@@ -192,7 +192,7 @@ public class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityReso
      * @param keyservers keyserver URLs to fetch from
      * @throws IllegalArgumentException if gpgExecutable is null or empty
      */
-    public GpgRunner(String gpgExecutable, String keyName, String home,
+    GpgRunner(String gpgExecutable, String keyName, String home,
             String passphrase,
             boolean resolveSigners, boolean importToKeyring, List<String> keyservers) {
         this(gpgExecutable, keyName, home, passphrase, true, resolveSigners, importToKeyring, keyservers);

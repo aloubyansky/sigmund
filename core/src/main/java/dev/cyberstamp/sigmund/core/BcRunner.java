@@ -79,7 +79,7 @@ import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyEncryptorBuilder;
  * @see BcToolFactory
  * @see BcKeyStore
  */
-public class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
+class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
         CertExporter, SignerIdentityResolver, SignerInspection {
 
     private static final String NAME = "bc";

@@ -11,7 +11,7 @@ package dev.cyberstamp.sigmund.core;
  *
  * @see ArtifactPattern#specificity()
  */
-public final class ArtifactPatternMatcher {
+final class ArtifactPatternMatcher {
 
     private ArtifactPatternMatcher() {
     }

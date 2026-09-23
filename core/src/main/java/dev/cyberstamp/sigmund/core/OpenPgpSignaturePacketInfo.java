@@ -9,6 +9,6 @@ import java.time.Instant;
  * @param algorithmId the public-key algorithm ID, or -1 if extraction fails
  * @param issuerFingerprint the issuer fingerprint as an uppercase hex string, or null if not found
  */
-public record OpenPgpSignaturePacketInfo(int version, int algorithmId, String issuerFingerprint,
+record OpenPgpSignaturePacketInfo(int version, int algorithmId, String issuerFingerprint,
         Instant creationTime) {
 }

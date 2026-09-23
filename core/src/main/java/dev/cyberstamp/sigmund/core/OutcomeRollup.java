@@ -24,7 +24,7 @@ import java.util.List;
  * over a rejected one, a rejected one over no evidence at all.</li>
  * </ol>
  */
-public final class OutcomeRollup {
+final class OutcomeRollup {
 
     private OutcomeRollup() {
     }

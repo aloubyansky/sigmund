@@ -50,17 +50,4 @@ public record ArtifactResult(
         claims = claims == null ? List.of() : List.copyOf(claims);
     }
 
-    /**
-     * Records what the roll-up decided for an artifact.
-     *
-     * @param subject the artifact
-     * @param rollup what the roll-up decided
-     * @param claims every claim found for the artifact
-     * @param verifiedAt when the evaluation happened
-     * @return the artifact result
-     */
-    public static ArtifactResult of(ArtifactSubject subject, OutcomeRollup.Result rollup,
-            List<ClaimResult> claims, Instant verifiedAt) {
-        return new ArtifactResult(subject, rollup.outcome(), rollup.reason(), claims, verifiedAt);
-    }
 }

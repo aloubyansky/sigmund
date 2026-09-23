@@ -36,7 +36,7 @@ import java.util.List;
  * @see SignatureFormat
  * @see SignatureTool
  */
-public class SignatureEvidenceAdapter implements EvidenceProvider {
+class SignatureEvidenceAdapter implements EvidenceProvider {
 
     private final SignatureFormat format;
     private final List<SignatureTool> tools;

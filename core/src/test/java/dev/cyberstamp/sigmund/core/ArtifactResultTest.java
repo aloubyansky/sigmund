@@ -86,21 +86,4 @@ class ArtifactResultTest {
         }
     }
 
-    @Nested
-    class FromARollup {
-
-        @Test
-        void takesTheOutcomeAndReasonTheRollupDecided() {
-            ClaimResult unresolved = claim(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE);
-            OutcomeRollup.Result rollup = new OutcomeRollup.Result(ArtifactOutcome.INDETERMINATE,
-                    IndeterminateReason.KEY_UNAVAILABLE);
-
-            ArtifactResult result = ArtifactResult.of(SUBJECT, rollup, List.of(unresolved),
-                    Instant.EPOCH);
-
-            assertThat(result.outcome()).isEqualTo(ArtifactOutcome.INDETERMINATE);
-            assertThat(result.reason()).isEqualTo(IndeterminateReason.KEY_UNAVAILABLE);
-            assertThat(result.claims()).containsExactly(unresolved);
-        }
-    }
 }

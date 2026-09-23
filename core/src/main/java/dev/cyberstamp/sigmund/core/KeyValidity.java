@@ -19,7 +19,7 @@ import org.bouncycastle.openpgp.PGPPublicKey;
  * assertion: someone holding an expired but unrevoked key can date a signature back into the
  * validity period. That residual risk is the reason revocation matters more than expiry.
  */
-public final class KeyValidity {
+final class KeyValidity {
 
     private KeyValidity() {
     }

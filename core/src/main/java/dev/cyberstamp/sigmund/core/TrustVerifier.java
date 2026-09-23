@@ -66,8 +66,8 @@ public class TrustVerifier {
         List<ClaimResult> claims = collectClaims(artifactFile, evidenceFiles);
         OutcomeRollup.Result rollup = OutcomeRollup.derive(coords, claims, policy.requirements(),
                 null, policy.claimSetMode());
-        return ArtifactResult.of(ArtifactSubject.of(coords, artifactFile), rollup, claims,
-                verifiedAt);
+        return new ArtifactResult(ArtifactSubject.of(coords, artifactFile), rollup.outcome(),
+                rollup.reason(), claims, verifiedAt);
     }
 
     /**

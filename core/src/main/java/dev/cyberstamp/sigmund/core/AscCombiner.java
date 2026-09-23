@@ -20,7 +20,7 @@ import org.bouncycastle.bcpg.ArmoredOutputStream;
  * This is particularly useful for combining classical and post-quantum signatures
  * into a single .asc file with two separate armored blocks.
  */
-public final class AscCombiner {
+final class AscCombiner {
 
     private static final String BEGIN_MARKER = "-----BEGIN PGP ";
     private static final String END_MARKER = "-----END PGP ";
