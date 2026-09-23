@@ -265,5 +265,14 @@ class SignatureInspector implements AutoCloseable {
         boolean isIndeterminate(IndeterminateReason expected) {
             return verifyResult != null && verifyResult.isIndeterminate(expected);
         }
+
+        /**
+         * Whether this entry carries a claim the report can attribute to a signer. An
+         * artifact with no signature at all has no claim, and a claim no installed tool
+         * supports cannot name a key, so neither can be grouped under a signer.
+         */
+        boolean hasAttributableClaim() {
+            return hasClaim() && !isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
+        }
     }
 }
