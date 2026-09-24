@@ -129,22 +129,35 @@ class SignatureEvidenceAdapter implements EvidenceProvider {
         ClaimResult best = null;
         VerifyResult bestResult = null;
         for (SignatureTool tool : tools) {
-            if (!tool.canVerify(claim)) {
-                continue;
-            }
-            VerifyResult result = tool.verify(artifactFile, claim);
-            if (result.isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM)) {
-                continue;
-            }
-            if (result.isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)) {
-                result = fetchKeyAndRetry(artifactFile, claim, tool, result);
-            }
-            if (result.isVerified()) {
-                return asClaimResult(tool, claim, result, ref);
-            }
-            if (bestResult == null || result.isMoreConclusiveThan(bestResult)) {
-                bestResult = result;
-                best = asClaimResult(tool, claim, result, ref);
+            VerifyResult result;
+            try {
+                if (!tool.canVerify(claim)) {
+                    continue;
+                }
+                result = tool.verify(artifactFile, claim);
+                if (result.isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM)) {
+                    continue;
+                }
+                if (result.isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)) {
+                    result = fetchKeyAndRetry(artifactFile, claim, tool, result);
+                }
+                if (result.isVerified()) {
+                    return asClaimResult(tool, claim, result, ref);
+                }
+                if (bestResult == null || result.isMoreConclusiveThan(bestResult)) {
+                    bestResult = result;
+                    best = asClaimResult(tool, claim, result, ref);
+                }
+            } catch (RuntimeException e) {
+                // A tool that breaks is one tool's failure, not the run's: the claim records
+                // that nothing could check it, the remaining tools still get their turn, and
+                // an operator reads the reason from the report rather than a stack trace.
+                result = toolFailure(tool, e);
+                if (bestResult == null || result.isMoreConclusiveThan(bestResult)) {
+                    bestResult = result;
+                    best = ClaimResult.of(claim, name(), result, List.of(), ref,
+                            TrustRootRef.unknown(), tool.name(), Instant.now());
+                }
             }
         }
         if (best != null) {
@@ -154,6 +167,27 @@ class SignatureEvidenceAdapter implements EvidenceProvider {
                 new UnverifiedResult(ClaimOutcome.INDETERMINATE,
                         IndeterminateReason.UNSUPPORTED_ALGORITHM),
                 List.of(), ref, TrustRootRef.unknown(), null, Instant.now());
+    }
+
+    /**
+     * Records a tool that threw as a claim nothing could check.
+     *
+     * <p>
+     * The exception is logged because {@link IndeterminateReason#TOOL_UNAVAILABLE} says only
+     * that the tool could not be run, not why; without the log the cause would be lost.
+     *
+     * @param tool the tool that threw
+     * @param failure what it threw
+     * @return an indeterminate result citing {@link IndeterminateReason#TOOL_UNAVAILABLE}
+     */
+    private VerifyResult toolFailure(SignatureTool tool, RuntimeException failure) {
+        System.getLogger(SignatureEvidenceAdapter.class.getName())
+                .log(System.Logger.Level.WARNING,
+                        "Verification tool '" + tool.name() + "' failed; recording the claim as "
+                                + "indeterminate",
+                        failure);
+        return new UnverifiedResult(ClaimOutcome.INDETERMINATE,
+                IndeterminateReason.TOOL_UNAVAILABLE);
     }
 
     /**

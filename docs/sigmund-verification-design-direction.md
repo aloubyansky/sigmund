@@ -389,6 +389,10 @@ these differently:
   Transient.
 - `discovery-unavailable` — evidence might exist but the source could not be
   queried. Transient; only arises for network-backed discovery.
+- `tool-unavailable` — the verification tool could not be run, or broke while
+  running. Transient. A tool that throws is one tool's failure, not the run's:
+  the remaining tools still get their turn at the claim, and the exception is
+  logged so the cause survives the reason code.
 - `unsupported-algorithm` — permanent.
 - `evidence-malformed` — permanent.
 

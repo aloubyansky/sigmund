@@ -306,6 +306,114 @@ class SignatureEvidenceAdapterTest {
         return new OpenPgpVerifyResult(ClaimOutcome.FAILED, null, null, "RSA", 4, FP, FP);
     }
 
+    @Nested
+    class AToolThatThrows {
+
+        @Test
+        void isRecordedAsAnIndeterminateClaimRatherThanAbortingTheRun() {
+            var adapter = adapterWith(singleClaimFormat(),
+                    List.of(toolThrowingFrom("sq", "verify")));
+
+            List<ClaimResult> results = adapter.verify(ARTIFACT,
+                    Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+
+            assertThat(results).hasSize(1);
+            assertThat(results.get(0).isIndeterminateBecause(IndeterminateReason.TOOL_UNAVAILABLE))
+                    .isTrue();
+            assertThat(results.get(0).verifiedBy()).isEqualTo("sq");
+        }
+
+        /** The reported crash: the tool verified the claim, then threw naming its trust root. */
+        @Test
+        void isRecordedEvenWhenItThrowsAfterVerifying() {
+            var adapter = adapterWith(singleClaimFormat(),
+                    List.of(toolThrowingFrom("sq", "trustRoot")));
+
+            List<ClaimResult> results = adapter.verify(ARTIFACT,
+                    Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+
+            assertThat(results.get(0).isIndeterminateBecause(IndeterminateReason.TOOL_UNAVAILABLE))
+                    .isTrue();
+        }
+
+        @Test
+        void doesNotStopAnotherToolFromVerifyingTheClaim() {
+            var adapter = adapterWith(singleClaimFormat(),
+                    List.of(toolThrowingFrom("sq", "verify"),
+                            mockTool("bc", true, true, passVerifyResult(), List.of())));
+
+            List<ClaimResult> results = adapter.verify(ARTIFACT,
+                    Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
+
+            assertThat(results.get(0).outcome()).isEqualTo(ClaimOutcome.VERIFIED);
+            assertThat(results.get(0).verifiedBy()).isEqualTo("bc");
+        }
+    }
+
+    /**
+     * A tool that fails the way a misconfigured backend does: an unchecked exception from
+     * the call named by {@code failingCall}.
+     */
+    private static SignatureTool toolThrowingFrom(String name, String failingCall) {
+        return new SignatureTool() {
+            @Override
+            public TrustRootRef trustRoot() {
+                if ("trustRoot".equals(failingCall)) {
+                    throw new IllegalStateException("no cert store configured");
+                }
+                return TrustRootRef.unknown();
+            }
+
+            @Override
+            public String name() {
+                return name;
+            }
+
+            @Override
+            public boolean isAvailable() {
+                return true;
+            }
+
+            @Override
+            public boolean canSign() {
+                return false;
+            }
+
+            @Override
+            public SignatureFormat signatureFormat() {
+                return mockFormat("openpgp", ".asc", true, List.of());
+            }
+
+            @Override
+            public Set<String> supportedCredentialTypes() {
+                return Set.of("openpgp4");
+            }
+
+            @Override
+            public boolean canVerify(Claim claim) {
+                return true;
+            }
+
+            @Override
+            public SignResult sign(Path a, Path o) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public VerifyResult verify(Path a, Claim u) {
+                if ("verify".equals(failingCall)) {
+                    throw new IllegalStateException("sq exited with code 70");
+                }
+                return passVerifyResult();
+            }
+
+            @Override
+            public List<Credential> extractCredentials(VerifyResult r) {
+                return List.of();
+            }
+        };
+    }
+
     private static SignatureTool mockTool(String name, boolean available, boolean canVerify,
             VerifyResult result, List<Credential> credentials) {
         return mockTool(name, available, canVerify, result, credentials, TrustRootRef.unknown());

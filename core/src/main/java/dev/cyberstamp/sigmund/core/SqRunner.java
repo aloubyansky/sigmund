@@ -812,12 +812,13 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
      *
      * @param sequoiaHome the directory to use as {@code SEQUOIA_HOME}, or {@code null}
      *        to inherit the current environment (letting sq use its own defaults)
-     * @return a single-entry map setting {@code SEQUOIA_HOME}, or {@code null}
+     * @return a single-entry map setting {@code SEQUOIA_HOME}, or an empty map when sq is
+     *         left to its own defaults — adding nothing to the inherited environment
      */
     static Map<String, String> envFor(Path sequoiaHome) {
         return sequoiaHome != null
                 ? Map.of(SEQUOIA_HOME, sequoiaHome.toString())
-                : null;
+                : Map.of();
     }
 
     private CliTool.Result runSq(String... args) {
