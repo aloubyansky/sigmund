@@ -2,11 +2,11 @@ package dev.cyberstamp.sigmund.core;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
 /**
  * What a verification run found, grouped for reporting, and which of it blocks the build.
@@ -118,24 +118,146 @@ public final class VerificationReport {
     }
 
     /**
-     * Describes one result: why it could not be decided, where that applies, and who attested.
+     * Artifacts that were attested alike, and what they share.
      *
-     * @param result the result to describe
-     * @return the description, empty when there is nothing to add to the outcome itself
+     * <p>
+     * A report that repeated the signer, the tool and the trust root on every one of two
+     * hundred dependency lines buries the few lines that differ. Said once per group, what
+     * varies per artifact is what remains.
+     *
+     * @param summary one line per claim naming who attested and how, empty when nothing
+     *        attested these artifacts
+     * @param detail what that attestation proved and what it was checked against, indented
+     *        under the summary; empty when the claims recorded neither
+     * @param artifacts the artifacts, in coordinate order
      */
-    public static String describe(ArtifactResult result) {
-        StringBuilder description = new StringBuilder();
-        if (result.reason() != null) {
-            description.append(" [").append(result.reason()).append(']');
+    public record AttesterGroup(List<String> summary, List<String> detail,
+            List<ArtifactResult> artifacts) {
+    }
+
+    /**
+     * Groups results by what attested them.
+     *
+     * <p>
+     * Two artifacts share a group when their claims proved the same credentials, through the
+     * same tool, against the same trust root. Proven credentials are the key, not the display
+     * name a key carries: the same name over two different keys is a rotation or an
+     * impersonation, and a report that merged them would show neither. Artifacts nothing
+     * attested form a final group with no summary.
+     *
+     * @param results the results to group, typically one outcome's worth
+     * @return the groups, ordered the same way for the same results
+     */
+    public static List<AttesterGroup> groupByAttester(List<ArtifactResult> results) {
+        Map<List<String>, List<ArtifactResult>> grouped = new LinkedHashMap<>();
+        for (ArtifactResult result : results) {
+            grouped.computeIfAbsent(attesterKey(result), key -> new ArrayList<>()).add(result);
         }
-        String attesters = result.claims().stream()
-                .map(ClaimResult::attesterDisplayName)
-                .filter(Objects::nonNull)
-                .distinct()
-                .collect(Collectors.joining(", "));
-        if (!attesters.isEmpty()) {
-            description.append(" - ").append(attesters);
+
+        List<List<String>> keys = new ArrayList<>(grouped.keySet());
+        // unattributed last: the artifacts nothing claimed are the ones an operator acts on,
+        // and they read as a closing section rather than as a nameless block among signers
+        keys.sort(Comparator.<List<String>, Boolean> comparing(List::isEmpty)
+                .thenComparing(key -> String.join("\n", key)));
+
+        List<AttesterGroup> groups = new ArrayList<>(keys.size());
+        for (List<String> key : keys) {
+            List<ArtifactResult> artifacts = new ArrayList<>(grouped.get(key));
+            artifacts.sort(Comparator.comparing(result -> result.subject().coords()));
+            ClaimResult[] claims = artifacts.get(0).claims().toArray(new ClaimResult[0]);
+            groups.add(new AttesterGroup(summaryOf(claims), detailOf(claims),
+                    List.copyOf(artifacts)));
         }
-        return description.toString();
+        return List.copyOf(groups);
+    }
+
+    /**
+     * Builds the grouping key: everything the artifacts of a group must share.
+     */
+    private static List<String> attesterKey(ArtifactResult result) {
+        ClaimResult[] claims = result.claims().toArray(new ClaimResult[0]);
+        List<String> key = new ArrayList<>(summaryOf(claims));
+        key.addAll(detailOf(claims));
+        return List.copyOf(key);
+    }
+
+    private static List<String> summaryOf(ClaimResult[] claims) {
+        List<String> summary = new ArrayList<>(claims.length);
+        for (ClaimResult claim : claims) {
+            summary.add(headline(claim));
+        }
+        return List.copyOf(summary);
+    }
+
+    private static List<String> detailOf(ClaimResult[] claims) {
+        List<String> detail = new ArrayList<>();
+        for (ClaimResult claim : claims) {
+            for (Credential credential : claim.attesterCredentials()) {
+                detail.add("  credential " + credential.type() + " " + credential.displayName());
+            }
+            TrustRootRef trustRoot = claim.trustRoot();
+            if (trustRoot != null && trustRoot.identifier() != null) {
+                detail.add("  trust root " + trustRoot.kind() + " " + trustRoot.identifier());
+            }
+        }
+        return List.copyOf(detail);
+    }
+
+    /**
+     * Explains one artifact: the evidence each claim was read from, and when it was made.
+     *
+     * <p>
+     * Who attested and against what is said once by the artifact's group; this carries only
+     * what differs artifact by artifact. Only what a claim actually recorded appears, so a
+     * sparse block means the tool said little, not that the report omitted something.
+     *
+     * @param result the result to explain
+     * @return the lines, empty when no claim was found
+     */
+    public static List<String> explain(ArtifactResult result) {
+        List<String> lines = new ArrayList<>();
+        for (ClaimResult claim : result.claims()) {
+            EvidenceRef evidence = claim.evidence();
+            lines.add("evidence " + evidence.file().getFileName()
+                    + " sha256:" + shorten(evidence.digest().sha256())
+                    + " (" + evidence.source() + ")");
+            if (claim.claimTime() != null) {
+                lines.add("claimed " + claim.claimTime() + " ("
+                        + claim.claimTimeSource().name().toLowerCase() + ")");
+            }
+        }
+        return List.copyOf(lines);
+    }
+
+    /**
+     * Builds a claim's first line: the outcome, the tool that reached it, and who it names.
+     */
+    private static String headline(ClaimResult claim) {
+        StringBuilder headline = new StringBuilder(claim.kind()).append(' ')
+                .append(claim.outcome());
+        if (claim.reason() != null) {
+            headline.append(" (").append(claim.reason()).append(')');
+        }
+        if (claim.verifiedBy() != null) {
+            headline.append(" by ").append(claim.verifiedBy());
+        }
+        if (claim.algorithm() != null) {
+            headline.append(" (").append(claim.algorithm()).append(')');
+        }
+        if (claim.attesterDisplayName() != null) {
+            headline.append(" - ").append(claim.attesterDisplayName());
+        }
+        if (claim.role() != AttesterRole.UNKNOWN) {
+            headline.append(" [").append(claim.role().name().toLowerCase()).append(']');
+        }
+        return headline.toString();
+    }
+
+    /**
+     * Shortens a digest to what a human compares by eye; the full value belongs in a
+     * serialized result.
+     */
+    private static String shorten(String digest) {
+        return digest.length() > 12 ? digest.substring(0, 12) : digest;
     }
 }

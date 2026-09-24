@@ -143,6 +143,7 @@ Verifies that all project dependencies are signed by trusted signers as defined 
 | `sigmund.resolveSigners` | No | `true` | Fetch unknown GPG keys from keyservers. Overrides config file setting. |
 | `sigmund.keyservers` | No | `hkps://keys.openpgp.org` | Comma-separated keyserver list. Used when `resolveSigners` is enabled. |
 | `sigmund.verifyPomFiles` | No | `false` | Also verify signatures on POM files for each dependency |
+| `sigmund.detail` | No | `false` | Add the credentials proven and the trust root to each attester group, and the evidence file and claim time to each artifact. Results are grouped by outcome and then by attester either way |
 | `sigmund.sqHome` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
 | `sigmund.gpgHome` | No | — | GnuPG home directory, overrides GPG and BC home paths |
 | `sigmund.importToKeyring` | No | — | Persist fetched keys to keyrings. Overrides config file setting. |

@@ -37,6 +37,14 @@ public class VerifyMojo extends AbstractDependencyMojo {
     @Parameter(property = "sigmund.verifyPomFiles", defaultValue = "false")
     private boolean verifyPomFiles;
 
+    /**
+     * When {@code true}, the report explains every artifact claim by claim: the tool that
+     * verified it, the algorithm, the credentials proven, the trust root, the evidence file
+     * and when the claim was made. The grouped summary alone is the default.
+     */
+    @Parameter(property = "sigmund.detail", defaultValue = "false")
+    boolean detail;
+
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
         if (skip) {
@@ -121,7 +129,7 @@ public class VerifyMojo extends AbstractDependencyMojo {
      *
      * @param report what the run found
      */
-    private void reportResults(VerificationReport report) {
+    void reportResults(VerificationReport report) {
         report.byOutcome().forEach((outcome, results) -> {
             int level = switch (outcome) {
                 case SATISFIED, NOT_CONFIGURED -> LOG_INFO;
@@ -130,9 +138,26 @@ public class VerifyMojo extends AbstractDependencyMojo {
             };
             logLine(level, "");
             logLine(level, outcome + " (" + results.size() + ")");
-            for (ArtifactResult result : results) {
-                logLine(level, "  " + result.subject().coords()
-                        + VerificationReport.describe(result));
+            for (VerificationReport.AttesterGroup group : VerificationReport.groupByAttester(results)) {
+                for (String line : group.summary()) {
+                    logLine(level, "  " + line);
+                }
+                if (detail) {
+                    for (String line : group.detail()) {
+                        logLine(level, "  " + line);
+                    }
+                }
+                for (ArtifactResult result : group.artifacts()) {
+                    logLine(level, "    " + result.subject().coords());
+                    if (detail) {
+                        // at the severity of the outcome being explained: detail about a
+                        // failing artifact that an operator has to raise the log level to see
+                        // is detail they will not read
+                        for (String line : VerificationReport.explain(result)) {
+                            logLine(level, "      " + line);
+                        }
+                    }
+                }
             }
         });
     }

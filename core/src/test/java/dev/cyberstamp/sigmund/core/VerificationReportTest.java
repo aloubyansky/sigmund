@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Nested;
@@ -34,6 +36,198 @@ class VerificationReportTest {
     private static TrustPolicy policy(UntrustedPolicy onUntrusted, List<String> unsigned) {
         return new DefaultTrustPolicy(Map.of("org.example", List.of(ALICE)), unsigned,
                 ListedEvidencePolicy.ALL, UnlistedEvidencePolicy.IGNORE, onUntrusted);
+    }
+
+    @Nested
+    class AttesterGrouping {
+
+        private static final EvidenceRef REF = new EvidenceRef(Path.of("lib-1.0.jar.asc"),
+                DigestSet.sha256("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+                Evidence.SOURCE_SIDECAR);
+
+        private static ClaimResult by(String attester, String fingerprint) {
+            return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
+                    List.of(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, fingerprint)),
+                    attester, AttesterRole.UNKNOWN,
+                    TrustRootRef.keyring(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
+                    Instant.parse("2026-03-12T10:04:11Z"), ClaimTimeSource.SIGNER,
+                    Instant.EPOCH, "Ed25519", "bc");
+        }
+
+        @Test
+        void artifactsAttestedAlikeShareOneGroup() {
+            List<VerificationReport.AttesterGroup> groups = VerificationReport.groupByAttester(
+                    List.of(result("lib", ArtifactOutcome.SATISFIED, null, by("Alice", FP)),
+                            result("other", ArtifactOutcome.SATISFIED, null, by("Alice", FP))));
+
+            assertThat(groups).hasSize(1);
+            assertThat(groups.get(0).summary()).containsExactly(
+                    "openpgp VERIFIED by bc (Ed25519) - Alice");
+            assertThat(groups.get(0).artifacts()).hasSize(2);
+        }
+
+        @Test
+        void carriesWhatTheWholeGroupSharesOnceRatherThanPerArtifact() {
+            List<VerificationReport.AttesterGroup> groups = VerificationReport.groupByAttester(
+                    List.of(result("lib", ArtifactOutcome.SATISFIED, null, by("Alice", FP))));
+
+            assertThat(groups.get(0).detail()).containsExactly(
+                    "  credential openpgp4 " + FP,
+                    "  trust root openpgp-keyring /home/alice/.local/share/pgp.cert.d");
+        }
+
+        @Test
+        void differentAttestersFormDifferentGroups() {
+            String otherFp = "1234567890ABCDEF1234567890ABCDEF12345678";
+
+            List<VerificationReport.AttesterGroup> groups = VerificationReport.groupByAttester(
+                    List.of(result("lib", ArtifactOutcome.SATISFIED, null, by("Alice", FP)),
+                            result("other", ArtifactOutcome.SATISFIED, null, by("Bob", otherFp))));
+
+            assertThat(groups).hasSize(2);
+            assertThat(groups.get(0).summary().get(0)).endsWith("Alice");
+            assertThat(groups.get(1).summary().get(0)).endsWith("Bob");
+        }
+
+        /** The same key with a different display name is the same key, not two signers. */
+        @Test
+        void groupsAreOrderedTheSameWayEveryRun() {
+            String otherFp = "1234567890ABCDEF1234567890ABCDEF12345678";
+            List<ArtifactResult> results = List.of(
+                    result("z", ArtifactOutcome.SATISFIED, null, by("Bob", otherFp)),
+                    result("a", ArtifactOutcome.SATISFIED, null, by("Alice", FP)));
+
+            List<ArtifactResult> reversed = new ArrayList<>(results);
+            Collections.reverse(reversed);
+
+            assertThat(VerificationReport.groupByAttester(results).stream()
+                    .map(group -> group.summary().get(0)).toList())
+                    .isEqualTo(VerificationReport.groupByAttester(reversed).stream()
+                            .map(group -> group.summary().get(0)).toList());
+        }
+
+        @Test
+        void artifactsAreListedInCoordinateOrderWithinAGroup() {
+            List<VerificationReport.AttesterGroup> groups = VerificationReport.groupByAttester(
+                    List.of(result("zebra", ArtifactOutcome.SATISFIED, null, by("Alice", FP)),
+                            result("apple", ArtifactOutcome.SATISFIED, null, by("Alice", FP))));
+
+            assertThat(groups.get(0).artifacts().stream()
+                    .map(r -> r.subject().coords().name()).toList())
+                    .containsExactly("apple", "zebra");
+        }
+
+        @Test
+        void anArtifactAttestedTwiceIsListedOnceUnderBothClaims() {
+            String otherFp = "1234567890ABCDEF1234567890ABCDEF12345678";
+
+            List<VerificationReport.AttesterGroup> groups = VerificationReport.groupByAttester(
+                    List.of(result("lib", ArtifactOutcome.SATISFIED, null,
+                            by("Alice", FP), by("Release Bot", otherFp))));
+
+            assertThat(groups).hasSize(1);
+            assertThat(groups.get(0).summary()).hasSize(2);
+            assertThat(groups.get(0).artifacts()).hasSize(1);
+        }
+
+        @Test
+        void aClaimThatCouldNotBeDecidedCarriesItsReasonAndRole() {
+            ClaimResult unresolved = new ClaimResult("openpgp", ClaimOutcome.INDETERMINATE,
+                    IndeterminateReason.KEY_UNAVAILABLE, List.of(), null, AttesterRole.PUBLISHER,
+                    TrustRootRef.unknown(), REF, null, ClaimTimeSource.SIGNER, Instant.EPOCH,
+                    null, "sq");
+
+            List<VerificationReport.AttesterGroup> groups = VerificationReport.groupByAttester(
+                    List.of(result("lib", ArtifactOutcome.INDETERMINATE,
+                            IndeterminateReason.KEY_UNAVAILABLE, unresolved)));
+
+            assertThat(groups.get(0).summary()).containsExactly(
+                    "openpgp INDETERMINATE (KEY_UNAVAILABLE) by sq [publisher]");
+            assertThat(groups.get(0).detail()).isEmpty();
+        }
+
+        @Test
+        void artifactsWithNoClaimFormAnUnattributedGroupThatComesLast() {
+            List<VerificationReport.AttesterGroup> groups = VerificationReport.groupByAttester(
+                    List.of(result("nothing", ArtifactOutcome.NO_CLAIM, null),
+                            result("lib", ArtifactOutcome.SATISFIED, null, by("Alice", FP))));
+
+            assertThat(groups).hasSize(2);
+            assertThat(groups.get(1).summary()).isEmpty();
+            assertThat(groups.get(1).artifacts().get(0).subject().coords().name())
+                    .isEqualTo("nothing");
+        }
+    }
+
+    @Nested
+    class ClaimDetail {
+
+        private static final EvidenceRef REF = new EvidenceRef(Path.of("lib-1.0.jar.asc"),
+                DigestSet.sha256("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+                Evidence.SOURCE_SIDECAR);
+
+        private static ClaimResult detailedClaim(Instant claimTime) {
+            return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
+                    List.of(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, FP)),
+                    "Alice <alice@example.com>", AttesterRole.PUBLISHER,
+                    TrustRootRef.keyring(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
+                    claimTime, ClaimTimeSource.SIGNER, Instant.parse("2026-09-24T08:00:00Z"),
+                    "Ed25519", "bc");
+        }
+
+        @Test
+        void namesTheEvidenceTheClaimWasReadFrom() {
+            List<String> lines = VerificationReport.explain(
+                    result("lib", ArtifactOutcome.SATISFIED, null,
+                            detailedClaim(Instant.parse("2026-03-12T10:04:11Z"))));
+
+            assertThat(lines).contains("evidence lib-1.0.jar.asc sha256:ba7816bf8f01 (sidecar)");
+        }
+
+        @Test
+        void namesWhenTheClaimWasMadeAndWhoSaidSo() {
+            List<String> lines = VerificationReport.explain(
+                    result("lib", ArtifactOutcome.SATISFIED, null,
+                            detailedClaim(Instant.parse("2026-03-12T10:04:11Z"))));
+
+            assertThat(lines).contains("claimed 2026-03-12T10:04:11Z (signer)");
+        }
+
+        @Test
+        void omitsAClaimTimeTheToolCouldNotRecord() {
+            List<String> lines = VerificationReport.explain(
+                    result("lib", ArtifactOutcome.SATISFIED, null, detailedClaim(null)));
+
+            assertThat(lines).noneMatch(line -> line.startsWith("claimed"));
+        }
+
+        /** Who attested is the group's to say; this repeats none of it per artifact. */
+        @Test
+        void leavesTheAttesterToTheGroup() {
+            List<String> lines = VerificationReport.explain(
+                    result("lib", ArtifactOutcome.SATISFIED, null,
+                            detailedClaim(Instant.parse("2026-03-12T10:04:11Z"))));
+
+            assertThat(lines).noneMatch(line -> line.contains("Alice"))
+                    .noneMatch(line -> line.contains("credential"))
+                    .noneMatch(line -> line.contains("trust root"));
+        }
+
+        @Test
+        void explainsEveryClaimFoundForTheArtifact() {
+            List<String> lines = VerificationReport.explain(
+                    result("lib", ArtifactOutcome.SATISFIED, null,
+                            detailedClaim(Instant.parse("2026-03-12T10:04:11Z")),
+                            detailedClaim(Instant.parse("2026-03-12T10:04:11Z"))));
+
+            assertThat(lines.stream().filter(line -> line.startsWith("evidence "))).hasSize(2);
+        }
+
+        @Test
+        void anArtifactWithoutClaimsExplainsNothing() {
+            assertThat(VerificationReport.explain(result("lib", ArtifactOutcome.NO_CLAIM, null)))
+                    .isEmpty();
+        }
     }
 
     @Nested
@@ -86,26 +280,6 @@ class VerificationReportTest {
                     policy(UntrustedPolicy.FAIL, List.of()));
 
             assertThat(report.counts()).doesNotContainKey(ArtifactOutcome.FAILED);
-        }
-    }
-
-    @Nested
-    class Describing {
-
-        @Test
-        void namesTheAttestersOfTheClaimsFound() {
-            String line = VerificationReport.describe(
-                    result("a", ArtifactOutcome.SATISFIED, null, claim("Alice")));
-
-            assertThat(line).contains("Alice");
-        }
-
-        @Test
-        void statesTheReasonWhenOneApplies() {
-            String line = VerificationReport.describe(result("a", ArtifactOutcome.INDETERMINATE,
-                    IndeterminateReason.KEY_UNAVAILABLE));
-
-            assertThat(line).contains("KEY_UNAVAILABLE");
         }
     }
 
