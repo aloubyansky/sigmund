@@ -131,7 +131,7 @@ sq: ML-DSA-87+Ed448 D62AAB339E45E5EA2FD036872B01D46A517A2991... (Alice <alice@ex
 
 **Default Phase:** `validate`
 
-Verifies that all project dependencies are signed by trusted signers as defined in `sigmund.yaml`. Matching is done by fingerprint when available, falling back to email. Artifacts listed in the `unsigned` section are allowed to be unsigned.
+Verifies that all project dependencies are signed by trusted signers as defined in `sigmund.yaml`. Matching is done by fingerprint when available, falling back to email. Artifacts listed in the `signature-optional` section are allowed to carry no signature.
 
 **Parameters:**
 
@@ -158,24 +158,44 @@ mvn sigmund:verify
 
 **Output:**
 
+Results are grouped by outcome, and within an outcome by who attested them, so a
+dependency tree signed by a handful of signers reads as a handful of blocks:
+
 ```
-Signer: Jane Doe <jane@example.com>
-   PGP4 (RSA): DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF
-     com.example:lib:1.0
+SATISFIED (2)
+  openpgp VERIFIED by bc (Ed25519) - Jane Doe <jane@example.com>
+    com.example:lib:1.0
+    com.example:lib-b:2.0
 
-UNTRUSTED
-  Signer: Unknown <unknown@example.com> (not trusted)
-     PGP4: DEADBEEFDEADBEEF
-       com.other:tool:3.0
+UNSATISFIED (1)
+  openpgp VERIFIED by gpg (RSA) - Unknown <unknown@example.com>
+    com.other:tool:3.0
 
-  UNSIGNED
-       org.wildfly.common:wildfly-common:2.0.1
-
-TRUSTED UNSIGNED
-     com.internal:util:1.0
-
-Summary: 1 passed, 2 failed
+NO_CLAIM (1)
+    org.wildfly.common:wildfly-common:2.0.1
 ```
+
+Artifacts nothing attested carry no group header. When an outcome blocks, the
+build fails naming each artifact and its outcome:
+
+```
+Verification blocked the build for 1 artifact(s): com.other:tool:3.0 (UNSATISFIED)
+```
+
+With `-Dsigmund.detail`, each group also states what it proved and what it was
+checked against, and each artifact the evidence it was read from:
+
+```
+SATISFIED (2)
+  openpgp VERIFIED by bc (Ed25519) - Jane Doe <jane@example.com>
+    credential openpgp4 DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF
+    trust root openpgp-keyring /home/jane/.local/share/pgp.cert.d
+    com.example:lib:1.0
+      evidence lib-1.0.jar.asc sha256:ba7816bf8f01 (sidecar)
+      claimed 2026-03-12T10:04:11Z (signer)
+```
+
+See [Outcomes](trust-verification.md#outcomes) for what each outcome means.
 
 See [Trust Verification](trust-verification.md) for details on the `sigmund.yaml` format.
 
@@ -271,7 +291,7 @@ Many signers appear as `NOT VERIFIED` because the default keyserver (`keys.openp
 
 **Generating a trust config:**
 
-Use `-Dsigmund.generateTrustConfig=true` to create an initial `sigmund.yaml` from your project's actual dependency signatures. The generated file groups artifacts by signer, collapses common groupId prefixes into wildcard patterns (e.g., `io.quarkus.*`), and lists unsigned artifacts in the `unsigned` section. The file can be used directly with the `verify` goal.
+Use `-Dsigmund.generateTrustConfig=true` to create an initial `sigmund.yaml` from your project's actual dependency signatures. The generated file groups artifacts by signer, collapses common groupId prefixes into wildcard patterns (e.g., `io.quarkus.*`), and lists artifacts with no signature in the `signature-optional` section. The file can be used directly with the `verify` goal.
 
 **Updating a trust config:**
 
