@@ -97,6 +97,7 @@ Settle the decisions everything else is built on.
 | P0.2 | ADR: result model — claim, artifact and run levels; roll-up rules; claim-set modes | §3.2, §3.2.1, §3.5 | — | done — [ADR-005](../adr/005-verification-result-model.md) |
 | P0.3 | ADR: policy schema — role-scoped requirements, claim-set mode, per-outcome and per-target enforcement (`signature-optional` becomes per-target `NO_CLAIM` enforcement), matched-rule location | §3.2, §3.3, §3.6 | P0.2, P0.4 | done — [ADR-007](../adr/007-policy-schema-and-enforcement.md) |
 | P0.4 | ADR: identity and credential model — key material versus attested identity, trusted issuers, subject expansion, key-material provenance | §3.3, §3.8, §5.3 | P0.2 | done — [ADR-006](../adr/006-identity-and-credential-model.md) |
+| P0.5 | ADR: attestation unit and emission point — module for outbound, session run record for inbound, what terminates the chain, where deploy facts live | §2.1, §6 | P0.2 | done — [ADR-008](../adr/008-attestation-unit-and-emission-point.md) |
 
 ### P1 — Vocabulary and result model
 
@@ -182,7 +183,7 @@ reported; with the cache cleared it fails with `key-unavailable`, not silently.
 
 | ID | Task | Refs | Depends | Status |
 |---|---|---|---|---|
-| P5.1 | **Spike:** `ArtifactResolverPostProcessor` versus a resolver wrapper versus `RepositoryListener` — can an extension contribute one, does plugin and extension resolution pass through it, what request context is visible, Maven 3.9 versus 4 | §2, §9 | — | todo |
+| P5.1 | **Spike:** `ArtifactResolverPostProcessor` versus a resolver wrapper versus `RepositoryListener` — can an extension contribute one, does plugin and extension resolution pass through it, what request context is visible, Maven 3.9 versus 4. Two further pass/fail questions from [ADR-008](../adr/008-attestation-unit-and-emission-point.md): can a resolution be attributed to the project that requested it (`RepositoryEvent.getTrace()` is the lead), and can an extension attach an artifact late enough to be in the upload batch (on the deploy mojo's `MojoStarted`, and the same for `install`, `deployAtEnd` and the publishing plugins that assemble their own bundle). `EventSpy` covers the observation side — which mojo ran, for which project, from which plugin GAV — but cannot block, so it complements the resolver hook rather than replacing it; confirm which repository events Maven forwards to it | §2, §6, §9 | — | todo |
 | P5.2 | ADR recording the hook choice from P5.1 | §2 | P5.1 | todo |
 | P5.3 | `maven-extension` module loaded from `.mvn/extensions.xml`; policy from the session root | §2, §5.1 | P5.2, P1.8, P3.5 | todo |
 | P5.4 | Evidence resolution from inside the hook without re-entering verification | §2 | P5.3 | todo |
@@ -226,8 +227,9 @@ builder claim coming from a SLSA provenance sidecar.
 
 | ID | Task | Refs | Depends | Status |
 |---|---|---|---|---|
-| P8.1 | VSA serializer from the run result: purl subject with digest, policy reference and digest, base-config digest and effective issuer configuration, coverage, enforcement mode, `timeVerified` | §6, §8 | P3.6, P6.4 | todo |
-| P8.2 | VSA signing as DSSE through an existing signing backend; emission settings, off by default in observe mode | §5.4, §6 | P8.1, P7.1 | todo |
+| P8.1 | Run record serializer (JSON, unsigned, emitted every build): purl subjects with digests, policy reference and digest, base-config digest and effective issuer configuration, coverage, enforcement mode, `timeVerified`, plus what the session ran and how fresh the results were. Signing is P8.2's concern, not this task's | §2.1, §6, §8 | P3.6, P4.1, P6.4 | todo |
+| P8.1a | Module attestation: one statement per module, subjects being every file it publishes, attached like `.asc` after the module's mutating plugins so the subjects are the published bytes; repository inputs stated apart from reactor-supplied ones | §6 | P8.1, P5.1, P5.8 | todo |
+| P8.2 | Attestation signing as DSSE through an existing signing backend; emission settings, off by default in observe mode. The session record stays unsigned until a boundary-crossing consumer is named — the observe-mode promotion gate is the candidate | §5.4, §6 | P8.1a, P7.1 | todo |
 | P8.3 | Verifier trust root, configured separately from signer trust | §6 | P2.3 | todo |
 | P8.4 | VSA consumption: subject matched by digest first, policy-digest staleness check, one-hop loop guard, minimum-coverage acceptance | §6, §8 | P8.2, P8.3 | todo |
 | P8.5 | VSA as verification input for hermetic downstream builds | §6 | P8.4 | todo |
@@ -253,6 +255,7 @@ the strength of an upstream build's signed VSA.
 | Does `ArtifactResolverPostProcessor` see plugin and extension resolution, and can an extension contribute one? | P5.1 | Also a concrete question for the Maven maintainers (§9) |
 | Where do "how" settings live — policy file, separate file, or arguments only? | P3.4 | If in the policy file they change the policy digest (P4.2), which is conservative but invalidates the cache on a keyserver change |
 | Cache and key store location and sharing between CLI, plugin and extension | P4.3, P4.6 | |
+| Can a resolution be attributed to the project that requested it? | P5.1, P8.1a | Decides whether the outbound attestation can be per module; without it the unit falls back to the session with staged deployment ([ADR-008](../adr/008-attestation-unit-and-emission-point.md)) |
 
 ---
 
@@ -264,6 +267,7 @@ the strength of an upstream build's signed VSA.
 | 2026-09-18 | `signature-optional` becomes per-target `NO_CLAIM` enforcement: the artifact is still verified and still counted as `NO_CLAIM`, only the failure decision relaxes | P3.1 |
 | 2026-09-18 | Policy schema: `rules` with role-scoped conjunctive `requires`, most-specific-rule-wins with no merging, `claim-set` replacing `listed-evidence`/`unlisted-evidence`, four-level enforcement resolution | [ADR-007](../adr/007-policy-schema-and-enforcement.md) |
 | 2026-09-18 | POMs are verified by default; `verifyPomFiles` removed. Requirements apply uniformly to all files of a GAV; no per-file or file-role settings for now | P3.4 |
+| 2026-09-25 | Attestation unit follows the consumer: outbound per module attached like `.asc`, inbound an unsigned session run record; the DSSE signature terminates the chain; deploy facts stay out of the attestation predicate; no release unit introduced | [ADR-008](../adr/008-attestation-unit-and-emission-point.md) |
 | 2026-09-18 | Two credential kinds, trusted issuers, matcher expansion at load, key-material provenance; `EmailCredential` removed; an identity is issuer plus attested attributes, subject being one of them; well-known issuer profiles come from a shipped base config that declares but never grants | [ADR-006](../adr/006-identity-and-credential-model.md) |
 
 ---

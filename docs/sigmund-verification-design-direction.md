@@ -171,9 +171,18 @@ coverage:
   scopes-covered: [compile, runtime, test]
   build-tooling-covered: false
   enforcement-mode: enforcing | observe
+  session: { goals: [clean, verify], modules: 14 }
   artifacts-verified: 412
   artifacts-no-claim: 387
+  results-from-cache: 380 (oldest 6d)
 ```
+
+`session` anchors the counts. `mvn test` and `mvn verify` resolve different
+sets and `-pl` narrower still, so "412 verified" means nothing without knowing
+what the build did — and a consumer checking minimum coverage cannot otherwise
+tell a full release build from a partial one. `results-from-cache` keeps a run
+that verified nothing fresh (§3.7) from reading as a run that verified
+everything.
 
 Counts matter. "Verified" against a policy where 387 of 412 dependencies
 produced `NO_CLAIM` is a very different assurance from full coverage, and
@@ -674,8 +683,41 @@ vouch for third-party artifacts. Inside one organization this is easy (Sigstore
 keyless with CI's OIDC identity). Across organizations it is chicken-and-egg.
 Plan VSA as an intra-org format.
 
+**Unit and emission point** ([ADR-008](../adr/008-attestation-unit-and-emission-point.md)).
+The two attestations differ in unit because their consumers do.
+
+The outbound one is found by coordinate, so it is **per module**: its subjects
+are every file that module publishes, and it is attached the way `.asc` already
+is, uploading in the same batch. It is written late in the module's lifecycle,
+after shade, proguard, signing and any other mutating plugin, so its subject
+digests are the bytes that are actually published rather than the ones that
+existed at `package`. Being assembled into the upload, it cannot describe that
+upload: it names the deploy tooling configured, never where the files landed.
+Per-module granularity also means a module's attestation is ready before its
+own `deploy` runs, so nothing has to be staged to the end of the reactor.
+
+The inbound one is about the run, so it is **per session**, written at session
+end — the only point at which an extension-driven build knows what it resolved.
+It is also where what a module attestation structurally cannot say belongs:
+which mojo performed each upload, and to which repository. It stays an
+unsigned run record until a consumer that crosses a trust boundary is named;
+inside one pipeline a file on disk is as trustworthy as a signed one, and
+signing costs the verifier trust root described above. The observe-mode
+promotion gate (§5.4) is the consumer that would justify signing it.
+
+Maven has **no release unit** to attest: modules are independently consumable,
+the aggregator POM is not resolved by consumers, and staging bundles are
+publishing infrastructure that disappears on publish. A release manifest could
+be introduced later at the aggregator coordinate without disturbing per-module
+attestations, and is not worth inventing before a consumer asks for one
+signature over a set.
+
 **Loop guard:** a VSA is terminal evidence and is never itself resolved via
-another VSA. Cap delegation depth at one hop.
+another VSA. Cap delegation depth at one hop. Tampering with an attestation
+after upload is caught by its own DSSE signature, so the chain terminates
+there; deletion is a consumer-side policy question ("require an attestation for
+`com.corp:*`") and rollback is defeated by digest binding, since an older
+statement names digests the consumed artifact does not have.
 
 **Staleness:** record the policy digest in the VSA and reject receipts whose
 digest does not match the current policy, unless foreign policy is explicitly
@@ -868,6 +910,12 @@ forecloses nothing later. No adapters shipped.
 - **Whether `verifiedLevels` should carry non-SLSA properties** (the source
   track permits additional asserted properties) or stay empty as Macaron does.
 - **Trust root distribution for verifier identity** in the delegated case.
+- **Whether a resolution can be attributed to the project that requested it.**
+  Per-module outbound attestations depend on it: without attribution a module's
+  statement would have to claim everything the session resolved.
+  `RepositoryEvent.getTrace()` is the lead worth checking first, alongside what
+  `EventSpy` is actually forwarded (§6,
+  [ADR-008](../adr/008-attestation-unit-and-emission-point.md)).
 - **Whether `ArtifactResolverPostProcessor` is a sufficient extension hook** —
   whether plugin and extension resolution pass through it, and whether an
   extension can contribute one (§2). A concrete question for the Maven
