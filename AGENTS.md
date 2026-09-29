@@ -66,7 +66,7 @@ Each top-level YAML section in `sigmund.yaml` maps 1:1 to a Java type:
 - `SignatureTool` — core SPI for signing and verification (GPG, Sequoia, Bouncy Castle, Sigstore)
 - `SignatureToolFactory` — public, ServiceLoader-discoverable factory for tool construction
 - `SignatureFormat` — file format detection (`canHandle` with extension-first fast path), parsing, combining
-- `Credential` — extensible identity: `FingerprintCredential`, `EmailCredential`, `OidcCredential`
+- `Credential` — extensible identity: `FingerprintCredential`, `EmailCredential`, `SigstoreCredential`
 - `Sigmund` — central facade, implements `AutoCloseable`
 - `Signer` — producer use case (signing)
 - `TrustVerifier` — consumer use case (trust assessment)

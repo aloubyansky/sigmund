@@ -221,10 +221,9 @@ structure rather than adding any: evidence is parsed into claims, each claim is
 routed and verified independently.
 
 The API should use both terms as defined. `EvidenceProvider` locates and parses
-evidence. The unit of verification is a claim — the type currently named
-`VerificationUnit` should be renamed accordingly, before the SPI is public.
-(Check for collision with OIDC/JWT "claims" in the Sigstore dependency chain;
-`VerifiableClaim` is the fallback name if `Claim` is ambiguous in context.)
+evidence. The unit of verification is a `Claim`; no type on the classpath,
+including the OIDC/JWT libraries in the Sigstore dependency chain, collides
+with the name ([ADR-005](../adr/005-verification-result-model.md)).
 
 ### 3.2 Contents of a result
 
@@ -980,7 +979,7 @@ cross-ecosystem adapters.
 | Scope | Artifacts in Maven repositories, whatever the language; the repository format defines what is verified, each build tool where; core uses repository concepts, never build-tool types |
 | Cross-ecosystem | purl on output is the portable identity; the internal coordinate stays the repository's own, named in purl's vocabulary |
 | Insertion points | Three, not two; keep plugin and extension both; coverage recorded in the result and the VSA; `ArtifactResolverPostProcessor` a candidate extension hook; evidence and policy resolution bypass verification; extension scope limited to build tooling versus project |
-| Vocabulary | Evidence = file, claim = assertion; rename `VerificationUnit` → `Claim` |
+| Vocabulary | Evidence = file, claim = assertion; the unit of verification is `Claim` |
 | Credentials | Two kinds — key material, and an attested identity of subject plus issuer; a bare email is not an identity; identity assertions only from policy-named issuers; key source recorded always |
 | Attester role | Structure proposes, policy disposes; issuer carries the default role; `unknown` added; requirements are role-scoped |
 | Digests | Algorithm-tagged `DigestSet` maps; SHA-256 required; further algorithms additive |
