@@ -151,8 +151,8 @@ The claim kind is the format name rather than an enum: it is the name formats
 and toolchains are already configured by, and a parallel enum would have to be
 kept in step with it.
 
-`role` is `UNKNOWN` when a tool produces the result; role is assigned at policy
-time (ADR-007), because it depends on the issuer and the signer, not the tool.
+`role` is always `UNKNOWN` today: nothing derives or asserts one, and ADR-007
+removes the field until an attestation consumer needs it.
 
 `ClaimOutcome` is deliberately not the artifact-level `ArtifactOutcome`: a claim is
 never `NO_CLAIM`, never `NOT_CONFIGURED`, and cannot be `UNSATISFIED` on its
@@ -306,11 +306,11 @@ rather than of the result shape.
 
 ### Serialization
 
-Results are serialized with Jackson to JSON for the cache (§3.7) and as the
-input to VSA emission (§6). Rules: field names are stable and explicit, enums
-serialize as their names, `Instant` as ISO-8601 UTC, `Path` as a string, and
-`DigestSet` as a plain object. Serialization is round-trip tested, because the
-cache reads back what it wrote.
+Results are serialized with Jackson to JSON as the input to the run record and
+attestations (§6), and to a result cache if one is built (§3.7). Rules: field
+names are stable and explicit, enums serialize as their names, `Instant` as
+ISO-8601 UTC, `Path` as a string, and `DigestSet` as a plain object.
+Serialization is round-trip tested, so a reader gets back what was written.
 
 ## Consequences
 
@@ -338,11 +338,11 @@ favour of counts by claim outcome, so `sigmund verify-signature` reports
   `UNTRUSTED`, which is what makes the cache downgrade of §3.7 meaningful.
 - A corrupt Sigstore bundle no longer looks like a failed signature.
 
-**Ordering.** This ADR is implemented by roadmap phase P1 and blocks P2
-(requirements and roles), P4 (cache, which stores these types) and P8 (VSA,
-which serializes them).
+**Ordering.** This ADR was implemented by roadmap phase P1, and blocks P2
+(requirements), the persistent key store and revocation in P4, and attestation
+emission, which serializes these types.
 
-**Not decided here:** credentials and issuers (ADR-006); requirement and policy
-schema, attester-role handling, per-outcome enforcement and what replaces
+**Not decided here:** credentials (ADR-006); requirement and policy
+schema, per-outcome enforcement and what replaces
 `signature-optional` (ADR-007). Enforcement reads outcomes; it does not change
 how they are derived.

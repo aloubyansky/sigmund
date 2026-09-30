@@ -2,7 +2,11 @@
 
 ## Status
 
-Proposed
+Deferred. Parked until the P5.1 spike answers whether a resolution can be
+attributed to the project that requested it and whether an extension can
+attach an artifact late enough to be uploaded, and until a consumer of either
+attestation is named. The reasoning below is kept as the starting point; it is
+not a commitment.
 
 ## Context
 
