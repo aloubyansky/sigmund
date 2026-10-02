@@ -15,8 +15,8 @@ import org.junit.jupiter.api.Test;
 class VerificationReportTest {
 
     private static final String FP = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
-    private static final SignerIdentity ALICE = new SignerIdentity("alice", "Alice",
-            List.of(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, FP)));
+    private static final SignerIdentity ALICE = new SignerIdentity("alice",
+            List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)));
 
     private static ArtifactResult result(String name, ArtifactOutcome outcome,
             IndeterminateReason reason, ClaimResult... claims) {
@@ -35,7 +35,8 @@ class VerificationReportTest {
 
     private static TrustPolicy policy(UntrustedPolicy onUntrusted, List<String> unsigned) {
         return new DefaultTrustPolicy(Map.of("org.example", List.of(ALICE)), unsigned,
-                ListedEvidencePolicy.ALL, UnlistedEvidencePolicy.IGNORE, onUntrusted);
+                ListedEvidencePolicy.ALL, UnlistedEvidencePolicy.IGNORE, onUntrusted,
+                List.of());
     }
 
     @Nested
@@ -47,7 +48,7 @@ class VerificationReportTest {
 
         private static ClaimResult by(String attester, String fingerprint) {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
-                    List.of(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, fingerprint)),
+                    List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, fingerprint)),
                     attester, AttesterRole.UNKNOWN,
                     TrustRootRef.keyring(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
                     Instant.parse("2026-03-12T10:04:11Z"), ClaimTimeSource.SIGNER,
@@ -168,7 +169,7 @@ class VerificationReportTest {
 
         private static ClaimResult detailedClaim(Instant claimTime) {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
-                    List.of(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, FP)),
+                    List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)),
                     "Alice <alice@example.com>", AttesterRole.PUBLISHER,
                     TrustRootRef.keyring(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
                     claimTime, ClaimTimeSource.SIGNER, Instant.parse("2026-09-24T08:00:00Z"),

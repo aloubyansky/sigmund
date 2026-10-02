@@ -48,7 +48,7 @@ class ToolFactoryTest {
 
         @Test
         void createWithCredentialFallback() {
-            var cred = new FingerprintCredential(Credential.TYPE_OPENPGP_V4, "ABCD1234ABCD1234");
+            var cred = new KeyCredential(Credential.TYPE_OPENPGP_V4, "ABCD1234ABCD1234000000000000000000000000");
             SignatureTool tool = factory.createSigning(cred, Map.of());
             assertThat(tool.canSign()).isTrue();
         }
@@ -102,7 +102,7 @@ class ToolFactoryTest {
 
         @Test
         void createWithCredentialFallback() {
-            var cred = new FingerprintCredential(Credential.TYPE_OPENPGP_V6,
+            var cred = new KeyCredential(Credential.TYPE_OPENPGP_V6,
                     "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
             SignatureTool tool = factory.createSigning(cred, Map.of("home", tempDir.toString()));
             assertThat(tool.canSign()).isTrue();
@@ -162,7 +162,7 @@ class ToolFactoryTest {
 
         @Test
         void createWithCredentialFallback() {
-            var cred = new FingerprintCredential(Credential.TYPE_OPENPGP_V6,
+            var cred = new KeyCredential(Credential.TYPE_OPENPGP_V6,
                     "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
             SignatureTool tool = factory.createSigning(cred, Map.of());
             assertThat(tool.canSign()).isTrue();

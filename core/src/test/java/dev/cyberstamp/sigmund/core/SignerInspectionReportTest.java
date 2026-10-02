@@ -23,7 +23,7 @@ class SignerInspectionReportTest {
         var r2 = new SignerSourceResult("hkp", "server2", true,
                 keyWithUids(List.of("Alice <a@b.com>", "Bob <b@b.com>")));
         var report = new SignerInspectionReport(
-                new FingerprintCredential("openpgp4", FP), List.of(r1, r2));
+                new KeyCredential("openpgp4", FP), List.of(r1, r2));
 
         assertThat(Set.copyOf(report.allUserIds())).isEqualTo(Set.of("Alice <a@b.com>", "Bob <b@b.com>"));
     }
@@ -35,7 +35,7 @@ class SignerInspectionReportTest {
         var noUids = new SignerSourceResult("hkp", "server2", true,
                 keyWithUids(List.of()));
         var report = new SignerInspectionReport(
-                new FingerprintCredential("openpgp4", FP), List.of(withUids, noUids));
+                new KeyCredential("openpgp4", FP), List.of(withUids, noUids));
 
         assertThat(report.sourcesWithNoUids()).hasSize(1);
         assertThat(report.sourcesWithNoUids().get(0).sourceLabel()).isEqualTo("server2");
@@ -47,7 +47,7 @@ class SignerInspectionReportTest {
                 keyWithUids(List.of()));
         var notFound = new SignerSourceResult("hkp", "server2", false, null);
         var report = new SignerInspectionReport(
-                new FingerprintCredential("openpgp4", FP), List.of(found, notFound));
+                new KeyCredential("openpgp4", FP), List.of(found, notFound));
 
         assertThat(report.sourcesWhereNotFound()).hasSize(1);
         assertThat(report.sourcesWithKey()).hasSize(1);
@@ -56,7 +56,7 @@ class SignerInspectionReportTest {
     @Test
     void emptyReportReturnsEmptyCollections() {
         var report = new SignerInspectionReport(
-                new FingerprintCredential("openpgp4", FP), List.of());
+                new KeyCredential("openpgp4", FP), List.of());
         assertThat(report.allUserIds()).isEmpty();
         assertThat(report.sourcesWithNoUids()).isEmpty();
         assertThat(report.sourcesWhereNotFound()).isEmpty();

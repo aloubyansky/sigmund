@@ -45,7 +45,7 @@ Each top-level YAML section in `sigmund.yaml` maps 1:1 to a Java type:
 | `tools` | `ToolsConfig` |
 | `signing` | `SigningConfig` |
 | `discovery` | `DiscoveryConfig` |
-| `trust`/`unsigned`/`policy` | `TrustPolicy` |
+| `trust`/`unsigned`/`policy`/`issuers` | `TrustPolicy` |
 
 `SigmundConfig` is the top-level record holding all of these. `SigmundConfigParser` produces it from YAML.
 
@@ -66,7 +66,7 @@ Each top-level YAML section in `sigmund.yaml` maps 1:1 to a Java type:
 - `SignatureTool` — core SPI for signing and verification (GPG, Sequoia, Bouncy Castle, Sigstore)
 - `SignatureToolFactory` — public, ServiceLoader-discoverable factory for tool construction
 - `SignatureFormat` — file format detection (`canHandle` with extension-first fast path), parsing, combining
-- `Credential` — extensible identity: `FingerprintCredential`, `EmailCredential`, `SigstoreCredential`
+- `Credential` — sealed over `KeyCredential` (full fingerprint, proven by the signature) and `IdentityCredential` (issuer plus attested attributes). An OpenPGP user ID is never a credential; addresses come from a directory (`OpenPgpDirectory`) or a Fulcio certificate, and only from issuers the policy names
 - `Sigmund` — central facade, implements `AutoCloseable`
 - `Signer` — producer use case (signing)
 - `TrustVerifier` — consumer use case (trust assessment)

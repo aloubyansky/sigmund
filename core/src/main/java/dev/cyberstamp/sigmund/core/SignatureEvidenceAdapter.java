@@ -240,6 +240,16 @@ class SignatureEvidenceAdapter implements EvidenceProvider {
     private ClaimResult asClaimResult(SignatureTool tool, Claim claim, VerifyResult result,
             EvidenceRef ref) {
         return ClaimResult.of(claim, name(), result, tool.extractCredentials(result), ref,
-                tool.trustRoot(), tool.name(), Instant.now());
+                trustRootOf(tool, result), tool.name(), Instant.now());
+    }
+
+    /**
+     * Names the trust root a claim was verified against: the source of the very key when the
+     * tool reports it, otherwise the tool's own trust root.
+     */
+    private static TrustRootRef trustRootOf(SignatureTool tool, VerifyResult result) {
+        return result instanceof OpenPgpVerifyResult openPgp && openPgp.keySource() != null
+                ? openPgp.keySource()
+                : tool.trustRoot();
     }
 }

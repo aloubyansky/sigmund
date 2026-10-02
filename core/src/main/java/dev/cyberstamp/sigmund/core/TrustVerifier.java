@@ -35,16 +35,21 @@ public class TrustVerifier {
 
     private final TrustPolicy policy;
     private final List<EvidenceProvider> providers;
+    private final ClaimIdentityResolver identityResolver;
 
     /**
      * Creates a new trust verifier.
      *
      * @param policy the trust policy to apply
      * @param providers the evidence providers to use for verification
+     * @param identityResolver adds directory-verified identities to claims where policy
+     *        needs them
      */
-    TrustVerifier(TrustPolicy policy, List<EvidenceProvider> providers) {
+    TrustVerifier(TrustPolicy policy, List<EvidenceProvider> providers,
+            ClaimIdentityResolver identityResolver) {
         this.policy = policy;
         this.providers = List.copyOf(providers);
+        this.identityResolver = identityResolver;
     }
 
     /**
@@ -63,7 +68,8 @@ public class TrustVerifier {
     public ArtifactResult assess(ArtifactCoords coords, Path artifactFile,
             List<Path> evidenceFiles) {
         Instant verifiedAt = Instant.now();
-        List<ClaimResult> claims = collectClaims(artifactFile, evidenceFiles);
+        List<ClaimResult> claims = identityResolver.resolve(coords,
+                collectClaims(artifactFile, evidenceFiles));
         OutcomeRollup.Result rollup = OutcomeRollup.derive(coords, claims, policy.requirements(),
                 null, policy.claimSetMode());
         return new ArtifactResult(ArtifactSubject.of(coords, artifactFile), rollup.outcome(),

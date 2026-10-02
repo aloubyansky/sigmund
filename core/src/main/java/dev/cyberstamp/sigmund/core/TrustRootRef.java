@@ -22,6 +22,9 @@ public record TrustRootRef(String kind, String identifier) {
     /** A Sigstore trust root, as distributed by TUF. */
     public static final String KIND_SIGSTORE_TRUST_ROOT = "sigstore-trust-root";
 
+    /** A keyserver an OpenPGP key was fetched from in this session. */
+    public static final String KIND_OPENPGP_KEYSERVER = "openpgp-keyserver";
+
     /** Used where a tool cannot say what it verified against. */
     public static final String KIND_UNKNOWN = "unknown";
 
@@ -40,6 +43,16 @@ public record TrustRootRef(String kind, String identifier) {
      */
     public static TrustRootRef keyring(Path store) {
         return new TrustRootRef(KIND_OPENPGP_KEYRING, store == null ? null : store.toString());
+    }
+
+    /**
+     * Creates a reference to the keyserver an OpenPGP key was fetched from.
+     *
+     * @param url the keyserver URL
+     * @return the reference
+     */
+    public static TrustRootRef keyserver(String url) {
+        return new TrustRootRef(KIND_OPENPGP_KEYSERVER, url);
     }
 
     /**

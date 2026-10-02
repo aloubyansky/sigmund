@@ -103,15 +103,16 @@ mvn sigmund:dependency-signers \
 
 This creates a `sigmund.yaml` file in your project root based on actual dependency signatures. The generated file contains three sections:
 
-**signers** — Declares known signers with their key fingerprints and email addresses:
+**signers** — Declares known signers by their full key fingerprints, with the user ID each key carries as a comment:
 
 ```yaml
 signers:
-  alice-developer:
+  alice-developer:  # user ID on the key, unverified: Alice Developer <alice@example.com>
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
     pgp6: "D62AAB339E45E5EA2FD036872B01D46A517A2991..."
-    email: "alice@example.com"
 ```
+
+The user ID is not used for matching — anyone can put any address on a key. To also accept keys Alice generates later, add `email: "alice@example.com"` and list `keys.openpgp.org` under `issuers`; see [issuers](configuration.md#issuers).
 
 **trust** — Maps artifact patterns to trusted signers:
 

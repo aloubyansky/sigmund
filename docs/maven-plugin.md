@@ -131,7 +131,7 @@ sq: ML-DSA-87+Ed448 D62AAB339E45E5EA2FD036872B01D46A517A2991... (Alice <alice@ex
 
 **Default Phase:** `validate`
 
-Verifies that all project dependencies are signed by trusted signers as defined in `sigmund.yaml`. Matching is done by fingerprint when available, falling back to email. Artifacts listed in the `signature-optional` section are allowed to carry no signature.
+Verifies that all project dependencies are signed by trusted signers as defined in `sigmund.yaml`. Matching is by full key fingerprint, or by an identity — an email address or a CI workflow — vouched for by an issuer the policy trusts. Artifacts listed in the `signature-optional` section are allowed to carry no signature.
 
 **Parameters:**
 
@@ -307,16 +307,14 @@ Inspects a signer identity across all available sources (local keystores and key
 
 | Property | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `sigmund.fingerprint` | No | — | Signer fingerprint to inspect |
+| `sigmund.fingerprint` | No | — | Full signer fingerprint to inspect |
 | `sigmund.email` | No | — | Signer email to inspect |
-| `sigmund.sigstoreIssuer` | No | — | Sigstore certificate OIDC issuer URL |
-| `sigmund.sigstoreSubject` | No | — | Sigstore certificate SAN subject |
 | `sigmund.tool` | No | all | Restrict inspection to a specific tool (`bc`, `sq`, `gpg`) |
 | `sigmund.keyservers` | No | `hkps://keys.openpgp.org` | Comma-separated keyserver list |
 | `sigmund.resolveSigners` | No | `true` | Fetch keys from keyservers |
 | `sigmund.skip` | No | `false` | Skip this goal |
 
-At least one of `sigmund.fingerprint`, `sigmund.email`, or `sigmund.sigstoreIssuer` + `sigmund.sigstoreSubject` is required.
+One of `sigmund.fingerprint` or `sigmund.email` is required. A Sigstore keyless identity has no key material to look up, so it cannot be inspected.
 
 **Examples:**
 
@@ -326,11 +324,6 @@ mvn sigmund:inspect-signer -Dsigmund.fingerprint=4AEE18F83AFDEB23468B2E5A2D7BAF3
 
 # Inspect an email
 mvn sigmund:inspect-signer -Dsigmund.email=alice@example.com
-
-# Inspect a Sigstore identity
-mvn sigmund:inspect-signer \
-  -Dsigmund.sigstoreIssuer=https://token.actions.githubusercontent.com \
-  -Dsigmund.sigstoreSubject=https://github.com/org/repo
 ```
 
 ## Configuration Precedence

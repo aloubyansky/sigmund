@@ -14,7 +14,7 @@ import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.DigestSet;
 import dev.cyberstamp.sigmund.core.Evidence;
 import dev.cyberstamp.sigmund.core.EvidenceRef;
-import dev.cyberstamp.sigmund.core.FingerprintCredential;
+import dev.cyberstamp.sigmund.core.KeyCredential;
 import dev.cyberstamp.sigmund.core.ListedEvidencePolicy;
 import dev.cyberstamp.sigmund.core.SignerIdentity;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
@@ -100,7 +100,7 @@ class VerifyMojoTest {
 
         private ClaimResult verifiedClaim() {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
-                    List.of(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, FP)),
+                    List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)),
                     "Alice <alice@example.com>", AttesterRole.UNKNOWN,
                     TrustRootRef.keyring(Path.of("/home/alice/.local/share/pgp.cert.d")),
                     new EvidenceRef(Path.of("lib-1.0.jar.asc"),

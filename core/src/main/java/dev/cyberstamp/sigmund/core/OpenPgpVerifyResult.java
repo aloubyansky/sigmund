@@ -16,6 +16,8 @@ public final class OpenPgpVerifyResult extends VerifyResult {
     private final int version;
     private final String keyId;
     private final String fingerprint;
+    private final String primaryFingerprint;
+    private final TrustRootRef keySource;
 
     /**
      * Creates a new OpenPGP verification result.
@@ -31,10 +33,58 @@ public final class OpenPgpVerifyResult extends VerifyResult {
     public OpenPgpVerifyResult(ClaimOutcome outcome, IndeterminateReason reason,
             String signerDisplayName, String algorithm, int version, String keyId,
             String fingerprint) {
+        this(outcome, reason, signerDisplayName, algorithm, version, keyId, fingerprint, null,
+                null);
+    }
+
+    private OpenPgpVerifyResult(ClaimOutcome outcome, IndeterminateReason reason,
+            String signerDisplayName, String algorithm, int version, String keyId,
+            String fingerprint, String primaryFingerprint, TrustRootRef keySource) {
         super(outcome, reason, signerDisplayName, algorithm);
         this.version = version;
         this.keyId = keyId;
         this.fingerprint = fingerprint;
+        this.primaryFingerprint = primaryFingerprint;
+        this.keySource = keySource;
+    }
+
+    /**
+     * Returns a copy naming the key that verified the signature by its full fingerprints.
+     *
+     * <p>
+     * A signature names its signer by whatever it carries — an issuer fingerprint subpacket,
+     * or only a 64-bit key ID in older signatures — and the key that verified it is usually a
+     * signing subkey. A tool that knows the verifying key reports both its full fingerprint and
+     * its certificate's primary fingerprint, so that policy naming either matches exactly.
+     *
+     * @param signingFingerprint the full fingerprint of the key that verified the signature
+     * @param primary the full fingerprint of that key's primary key, or {@code null} when it is
+     *        the primary key itself
+     * @return the copy
+     */
+    public OpenPgpVerifyResult withKeyFingerprints(String signingFingerprint, String primary) {
+        return new OpenPgpVerifyResult(outcome(), reason(), signerDisplayName(), algorithm(),
+                version, keyId, signingFingerprint, primary, keySource);
+    }
+
+    /**
+     * Returns a copy recording where the key that verified the signature came from.
+     *
+     * @param source the keyserver or local store that supplied the key
+     * @return the copy
+     */
+    public OpenPgpVerifyResult withKeySource(TrustRootRef source) {
+        return new OpenPgpVerifyResult(outcome(), reason(), signerDisplayName(), algorithm(),
+                version, keyId, fingerprint, primaryFingerprint, source);
+    }
+
+    /**
+     * Returns where the key that verified the signature came from, when the tool knows.
+     *
+     * @return the key source, or {@code null} when the tool reports only its own trust root
+     */
+    public TrustRootRef keySource() {
+        return keySource;
     }
 
     /**
@@ -133,6 +183,16 @@ public final class OpenPgpVerifyResult extends VerifyResult {
      */
     public String fingerprint() {
         return fingerprint;
+    }
+
+    /**
+     * Returns the full fingerprint of the primary key the signing key belongs to.
+     *
+     * @return the primary fingerprint, or {@code null} when unknown or when the signing key is
+     *         itself the primary key
+     */
+    public String primaryFingerprint() {
+        return primaryFingerprint;
     }
 
     /**

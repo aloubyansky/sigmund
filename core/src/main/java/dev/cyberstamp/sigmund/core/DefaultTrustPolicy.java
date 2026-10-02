@@ -17,13 +17,15 @@ import java.util.Map;
 class DefaultTrustPolicy implements TrustPolicy {
 
     static final DefaultTrustPolicy EMPTY = new DefaultTrustPolicy(
-            Map.of(), List.of(), ListedEvidencePolicy.ALL, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
+            Map.of(), List.of(), ListedEvidencePolicy.ALL, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
+            List.of());
 
     private final Map<ArtifactPattern, List<SignerIdentity>> trustMappings;
     private final List<ArtifactPattern> unsignedPatterns;
     private final ListedEvidencePolicy listedEvidence;
     private final UnlistedEvidencePolicy unlistedEvidence;
     private final UntrustedPolicy untrustedPolicy;
+    private final List<String> issuers;
 
     /**
      * Creates a new default trust policy.
@@ -33,18 +35,21 @@ class DefaultTrustPolicy implements TrustPolicy {
      * @param listedEvidence policy for evaluating listed evidence
      * @param unlistedEvidence policy for handling unlisted evidence
      * @param untrustedPolicy how to handle untrusted artifacts
+     * @param issuers canonical names of the issuers trusted for identity entries that name none
      */
     public DefaultTrustPolicy(
             Map<String, List<SignerIdentity>> trustMappings,
             List<String> unsignedPatterns,
             ListedEvidencePolicy listedEvidence,
             UnlistedEvidencePolicy unlistedEvidence,
-            UntrustedPolicy untrustedPolicy) {
+            UntrustedPolicy untrustedPolicy,
+            List<String> issuers) {
         this.trustMappings = parseTargets(trustMappings);
         this.unsignedPatterns = parsePatterns(unsignedPatterns);
         this.listedEvidence = listedEvidence;
         this.unlistedEvidence = unlistedEvidence;
         this.untrustedPolicy = untrustedPolicy;
+        this.issuers = List.copyOf(issuers);
     }
 
     private static Map<ArtifactPattern, List<SignerIdentity>> parseTargets(
@@ -91,6 +96,11 @@ class DefaultTrustPolicy implements TrustPolicy {
     @Override
     public UntrustedPolicy onUntrusted() {
         return untrustedPolicy;
+    }
+
+    @Override
+    public List<String> issuers() {
+        return issuers;
     }
 
 }

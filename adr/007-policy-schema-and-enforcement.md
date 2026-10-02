@@ -54,9 +54,9 @@ signers:                      # ADR-006
   acme-release:
     pgp4: 9B1C0E7F2D4A6B83C5E1F09A7D3B2C4E6F8A0B1D
   acme-ci:
-    sigstore:
-      source-repository-uri: https://github.com/acme/widget
-      build-config-uri: https://github.com/acme/widget/.github/workflows/release.yml
+    identities:
+      - source-repository-uri: https://github.com/acme/widget
+        build-config-uri: https://github.com/acme/widget/.github/workflows/release.yml
 
 artifacts:                    # unchanged: named pattern groups
   apache-stack:

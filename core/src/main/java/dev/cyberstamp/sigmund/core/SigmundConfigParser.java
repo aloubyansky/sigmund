@@ -17,13 +17,17 @@ import java.util.Map;
 /**
  * Parses {@code sigmund.yaml} configuration files into {@link SigmundConfig}.
  * <p>
- * Maps YAML signer keys to {@link Credential} types:
+ * Maps YAML signer keys to {@link Credential}s:
  * <ul>
- * <li>{@code openpgp4} / {@code pgp4} → {@link FingerprintCredential}("openpgp4", ...)</li>
- * <li>{@code openpgp6} / {@code pgp6} → {@link FingerprintCredential}("openpgp6", ...)</li>
- * <li>{@code email} → {@link EmailCredential}</li>
- * <li>{@code sigstore} → {@link SigstoreCredential}(issuer, subject)</li>
+ * <li>{@code openpgp4} / {@code pgp4}, {@code openpgp6} / {@code pgp6} → {@link KeyCredential},
+ * full fingerprints only</li>
+ * <li>{@code email} → an {@link IdentityCredential} asserting {@code email}, vouched for by
+ * one of the top-level {@code issuers}</li>
+ * <li>{@code identities} → one {@link IdentityCredential} per entry: an optional
+ * {@code issuer}, otherwise the top-level {@code issuers}, and the attributes it must
+ * have attested</li>
  * </ul>
+ * Identity entries are checked by {@link IdentityEntryValidator} once issuers are known.
  */
 class SigmundConfigParser {
 
@@ -68,6 +72,8 @@ class SigmundConfigParser {
     private static SigmundConfig parseRoot(JsonNode root) {
         int version = root.has("version") ? root.get("version").asInt(1) : 1;
         SignersConfig signers = parseSigners(root.get("signers"));
+        List<String> issuers = parseIssuers(root.get("issuers"));
+        IdentityEntryValidator.validate(signers, issuers);
         SigningConfig signingConfig = parseSigningConfig(root.get("signing"));
         ToolsConfig toolsConfig = parseToolsRegistry(root.get("tools"));
         DiscoveryConfig discoveryConfig = parseDiscoveryConfig(root.get("verification"));
@@ -83,10 +89,33 @@ class SigmundConfigParser {
 
         Map<String, List<SignerIdentity>> trustMappings = resolveTrustMappings(expandedTrust, signers);
         TrustPolicy trustPolicy = new DefaultTrustPolicy(
-                trustMappings, expandedUnsigned, listedEvidence, unlistedEvidence, untrustedPolicy);
+                trustMappings, expandedUnsigned, listedEvidence, unlistedEvidence, untrustedPolicy,
+                issuers);
 
         return new SigmundConfig(version, signers, artifacts, trustPolicy,
                 signingConfig, toolsConfig, discoveryConfig);
+    }
+
+    // --- Issuers ---
+
+    private static List<String> parseIssuers(JsonNode node) {
+        List<String> issuers = new ArrayList<>();
+        for (String name : parseStringList(node)) {
+            String canonical = canonicalIssuer(name, "'issuers'");
+            if (!issuers.contains(canonical)) {
+                issuers.add(canonical);
+            }
+        }
+        return List.copyOf(issuers);
+    }
+
+    private static String canonicalIssuer(String name, String where) {
+        if (IssuerKind.of(name) == null) {
+            throw new PolicyConfigException("Issuer '" + name + "' in " + where
+                    + " is neither a known directory (" + IssuerKind.KEYS_OPENPGP_ORG
+                    + ") nor an https:// OIDC issuer URL");
+        }
+        return IssuerKind.canonicalName(name);
     }
 
     // --- Signers ---
@@ -118,55 +147,69 @@ class SigmundConfigParser {
         if (email.isBlank()) {
             throw new PolicyConfigException("Signer '" + id + "' must not be empty");
         }
-        return new SignerIdentity(id, id, List.of(new EmailCredential(email)));
+        return new SignerIdentity(id, List.of(identity(id, null, Map.of(IdentityCredential.EMAIL, email))));
     }
+
+    private static final String MEMBERS = "members";
+    private static final String IDENTITIES = "identities";
+    private static final String ISSUER = "issuer";
+    private static final List<String> CREDENTIAL_KEYS = List.of(
+            "pgp4", Credential.TYPE_OPENPGP_V4, "pgp6", Credential.TYPE_OPENPGP_V6,
+            IdentityCredential.EMAIL, IDENTITIES);
 
     /**
      * Parses an object-form signer definition.
      * <p>
      * Supports three forms:
      * <ul>
-     * <li><b>Single-key signer</b> — credentials (pgp4, pgp6, email, sigstore) at the top level</li>
+     * <li><b>Single signer</b> — credentials ({@code pgp4}, {@code pgp6}, {@code email},
+     * {@code identities}) at the top level</li>
      * <li><b>Organization with members</b> — a {@code members} array where each element
      * carries its own credentials, all aggregated into one signer identity</li>
      * <li><b>Mixed</b> — top-level credentials and {@code members} combined</li>
      * </ul>
-     * At least one credential must be present across the top level and all members.
+     * At least one credential must be present across the top level and all members. Unknown
+     * keys are errors: an ignored key would silently drop a credential the author wrote.
      *
      * @param id the signer identifier from the YAML key
      * @param node the YAML object node for this signer
      * @return the parsed signer identity with all collected credentials
-     * @throws PolicyConfigException if no credentials are found or the members node is invalid
+     * @throws PolicyConfigException if no credentials are found, a key is unknown, or the
+     *         members node is invalid
      */
     private static SignerIdentity parseObjectSigner(String id, JsonNode node) {
-        String displayName = textField(node, "name");
+        List<String> known = new ArrayList<>(CREDENTIAL_KEYS);
+        known.add(MEMBERS);
+        rejectUnknownKeys(id, node, known);
         List<Credential> credentials = new ArrayList<>();
 
-        addCredentialsFromNode(credentials, node);
+        addCredentialsFromNode(credentials, id, node);
         addMemberCredentials(credentials, id, node);
 
         if (credentials.isEmpty()) {
-            throw new PolicyConfigException(
-                    "Signer '" + id + "' must have at least one credential (pgp4, pgp6, email, or sigstore)");
+            throw new PolicyConfigException("Signer '" + id
+                    + "' must have at least one credential (pgp4, pgp6, email or identities)");
         }
 
-        return new SignerIdentity(id, displayName != null ? displayName : id, credentials);
+        return new SignerIdentity(id, credentials);
     }
 
     /**
-     * Extracts all credential fields (pgp4, pgp6, email, sigstore) from a single YAML node
-     * and appends them to the given list.
+     * Extracts all credentials ({@code pgp4}, {@code pgp6}, {@code email}, {@code identities})
+     * from a single YAML node and appends them to the given list.
      *
      * @param credentials the list to append extracted credentials to
+     * @param signerId the signer identifier, used for error messages
      * @param node the YAML node containing credential fields
      */
-    private static void addCredentialsFromNode(List<Credential> credentials, JsonNode node) {
-        addFingerprintCredential(credentials, node, "pgp4", Credential.TYPE_OPENPGP_V4);
-        addFingerprintCredential(credentials, node, Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V4);
-        addFingerprintCredential(credentials, node, "pgp6", Credential.TYPE_OPENPGP_V6);
-        addFingerprintCredential(credentials, node, Credential.TYPE_OPENPGP_V6, Credential.TYPE_OPENPGP_V6);
-        addEmailCredential(credentials, node);
-        addSigstoreCredential(credentials, node);
+    private static void addCredentialsFromNode(List<Credential> credentials, String signerId,
+            JsonNode node) {
+        addKeyCredential(credentials, signerId, node, "pgp4", Credential.TYPE_OPENPGP_V4);
+        addKeyCredential(credentials, signerId, node, Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V4);
+        addKeyCredential(credentials, signerId, node, "pgp6", Credential.TYPE_OPENPGP_V6);
+        addKeyCredential(credentials, signerId, node, Credential.TYPE_OPENPGP_V6, Credential.TYPE_OPENPGP_V6);
+        addEmailCredential(credentials, signerId, node);
+        addIdentities(credentials, signerId, node);
     }
 
     /**
@@ -180,10 +223,10 @@ class SigmundConfigParser {
      * @param signerId the signer identifier, used for error messages
      * @param node the signer YAML node that may contain a {@code members} array
      * @throws PolicyConfigException if {@code members} is present but not an array,
-     *         or if a member element contains a nested {@code members} key
+     *         or if a member element contains an unknown key or nested {@code members}
      */
     private static void addMemberCredentials(List<Credential> credentials, String signerId, JsonNode node) {
-        JsonNode membersNode = node.get("members");
+        JsonNode membersNode = node.get(MEMBERS);
         if (membersNode == null || membersNode.isNull()) {
             return;
         }
@@ -196,101 +239,100 @@ class SigmundConfigParser {
                 throw new PolicyConfigException(
                         "Signer '" + signerId + "': each member must be an object");
             }
-            if (member.has("members")) {
+            if (member.has(MEMBERS)) {
                 throw new PolicyConfigException(
                         "Signer '" + signerId + "': nested 'members' are not allowed");
             }
-            addCredentialsFromNode(credentials, member);
+            rejectUnknownKeys(signerId, member, CREDENTIAL_KEYS);
+            addCredentialsFromNode(credentials, signerId, member);
         }
     }
 
-    private static void addFingerprintCredential(List<Credential> creds, JsonNode node,
-            String yamlKey, String credType) {
+    private static void addKeyCredential(List<Credential> creds, String signerId,
+            JsonNode node, String yamlKey, String keyType) {
         String value = textField(node, yamlKey);
-        if (value != null) {
-            creds.add(new FingerprintCredential(credType, value));
-        }
-    }
-
-    private static void addEmailCredential(List<Credential> creds, JsonNode node) {
-        String email = textField(node, "email");
-        if (email != null) {
-            creds.add(new EmailCredential(email));
-        }
-    }
-
-    private static final List<String> KNOWN_SIGSTORE_FIELDS = List.of(
-            "issuer", "subject", "source-repository-uri", "source-repository-owner-uri",
-            "build-trigger", "build-config-uri", "runner-environment");
-
-    private static void addSigstoreCredential(List<Credential> creds, JsonNode node) {
-        JsonNode sigstoreNode = node.get("sigstore");
-        if (sigstoreNode == null || sigstoreNode.isNull()) {
+        if (value == null) {
             return;
         }
-        if (!sigstoreNode.isObject()) {
-            return;
-        }
-        List<String> unknown = new ArrayList<>();
-        sigstoreNode.fieldNames().forEachRemaining(field -> {
-            if (!KNOWN_SIGSTORE_FIELDS.contains(field)) {
-                unknown.add(field);
-            }
-        });
-        if (!unknown.isEmpty()) {
+        try {
+            creds.add(new KeyCredential(keyType, value));
+        } catch (IllegalArgumentException e) {
             throw new PolicyConfigException(
-                    "Unknown field(s) in 'sigstore' credential: "
-                            + String.join(", ", unknown)
-                            + ". Expected: "
-                            + String.join(", ", KNOWN_SIGSTORE_FIELDS));
+                    "Signer '" + signerId + "': '" + yamlKey + "' " + e.getMessage(), e);
         }
-        var builder = new SigstoreCredential.Builder();
-        boolean hasField = false;
+    }
 
-        String issuer = textField(sigstoreNode, "issuer");
-        if (issuer != null) {
-            builder.issuer(issuer);
-            hasField = true;
+    /**
+     * Adds the {@code email} shorthand: an address vouched for by one of the listed issuers.
+     */
+    private static void addEmailCredential(List<Credential> creds, String signerId,
+            JsonNode node) {
+        JsonNode email = node.get(IdentityCredential.EMAIL);
+        if (email == null || email.isNull()) {
+            return;
         }
-
-        String subject = textField(sigstoreNode, "subject");
-        if (subject != null) {
-            builder.subject(subject);
-            hasField = true;
+        if (!email.isTextual()) {
+            throw new PolicyConfigException("Signer '" + signerId
+                    + "': 'email' must be an address; to name its issuer, use 'identities'");
         }
+        creds.add(identity(signerId, null, Map.of(IdentityCredential.EMAIL, email.asText())));
+    }
 
-        String sourceRepositoryUri = textField(sigstoreNode, "source-repository-uri");
-        if (sourceRepositoryUri != null) {
-            builder.sourceRepositoryUri(sourceRepositoryUri);
-            hasField = true;
+    /**
+     * Adds the {@code identities} list: each entry an optional {@code issuer} plus the
+     * attributes it must have attested.
+     */
+    private static void addIdentities(List<Credential> creds, String signerId, JsonNode node) {
+        JsonNode identities = node.get(IDENTITIES);
+        if (identities == null || identities.isNull()) {
+            return;
         }
-
-        String sourceRepositoryOwnerUri = textField(sigstoreNode, "source-repository-owner-uri");
-        if (sourceRepositoryOwnerUri != null) {
-            builder.sourceRepositoryOwnerUri(sourceRepositoryOwnerUri);
-            hasField = true;
+        if (!identities.isArray()) {
+            throw new PolicyConfigException("Signer '" + signerId + "': 'identities' must be a list");
         }
-
-        String buildTrigger = textField(sigstoreNode, "build-trigger");
-        if (buildTrigger != null) {
-            builder.buildTrigger(buildTrigger);
-            hasField = true;
+        for (JsonNode entry : identities) {
+            if (!entry.isObject()) {
+                throw new PolicyConfigException("Signer '" + signerId
+                        + "': each identity must be a map of an optional 'issuer' and attributes");
+            }
+            creds.add(identity(signerId, inlineIssuer(signerId, entry), attributesOf(entry)));
         }
+    }
 
-        String buildConfigUri = textField(sigstoreNode, "build-config-uri");
-        if (buildConfigUri != null) {
-            builder.buildConfigUri(buildConfigUri);
-            hasField = true;
+    private static Map<String, String> attributesOf(JsonNode entry) {
+        Map<String, String> attributes = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonNode> field : entry.properties()) {
+            if (!ISSUER.equals(field.getKey())) {
+                attributes.put(field.getKey(), field.getValue().asText());
+            }
         }
+        return attributes;
+    }
 
-        String runnerEnvironment = textField(sigstoreNode, "runner-environment");
-        if (runnerEnvironment != null) {
-            builder.runnerEnvironment(runnerEnvironment);
-            hasField = true;
+    private static String inlineIssuer(String signerId, JsonNode entry) {
+        String issuer = textField(entry, ISSUER);
+        return issuer == null
+                ? null
+                : canonicalIssuer(issuer, "signer '" + signerId + "'");
+    }
+
+    private static IdentityCredential identity(String signerId, String issuer,
+            Map<String, String> attributes) {
+        try {
+            return new IdentityCredential(issuer, attributes);
+        } catch (IllegalArgumentException e) {
+            throw new PolicyConfigException("Signer '" + signerId
+                    + "': an identity needs at least one attribute besides its issuer, "
+                    + "each with a value", e);
         }
+    }
 
-        if (hasField) {
-            creds.add(builder.build());
+    private static void rejectUnknownKeys(String signerId, JsonNode node, List<String> known) {
+        for (Map.Entry<String, JsonNode> field : node.properties()) {
+            if (!known.contains(field.getKey())) {
+                throw new PolicyConfigException("Signer '" + signerId + "': unknown key '"
+                        + field.getKey() + "'; expected " + String.join(", ", known));
+            }
         }
     }
 

@@ -22,7 +22,7 @@ final class GpgToolFactory implements SignatureToolFactory {
     public SignatureTool createSigning(Credential credential, Map<String, String> settings) {
         String executable = settings.getOrDefault("executable", "gpg");
         String keyName = settings.get("key-name");
-        if (keyName == null && credential instanceof FingerprintCredential fp) {
+        if (keyName == null && credential instanceof KeyCredential fp) {
             keyName = fp.fingerprint();
         }
         String passphrase = resolvePassphrase(settings);

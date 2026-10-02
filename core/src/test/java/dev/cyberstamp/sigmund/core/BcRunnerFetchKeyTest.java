@@ -61,7 +61,7 @@ class BcRunnerFetchKeyTest {
             BcRunner generator = new BcRunner(store, null, null);
 
             String fp = generator.generateKey("Test User <test@example.com>", "ed25519");
-            PGPPublicKeyRing fullKey = store.findPublicKey(fp);
+            PGPPublicKeyRing fullKey = store.findPublicKey(fp).ring();
             assertThat(fullKey).isNotNull();
             assertThat(fullKey.getPublicKey().getUserIDs().hasNext()).isTrue();
 
@@ -71,13 +71,13 @@ class BcRunnerFetchKeyTest {
             BcKeyStore verifierStore = createStore();
             verifierStore.cacheEphemeral(strippedKey);
 
-            PGPPublicKeyRing cached = verifierStore.findPublicKey(fp);
+            PGPPublicKeyRing cached = verifierStore.findPublicKey(fp).ring();
             assertThat(cached).isNotNull();
             assertThat(cached.getPublicKey().getUserIDs().hasNext())
                     .as("Cached key should have no UIDs initially").isFalse();
 
             verifierStore.cacheEphemeral(fullKey);
-            cached = verifierStore.findPublicKey(fp);
+            cached = verifierStore.findPublicKey(fp).ring();
             assertThat(cached).isNotNull();
             assertThat(cached.getPublicKey().getUserIDs().hasNext())
                     .as("Cached key should now have UIDs after replacement").isTrue();
@@ -89,13 +89,13 @@ class BcRunnerFetchKeyTest {
             BcRunner generator = new BcRunner(store, null, null);
 
             String fp = generator.generateKey("Test <test@example.com>", "ed25519");
-            PGPPublicKeyRing fullKey = store.findPublicKey(fp);
+            PGPPublicKeyRing fullKey = store.findPublicKey(fp).ring();
             PGPPublicKeyRing strippedKey = stripUserIds(fullKey);
 
             BcKeyStore verifierStore = createStore();
             verifierStore.cacheEphemeral(strippedKey);
 
-            PGPPublicKeyRing found = verifierStore.findPublicKey(fp);
+            PGPPublicKeyRing found = verifierStore.findPublicKey(fp).ring();
             assertThat(found).as("Key without UIDs should still be findable").isNotNull();
         }
     }
@@ -104,11 +104,11 @@ class BcRunnerFetchKeyTest {
     class FetchKeyLoop {
 
         @Test
-        void continuesSearchingWhenFirstKeyserverReturnsNoUids() throws Exception {
+        void continuesToAKeyserverWithUserIdsForDisplay() throws Exception {
             BcKeyStore genStore = createStore();
             BcRunner generator = new BcRunner(genStore, null, null);
             String fp = generator.generateKey("Test User <test@example.com>", "ed25519");
-            PGPPublicKeyRing fullKey = genStore.findPublicKey(fp);
+            PGPPublicKeyRing fullKey = genStore.findPublicKey(fp).ring();
             PGPPublicKeyRing strippedKey = stripUserIds(fullKey);
 
             BcKeyStore fetchStore = new BcKeyStore(null,
@@ -122,53 +122,59 @@ class BcRunnerFetchKeyTest {
 
             assertThat(runner.fetchKey(fp)).isTrue();
             assertThat(runner.queriedServers).isEqualTo(List.of("hkps://server1", "hkps://server2"));
-
-            PGPPublicKeyRing cached = fetchStore.findPublicKey(fp);
-            assertThat(cached).isNotNull();
-            assertThat(cached.getPublicKey().getUserIDs().hasNext())
-                    .as("Cached key should have UIDs from second keyserver").isTrue();
+            assertThat(fetchStore.findPublicKey(fp).source()).isEqualTo(TrustRootRef.keyserver("hkps://server2"));
         }
 
         @Test
-        void stopsAtFirstKeyserverWithUids() throws Exception {
+        void stopsAtTheFirstKeyserverWithUserIds() throws Exception {
             BcKeyStore genStore = createStore();
             BcRunner generator = new BcRunner(genStore, null, null);
             String fp = generator.generateKey("Test User <test@example.com>", "ed25519");
-            PGPPublicKeyRing fullKey = genStore.findPublicKey(fp);
+            PGPPublicKeyRing fullKey = genStore.findPublicKey(fp).ring();
+
+            BcKeyStore fetchStore = new BcKeyStore(null,
+                    tempDir.resolve("fetch-cd"), tempDir.resolve("fetch-bp"));
+            StubBcRunner runner = new StubBcRunner(fetchStore,
+                    Map.of("hkps://server1", fullKey, "hkps://server2", fullKey),
+                    List.of("hkps://server1", "hkps://server2"));
+
+            assertThat(runner.fetchKey(fp)).isTrue();
+            assertThat(runner.queriedServers).isEqualTo(List.of("hkps://server1"));
+        }
+
+        @Test
+        void aKeyWithoutUserIdsStillCountsAsFetched() throws Exception {
+            BcKeyStore genStore = createStore();
+            BcRunner generator = new BcRunner(genStore, null, null);
+            String fp = generator.generateKey("Test User <test@example.com>", "ed25519");
+            PGPPublicKeyRing strippedKey = stripUserIds(genStore.findPublicKey(fp).ring());
+
+            BcKeyStore fetchStore = new BcKeyStore(null,
+                    tempDir.resolve("fetch-cd"), tempDir.resolve("fetch-bp"));
+            StubBcRunner runner = new StubBcRunner(fetchStore,
+                    Map.of("hkps://server1", strippedKey),
+                    List.of("hkps://server1", "hkps://server2"));
+
+            assertThat(runner.fetchKey(fp)).isTrue();
+        }
+
+        @Test
+        void recordsWhichKeyserverSuppliedTheKey() throws Exception {
+            BcKeyStore genStore = createStore();
+            BcRunner generator = new BcRunner(genStore, null, null);
+            String fp = generator.generateKey("Test User <test@example.com>", "ed25519");
+            PGPPublicKeyRing fullKey = genStore.findPublicKey(fp).ring();
 
             BcKeyStore fetchStore = new BcKeyStore(null,
                     tempDir.resolve("fetch-cd"), tempDir.resolve("fetch-bp"));
             Map<String, PGPPublicKeyRing> responses = new HashMap<>();
-            responses.put("hkps://server1", fullKey);
             responses.put("hkps://server2", fullKey);
 
             StubBcRunner runner = new StubBcRunner(fetchStore, responses,
                     List.of("hkps://server1", "hkps://server2"));
 
             assertThat(runner.fetchKey(fp)).isTrue();
-            assertThat(runner.queriedServers)
-                    .as("Should stop after first keyserver with UIDs").isEqualTo(List.of("hkps://server1"));
-        }
-
-        @Test
-        void returnsTrueEvenWhenNoKeyserverHasUids() throws Exception {
-            BcKeyStore genStore = createStore();
-            BcRunner generator = new BcRunner(genStore, null, null);
-            String fp = generator.generateKey("Test User <test@example.com>", "ed25519");
-            PGPPublicKeyRing strippedKey = stripUserIds(genStore.findPublicKey(fp));
-
-            BcKeyStore fetchStore = new BcKeyStore(null,
-                    tempDir.resolve("fetch-cd"), tempDir.resolve("fetch-bp"));
-            Map<String, PGPPublicKeyRing> responses = new HashMap<>();
-            responses.put("hkps://server1", strippedKey);
-            responses.put("hkps://server2", strippedKey);
-
-            StubBcRunner runner = new StubBcRunner(fetchStore, responses,
-                    List.of("hkps://server1", "hkps://server2"));
-
-            assertThat(runner.fetchKey(fp)).as("Should return true — key was fetched, just no UIDs").isTrue();
-            assertThat(runner.queriedServers)
-                    .as("Should try all keyservers when none has UIDs").isEqualTo(List.of("hkps://server1", "hkps://server2"));
+            assertThat(fetchStore.findPublicKey(fp).source()).isEqualTo(TrustRootRef.keyserver("hkps://server2"));
         }
 
         @Test
@@ -184,45 +190,37 @@ class BcRunnerFetchKeyTest {
         }
 
         @Test
-        void skipsKeyserversWhenKeyAlreadyCachedWithUids() throws Exception {
+        void skipsKeyserversWhenTheKeyIsAlreadyHeldWithUserIds() throws Exception {
             BcKeyStore genStore = createStore();
             BcRunner generator = new BcRunner(genStore, null, null);
             String fp = generator.generateKey("Test User <test@example.com>", "ed25519");
-            PGPPublicKeyRing fullKey = genStore.findPublicKey(fp);
 
             BcKeyStore fetchStore = new BcKeyStore(null,
                     tempDir.resolve("fetch-cd"), tempDir.resolve("fetch-bp"));
-            fetchStore.cacheEphemeral(fullKey);
+            fetchStore.cacheEphemeral(genStore.findPublicKey(fp).ring());
 
             StubBcRunner runner = new StubBcRunner(fetchStore, Map.of(),
                     List.of("hkps://server1"));
 
             assertThat(runner.fetchKey(fp)).isTrue();
-            assertThat(runner.queriedServers.isEmpty())
-                    .as("Should not query any keyserver when key with UIDs is already cached").isTrue();
+            assertThat(runner.queriedServers).isEmpty();
         }
     }
 
     private static class StubBcRunner extends BcRunner {
-        private final BcKeyStore store;
         private final Map<String, PGPPublicKeyRing> responses;
         final List<String> queriedServers = new ArrayList<>();
 
         StubBcRunner(BcKeyStore store, Map<String, PGPPublicKeyRing> responses,
                 List<String> keyservers) {
             super(store, null, null, null, null, true, false, keyservers);
-            this.store = store;
             this.responses = responses;
         }
 
         @Override
-        PGPPublicKeyRing fetchFromHkpAndStore(String keyId, String keyserver) {
+        PGPPublicKeyRing fetchKeyFromHkp(String keyId, String keyserver) {
             queriedServers.add(keyserver);
-            PGPPublicKeyRing ring = responses.get(keyserver);
-            if (ring != null) {
-                store.cacheEphemeral(ring);
-            }
-            return ring;
+            return responses.get(keyserver);
         }
     }
 

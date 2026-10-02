@@ -135,10 +135,8 @@ class BcRunnerTest {
         OpenPgpVerifyResult result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "User <user@example.com>", "Ed25519",
                 4, "AABBCCDD", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD");
         var creds = runner.extractCredentials(result);
-        assertThat(creds.size()).isEqualTo(2);
-        assertThat(creds.get(0)).isInstanceOf(FingerprintCredential.class);
-        assertThat(creds.get(0).type()).isEqualTo("openpgp4");
-        assertThat(creds.get(1)).isInstanceOf(EmailCredential.class);
+        assertThat(creds).containsExactly(
+                new KeyCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"));
     }
 
     @Test
@@ -147,7 +145,7 @@ class BcRunnerTest {
         OpenPgpVerifyResult result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "User <user@example.com>", "Ed25519",
                 6, null, "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD");
         var creds = runner.extractCredentials(result);
-        assertThat(creds.size()).isEqualTo(2);
+        assertThat(creds).hasSize(1);
         assertThat(creds.get(0).type()).isEqualTo("openpgp6");
     }
 
@@ -208,6 +206,12 @@ class BcRunnerTest {
         // BC should extract the key ID from the signature bytes and find the key
         VerifyResult result = runner.verify(artifact, claimNoFp);
         assertThat(result.isVerified()).isTrue();
+
+        // a 64-bit key ID proves nothing, so what is proven is the verifying key by its full
+        // fingerprint, and the primary key it belongs to
+        assertThat(runner.extractCredentials(result)).contains(KeyCredential.openPgp(fingerprint));
+        assertThat(((OpenPgpVerifyResult) result).keySource().kind())
+                .isEqualTo(TrustRootRef.KIND_OPENPGP_KEYRING);
     }
 
     @Test
@@ -270,7 +274,7 @@ class BcRunnerTest {
 
         // Export the key, then simulate ephemeral fetch by calling cacheEphemeral directly
         // (fetchKey would call fetchKeyFromHkp which needs a real keyserver)
-        var pubRing = signerStore.findPublicKey(fp);
+        var pubRing = signerStore.findPublicKey(fp).ring();
         verifierStore.cacheEphemeral(pubRing);
 
         String armored = Files.readString(sigFile);
@@ -477,18 +481,19 @@ class BcRunnerTest {
         String fingerprint = generator.generateKey("Test <test@example.com>", "ed25519");
 
         // Sign via Sigmund builder with bcPassphraseProvider — point to same key store
-        Sigmund sigmund = Sigmund.builder()
+        try (Sigmund sigmund = Sigmund.builder()
                 .bcPassphraseProvider(provider)
                 .addSigningTool("bc", Map.of(
                         "signing-fingerprint", fingerprint,
                         "cert-d-home", certD,
                         "bc-private-home", bcPrivate))
-                .build();
+                .build()) {
 
-        Path artifact = tempDir.resolve("artifact.txt");
-        Files.writeString(artifact, "builder test");
+            Path artifact = tempDir.resolve("artifact.txt");
+            Files.writeString(artifact, "builder test");
 
-        SigningOutput output = sigmund.signer().sign(artifact, tempDir);
-        assertThat(output.files().isEmpty()).isFalse();
+            SigningOutput output = sigmund.signer().sign(artifact, tempDir);
+            assertThat(output.files().isEmpty()).isFalse();
+        }
     }
 }

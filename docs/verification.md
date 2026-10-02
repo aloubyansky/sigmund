@@ -237,14 +237,17 @@ Sigstore signature files are detected by the `.sigstore.json` extension. When ve
 
 After a successful Sigstore verification, the tool extracts identity credentials from the Fulcio certificate embedded in the bundle:
 
-- **`SigstoreCredential`** — produced when the certificate contains any Sigstore extension fields (issuer, subject, source-repository-uri, etc.). Matches against `sigstore` credentials in the signer definition.
-- **`EmailCredential`** — produced when the certificate subject is an RFC 822 email address (SAN type `rfc822Name`). Matches against `email` credentials in the signer definition.
+- **One `IdentityCredential`** — issuer: the OIDC issuer; attributes: the certificate `subject`, `email` when the subject is an RFC 822 address, and every Fulcio certificate extension present (`source-repository-uri`, `build-config-uri`, and the rest). It matches `identities` and `email` entries in the signer definition. A certificate that names no issuer proves nothing.
 
 ### Cross-Backend Identity Matching
 
-The `EmailCredential` extracted from Sigstore bundles uses the same matching logic as email credentials from OpenPGP user IDs. This means a signer with an `email` credential can be matched by both OpenPGP and Sigstore evidence:
+An `email` entry matches an address vouched for by any issuer it accepts — the directory `keys.openpgp.org` for OpenPGP keys, or an OIDC provider for Sigstore certificates:
 
 ```yaml
+issuers:
+  - keys.openpgp.org
+  - https://accounts.google.com
+
 signers:
   release-lead:
     email: "release@example.com"
@@ -254,7 +257,7 @@ trust:
   "com.example.*": release-lead
 ```
 
-An artifact signed with either OpenPGP (matched via fingerprint or email in the user ID) or Sigstore (matched via email in the Fulcio certificate) will satisfy the trust policy for `release-lead`.
+An artifact signed with OpenPGP satisfies `release-lead` by the pinned fingerprint, or by a newer key for which `keys.openpgp.org` has verified the address; one signed with Sigstore satisfies it by the address in a Google-issued certificate. A user ID on an OpenPGP key is never matched on its own.
 
 ## Toolchain Configuration
 
@@ -322,9 +325,7 @@ discovery:
 
 ### Keyserver Default
 
-The default keyserver is `hkps://keys.openpgp.org` because it is the only major keyserver that verifies email addresses before publishing keys. This prevents impersonation via unverified key uploads.
-
-Other keyservers (e.g., `keyserver.ubuntu.com`) accept uploads without identity verification and can be added explicitly if needed.
+The default keyserver is `hkps://keys.openpgp.org`. Keyservers supply key material only: the first one that has a key supplies it, the claim records which one did, and the signature proves the key whoever served it. User IDs served by a keyserver are display text and never identities, so other keyservers (e.g., `keyserver.ubuntu.com`) can be added without widening what is accepted. Identities come only from the issuers a policy names.
 
 ### Ephemeral vs Persistent Import
 

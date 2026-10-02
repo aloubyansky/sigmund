@@ -11,6 +11,7 @@ import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.UnverifiedResult;
 import dev.cyberstamp.sigmund.core.VerifyResult;
 import dev.cyberstamp.sigmund.plugin.SignatureInspector.SignedArtifact;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,6 +24,9 @@ import org.junit.jupiter.api.io.TempDir;
 class DependencySignersMojoTest {
 
     private static final ArtifactCoords LIB_COORDS = ArtifactCoords.parse("com.example:lib:1.0");
+    private static final String FULL_FP = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
+    private static final String FP4 = FULL_FP;
+    private static final String FP6 = "CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9";
 
     @Test
     void signedArtifactV4WithSigner() {
@@ -149,32 +153,32 @@ class DependencySignersMojoTest {
         @Test
         void v4KeyClassifiedAsPgp4() {
             VerifyResult vr = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null,
-                    "User <user@example.com>", "RSA", 4, null, "FP4");
+                    "User <user@example.com>", "RSA", 4, null, FP4);
             var info = new DependencySignersMojo.SignerInfo("test", vr);
-            assertThat(info.pgp4Key).isEqualTo("FP4");
+            assertThat(info.pgp4Key).isEqualTo(FP4);
             assertThat(info.pgp6Key).isNull();
         }
 
         @Test
         void v6KeyClassifiedAsPgp6() {
             VerifyResult vr = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null,
-                    "User <user@example.com>", "ML-DSA-87+Ed448", 6, null, "FP6");
+                    "User <user@example.com>", "ML-DSA-87+Ed448", 6, null, FP6);
             var info = new DependencySignersMojo.SignerInfo("test", vr);
             assertThat(info.pgp4Key).isNull();
-            assertThat(info.pgp6Key).isEqualTo("FP6");
+            assertThat(info.pgp6Key).isEqualTo(FP6);
         }
 
         @Test
         void mergeAccumulatesBothKeys() {
             VerifyResult vr4 = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null,
-                    "User <user@example.com>", "RSA", 4, null, "FP4");
+                    "User <user@example.com>", "RSA", 4, null, FP4);
             VerifyResult vr6 = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null,
-                    null, "ML-DSA-87+Ed448", 6, null, "FP6");
+                    null, "ML-DSA-87+Ed448", 6, null, FP6);
             var info = new DependencySignersMojo.SignerInfo("test", vr4);
             info.merge(vr6);
-            assertThat(info.pgp4Key).isEqualTo("FP4");
-            assertThat(info.pgp6Key).isEqualTo("FP6");
-            assertThat(info.email).isEqualTo("user@example.com");
+            assertThat(info.pgp4Key).isEqualTo(FP4);
+            assertThat(info.pgp6Key).isEqualTo(FP6);
+            assertThat(info.userId).isEqualTo("User <user@example.com>");
         }
     }
 
@@ -208,7 +212,7 @@ class DependencySignersMojoTest {
         private final SignedArtifact signed = new SignedArtifact(
                 ArtifactCoords.parse("com.example:other:1.0"), "central",
                 new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "User <user@example.com>",
-                        "RSA", 4, "ABCD1234", "ABCD1234"),
+                        "RSA", 4, "ABCD1234", FULL_FP),
                 null, null);
 
         @Test
@@ -232,6 +236,51 @@ class DependencySignersMojoTest {
 
             SigmundConfig config = SigmundConfig.parse(configFile);
             assertThat(config.trustPolicy().isUnsignedAllowed(LIB_COORDS)).isTrue();
+        }
+    }
+
+    @Nested
+    class GeneratedSigners {
+
+        private final ArtifactCoords coords = ArtifactCoords.parse("com.example:other:1.0");
+
+        @Test
+        void recordFullFingerprintsAndShowTheUserIdAsAComment(@TempDir Path dir) throws Exception {
+            SignedArtifact signed = new SignedArtifact(coords, "central",
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "User <user@example.com>",
+                            "RSA", 4, "ABCD1234", FULL_FP),
+                    null, null);
+            Path configFile = dir.resolve("sigmund.yaml");
+
+            generate(List.of(signed), configFile);
+
+            String yaml = Files.readString(configFile);
+            assertThat(yaml).contains("pgp4: \"" + FULL_FP + "\"",
+                    "# user ID on the key, unverified: User <user@example.com>")
+                    .doesNotContain("email:", "name:");
+            SigmundConfig config = SigmundConfig.parse(configFile);
+            assertThat(config.trustPolicy().expectedSigners(coords)).hasSize(1);
+        }
+
+        @Test
+        void leaveOutASignerKnownOnlyByKeyId(@TempDir Path dir) throws Exception {
+            SignedArtifact signed = new SignedArtifact(coords, "central",
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "User <user@example.com>",
+                            "RSA", 4, "ABCD1234", "ABCD1234"),
+                    null, null);
+            Path configFile = dir.resolve("sigmund.yaml");
+
+            generate(List.of(signed), configFile);
+
+            SigmundConfig config = SigmundConfig.parse(configFile);
+            assertThat(config.signers().isEmpty()).isTrue();
+            assertThat(config.trustPolicy().expectedSigners(coords)).isEmpty();
+        }
+
+        private void generate(List<SignedArtifact> results, Path configFile) throws Exception {
+            DependencySignersMojo mojo = new DependencySignersMojo();
+            mojo.setLog(new RecordingLog());
+            mojo.writeTrustConfigYaml(results, configFile.toFile());
         }
     }
 

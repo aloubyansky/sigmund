@@ -52,8 +52,7 @@ class ClaimResultTest {
                     TrustRootRef.unknown(), "bc", Instant.now());
 
             assertThat(claimResult.attesterCredentials()).containsExactly(
-                    new FingerprintCredential(Credential.TYPE_OPENPGP_V4, FP),
-                    new EmailCredential("alice@example.com"));
+                    new KeyCredential(Credential.TYPE_OPENPGP_V4, FP));
         }
 
         @Test
@@ -120,7 +119,7 @@ class ClaimResultTest {
         @Test
         void credentialsAreDefensivelyCopied() {
             List<Credential> credentials = new java.util.ArrayList<>();
-            credentials.add(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, FP));
+            credentials.add(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP));
             ClaimResult result = verified(ClaimOutcome.VERIFIED, null, REF, credentials);
 
             credentials.clear();

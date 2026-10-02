@@ -144,8 +144,8 @@ for the fact**. The two kinds are organized by that.
   what `EmailCredential` set out to do.
 
 The cost is static typing and bespoke display. A misspelled attribute no longer
-fails to compile; the closed per-kind vocabulary below, typed config blocks and
-the published schema catch it instead, at load and in the editor. Rendering an identity readably — "workflow
+fails to compile; the closed per-kind vocabulary below and the published schema
+catch it instead, at load and in the editor. Rendering an identity readably — "workflow
 `release.yml` in `acme/widget`" — needs formatting per issuer kind rather than
 each class's own `displayName()`.
 
@@ -172,10 +172,14 @@ shows, per signer, the issuers its entries accept, so the effective grant is
 reviewable without reading every entry.
 
 There is no per-issuer configuration: an issuer's kind, and so what it can
-assert, is known from its name. Known directory names are checked first, in
-either bare or URL form, so `https://keys.openpgp.org` is the directory rather
-than an OIDC issuer that can never assert anything; any other `https://` name is
-an OIDC issuer.
+assert, is known from its name. **Every issuer is canonically an `https://`
+URL**, which is what results record. Known directories are checked first, so
+`https://keys.openpgp.org` is the directory rather than an OIDC issuer that can
+never assert anything; any other `https://` URL is an OIDC issuer. A known
+directory may be written without the scheme — `keys.openpgp.org` — as
+shorthand; any other name without it is a config error. For a directory the URL
+is also its lookup endpoint, so naming one later needs no separate endpoint
+setting.
 
 - **OIDC issuers** — any `https://` URL, proven by a Fulcio certificate. They
   assert `subject`, `email` when the SAN is an address, and the Fulcio
@@ -183,10 +187,10 @@ an OIDC issuer.
   the Sigstore public-good root fetched through TUF by `sigstore-java`, is tool
   configuration, not policy.
 - **OpenPGP directories** — issuers that verify addresses before publishing
-  them. They assert `email` only. Sigmund knows one, `keys.openpgp.org`, and
-  its lookup endpoint, as a constant in code; any other name that is not an
-  `https://` URL is a config error. A second directory is added the same way, or through
-  configuration once someone needs one Sigmund does not know.
+  them. They assert `email` only. Sigmund knows one, `https://keys.openpgp.org`,
+  as a constant in code. A second directory is added the same way, or through
+  configuration — a URL with its kind declared — once someone needs one
+  Sigmund does not know.
 
 ### Attribute vocabulary
 
@@ -201,10 +205,9 @@ specifications rather than invented:
   `source-repository-ref`, `source-repository-identifier`,
   `source-repository-owner-uri`, `source-repository-owner-identifier`,
   `build-config-uri`, `build-config-digest`, `build-trigger`,
-  `run-invocation-uri`, `source-repository-visibility-at-signing`. The
-  deprecated GitHub-specific extensions (`.1.2`–`.1.6`) are not adopted. The
-  list is re-checked against the registry when implemented; today the code
-  supports five of these.
+  `run-invocation-uri`, `source-repository-visibility-at-signing`,
+  `deployment-environment`, `token-subject` (`.1.9`–`.1.24`). The deprecated
+  GitHub-specific extensions (`.1.2`–`.1.6`) are not adopted.
 
 In code this is one small enum of issuer kinds, each carrying its attribute
 set, used by config validation and by the certificate parser that produces
@@ -225,7 +228,11 @@ signer 'release-bot': unknown attribute 'build-config-ur' — did you mean 'buil
   **same full fingerprint** — 40 hex characters for v4, 64 for v6, compared
   exactly, ignoring case. A key ID or any other shortened value is rejected at
   load rather than matched as a suffix. It never matches an
-  `IdentityCredential`.
+  `IdentityCredential`. Every OpenPGP backend proves the full fingerprint of
+  the key that verified the signature and, when that is a subkey, of its
+  primary key, so policy may name either and all backends agree; a signature
+  that carries only a 64-bit key ID proves a key only once the verifying key
+  is found by it.
 - An identity entry matches a proven `IdentityCredential` when the proven
   issuer is the entry's `issuer` if it names one, or otherwise one of the
   listed issuers, and every attribute the entry names is present in the proven
@@ -268,15 +275,18 @@ including ones that are not the release pipeline, so pairing it with
 
 An OpenPGP identity is proven in two steps. The signature proves the key; the
 directory proves the address belongs to that key. So a UID becomes an
-`IdentityCredential(keys.openpgp.org, {email})` only when **that directory
+`IdentityCredential(https://keys.openpgp.org, {email})` only when **that directory
 served it** for the signing key — never from the local GnuPG keyring, from
 another keyserver, or from the evidence.
 
 - **The directory is queried in its own right**, by fingerprint, whatever the
   `keyservers` argument says. Otherwise a command-line keyserver change would
   decide whether an identity resolves. Signatures usually name the signing
-  subkey, so the lookup has to resolve a subkey fingerprint to its primary key;
-  which keys.openpgp.org endpoint does that is confirmed in P2.2.
+  subkey; keys.openpgp.org's `GET /vks/v1/by-fingerprint/<FPR>` accepts the
+  fingerprint of a primary key or any subkey (upper-case hex, no `0x`), and the
+  returned key is checked to hold that fingerprint. Lookups follow the
+  `resolve-signers` switch that governs network key fetching: when it is off, a
+  needed lookup leaves the claim `INDETERMINATE(KEY_UNAVAILABLE)`.
 - **It is queried only when needed**: when no key credential of the signer
   already satisfies the clause. A signer carrying fingerprints and an email
   stays offline for the keys already pinned, and only a new key costs a lookup.
@@ -315,25 +325,42 @@ signers:
     pgp4: 4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12   # keys already seen
     email: release@apache.org                          # keys to come
   release-bot:
-    sigstore:
-      source-repository-uri: https://github.com/acme/widget
-      build-config-uri: https://github.com/acme/widget/.github/workflows/release.yml
+    identities:
+      - source-repository-uri: https://github.com/acme/widget
+        build-config-uri: https://github.com/acme/widget/.github/workflows/release.yml
 ```
 
-**The config surface stays typed while the model is generic.** Each issuer kind
-gets its own entry shape with a fixed set of keys — `email:` for addresses,
-`sigstore:` for OIDC certificate attributes — rather than a generic
-`identity: {issuer: …, <any attribute>}`. A typed block lets the published JSON
-Schema (ADR-007) enumerate its properties with `additionalProperties: false`, so
-editors complete attribute names and flag a misspelling while it is typed; a
-generic block could not be checked until its issuer's kind was known. The
-attribute map stays internal, where it keeps matching uniform.
+**A signer lists complete identities.** Each entry under `identities` is an
+optional `issuer` and the attributes that issuer must have attested — the same
+shape as `IdentityCredential` — so one form covers every issuer kind and a
+signer may carry several, such as the same address from a directory and from
+an OIDC provider:
 
-The signer shape stays as it is. `email:` and the `sigstore:` block are
-identity entries; either may carry its own `issuer` in place of the list. A
-bare `email:` takes the list; to name an issuer it becomes a map
-(`email: {address: …, issuer: …}`). Today a `sigstore:` entry without an issuer
-accepts any OIDC issuer; under this model it accepts only listed ones.
+```yaml
+signers:
+  alice:
+    pgp4: 4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12
+    identities:
+      - issuer: keys.openpgp.org
+        email: alice@example.org
+      - issuer: https://accounts.google.com
+        email: alice@example.org
+```
+
+`email: <address>` remains as shorthand for an entry with only an address,
+vouched for by the listed issuers. There is no backend-named block: a
+`sigstore:` key would name how an identity is proven rather than who vouches for
+it, and a directory address and an OIDC address would be written two ways.
+Unknown signer keys are errors, so a misspelled or retired key fails at load
+instead of silently dropping a credential. A signer has no display name; its id
+is how rules and reports refer to it, and bootstrap writes the user ID a key
+carries as a comment, since it proves nothing.
+
+The trade-off against one typed block per issuer kind: the published JSON
+Schema (ADR-007) can check attribute names against the union of all kinds'
+vocabularies, so it catches a misspelling while it is typed, but it cannot tie a
+name to the entry's issuer kind. That check — `source-repository-uri` from a
+directory, say — happens at load, where the parser knows the kind.
 
 ### Key-material provenance
 
@@ -342,7 +369,9 @@ store, GnuPG keyring — and every claim carries it in its `TrustRootRef`.
 Provenance is recorded always and consulted only for identities: a hostile
 source cannot forge a fingerprint match, because the signature proves the key,
 but it can serve any UID. `BcRunner.fetchKey` records the source of every key it
-stores and stops preferring whichever keyserver returns UIDs.
+stores. It still prefers a keyserver copy that carries UIDs, so reports can show
+who a key claims to belong to: with UIDs never matched, that preference affects
+display text only and cannot widen acceptance.
 
 ### Consequence for §5.3
 
@@ -386,13 +415,15 @@ by a named directory.
 becomes a sealed interface over the two.
 
 **Config:** a top-level `issuers` list, empty by default, as the default for
-identity entries; an optional `issuer` on an entry, trusted for that entry
-only.
+identity entries; `identities` on a signer, each entry an optional `issuer`,
+trusted for that entry only, and its attributes; `email:` as shorthand.
 
 **Behaviour users would notice:** a `pgp4:` or `pgp6:` value shorter than a
 full fingerprint is a config error; an `email:` entry is a config error until an
-issuer that asserts email is listed or named on it; a `sigstore:` entry stops accepting
-unlisted OIDC issuers; a key in the local GnuPG keyring carrying a matching
+issuer that asserts email is listed; the `sigstore:` block and `name:` are
+replaced by `identities` and rejected as unknown keys; an identity entry without
+`issuer` accepts only listed issuers, where a `sigstore:` entry without one used
+to accept any; a key in the local GnuPG keyring carrying a matching
 address no longer satisfies anything; a publisher's new key is accepted without
 a policy change once they verify it at the directory; `sigmund inspect-signer`
 reports the source that supplied each key.

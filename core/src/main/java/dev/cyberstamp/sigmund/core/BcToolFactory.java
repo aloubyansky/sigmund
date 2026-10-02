@@ -59,7 +59,7 @@ final class BcToolFactory implements SignatureToolFactory {
         String fingerprint = null;
         if (tskBytes == null && tskFile == null) {
             fingerprint = settings.get("signing-fingerprint");
-            if (fingerprint == null && credential instanceof FingerprintCredential fp) {
+            if (fingerprint == null && credential instanceof KeyCredential fp) {
                 fingerprint = fp.fingerprint();
             }
         }

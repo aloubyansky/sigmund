@@ -22,15 +22,15 @@ import picocli.CommandLine.Parameters;
  * CLI command that inspects a signer identity across all available sources.
  *
  * <p>
- * Takes a signer identifier (fingerprint, email, or Sigstore identity) as input,
+ * Takes a signer identifier (a full fingerprint or an email) as input,
  * queries local stores and HKP keyservers, and prints a per-source report
  * showing key metadata, User IDs, and where the key was found vs. not found.
  *
  * <p>
  * The identifier is auto-detected by default: hex strings are treated as
  * fingerprints, strings containing {@code @} as emails. Explicit
- * {@code --fingerprint} or {@code --email} flags override auto-detection.
- * Sigstore identities require both {@code --sigstore-issuer} and {@code --sigstore-subject}.
+ * {@code --fingerprint} or {@code --email} flags override auto-detection. A Sigstore
+ * keyless identity has no key material to look up, so it cannot be inspected.
  *
  * @see SignerInspectionReportFormatter
  */
@@ -45,12 +45,6 @@ public class InspectSignerCommand implements Callable<Integer> {
 
     @Option(names = "--email", description = "Treat identifier as an email")
     boolean forceEmail;
-
-    @Option(names = "--sigstore-issuer", description = "Sigstore certificate OIDC issuer URL")
-    String sigstoreIssuer;
-
-    @Option(names = "--sigstore-subject", description = "Sigstore certificate SAN subject")
-    String sigstoreSubject;
 
     @Option(names = { "--keyservers", "--keyserver" }, split = ",", description = "Keyservers to query (comma-separated)")
     List<String> keyservers;
@@ -86,20 +80,16 @@ public class InspectSignerCommand implements Callable<Integer> {
      * Builds a {@link Credential} from the command-line arguments.
      *
      * <p>
-     * Priority: Sigstore (if both issuer and subject are set) → forced email →
-     * forced fingerprint → auto-detection via {@link CredentialParser#parse}.
+     * Priority: forced email → forced fingerprint → auto-detection via
+     * {@link CredentialParser#parse}.
      *
      * @return the parsed credential
      * @throws IllegalArgumentException if no identifier was provided or it cannot be parsed
      */
     Credential buildCredential() {
-        if (sigstoreIssuer != null && sigstoreSubject != null) {
-            return CredentialParser.fromSigstore(sigstoreIssuer, sigstoreSubject);
-        }
         if (identifier == null || identifier.isBlank()) {
             throw new IllegalArgumentException(
-                    "Provide a fingerprint or email as a positional argument, "
-                            + "or use --sigstore-issuer and --sigstore-subject");
+                    "Provide a fingerprint or email as a positional argument");
         }
         if (forceEmail) {
             return CredentialParser.fromEmail(identifier);

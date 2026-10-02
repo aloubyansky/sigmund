@@ -58,11 +58,12 @@ public class Sigmund implements AutoCloseable {
     private final SigningConfig signingConfig;
     private final List<SignatureFormat> formats;
     private final DiscoveryConfig discoveryConfig;
+    private final Map<String, OpenPgpDirectory> directories;
     private volatile boolean fetchWarningEmitted;
 
     private Sigmund(List<SignatureTool> tools, List<SignatureFormat> formats,
             List<EvidenceProvider> evidenceProviders, SigningConfig signingConfig,
-            DiscoveryConfig discoveryConfig) {
+            DiscoveryConfig discoveryConfig, OpenPgpDirectory directory) {
         if (tools.isEmpty()) {
             throw new SigmundException("No tools available");
         }
@@ -71,6 +72,7 @@ public class Sigmund implements AutoCloseable {
         this.evidenceProviders = evidenceProviders;
         this.signingConfig = signingConfig;
         this.discoveryConfig = discoveryConfig;
+        this.directories = Map.of(directory.name(), directory);
     }
 
     /**
@@ -83,11 +85,12 @@ public class Sigmund implements AutoCloseable {
     }
 
     /**
-     * Closes all tools that implement {@link AutoCloseable}.
+     * Closes all tools that implement {@link AutoCloseable}, and the OpenPGP directory.
      * <p>
      * Iterates through all registered tools and attempts to close any that
      * implement {@code AutoCloseable}. Exceptions thrown by individual tools
-     * are suppressed to ensure all tools have an opportunity to close.
+     * are suppressed to ensure all tools have an opportunity to close. The directory's
+     * HTTP client, if one was started, is released last.
      * <p>
      * This method is idempotent — calling it multiple times has the same
      * effect as calling it once.
@@ -103,6 +106,7 @@ public class Sigmund implements AutoCloseable {
                 }
             }
         }
+        directories.values().forEach(OpenPgpDirectory::close);
     }
 
     /**
@@ -214,7 +218,8 @@ public class Sigmund implements AutoCloseable {
      */
     public TrustVerifier verifier(TrustPolicy policy) {
         warnIfNoFetchCapableImporter();
-        return new TrustVerifier(policy, evidenceProviders);
+        return new TrustVerifier(policy, evidenceProviders, new ClaimIdentityResolver(policy,
+                directories, discoveryConfig.resolveSigners()));
     }
 
     private void warnIfNoFetchCapableImporter() {
@@ -433,6 +438,7 @@ public class Sigmund implements AutoCloseable {
         private final List<EvidenceProvider> extraProviders = new ArrayList<>();
         private ToolsConfig toolsConfig = ToolsConfig.EMPTY;
         private DiscoveryConfig discoveryConfig = DiscoveryConfig.DEFAULT;
+        private OpenPgpDirectory directory;
         private SigningConfig signingConfig;
         private PassphraseProvider bcPassphraseProvider;
 
@@ -444,6 +450,17 @@ public class Sigmund implements AutoCloseable {
          */
         public Builder toolsConfig(ToolsConfig tc) {
             this.toolsConfig = tc != null ? tc : ToolsConfig.EMPTY;
+            return this;
+        }
+
+        /**
+         * Replaces the directory asked for verified addresses, such as with a local stand-in.
+         *
+         * @param directory the directory
+         * @return this builder
+         */
+        Builder openPgpDirectory(OpenPgpDirectory directory) {
+            this.directory = directory;
             return this;
         }
 
@@ -609,7 +626,8 @@ public class Sigmund implements AutoCloseable {
                 }
 
                 return new Sigmund(List.copyOf(tools), List.copyOf(formats),
-                        List.copyOf(providers), signingConfig, discoveryConfig);
+                        List.copyOf(providers), signingConfig, discoveryConfig,
+                        directory != null ? directory : KeysOpenPgpOrgDirectory.standard());
             } catch (RuntimeException e) {
                 // Clean up any AutoCloseable tools before propagating the exception
                 closeTools();

@@ -241,13 +241,11 @@ The identifier is auto-detected by default: hex strings are treated as fingerpri
 | `<identifier>` | No | — | Signer identifier (fingerprint or email, auto-detected) |
 | `--fingerprint` | No | — | Treat identifier as a fingerprint |
 | `--email` | No | — | Treat identifier as an email |
-| `--sigstore-issuer` | No | — | Sigstore certificate OIDC issuer URL |
-| `--sigstore-subject` | No | — | Sigstore certificate SAN subject |
 | `--keyservers` | No | from config | Keyservers to query (comma-separated) |
 | `--tool` | No | all | Restrict inspection to a specific tool (`bc`, `sq`, `gpg`) |
 | `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
 
-Either a positional `<identifier>` or `--sigstore-issuer` + `--sigstore-subject` is required.
+A positional `<identifier>` is required: a full fingerprint or an email. A Sigstore keyless identity has no key material to look up, so it cannot be inspected.
 
 **Examples:**
 
@@ -261,14 +259,6 @@ Inspect an email:
 
 ```bash
 sigmund inspect-signer alice@example.com
-```
-
-Inspect a Sigstore identity:
-
-```bash
-sigmund inspect-signer \
-  --sigstore-issuer "https://token.actions.githubusercontent.com" \
-  --sigstore-subject "https://github.com/org/repo"
 ```
 
 ---

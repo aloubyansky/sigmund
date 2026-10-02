@@ -3,6 +3,8 @@ package dev.cyberstamp.sigmund.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.cyberstamp.sigmund.core.IdentityCredential;
+import dev.cyberstamp.sigmund.core.KeyCredential;
 import org.junit.jupiter.api.Test;
 
 class InspectSignerMojoTest {
@@ -14,8 +16,7 @@ class InspectSignerMojoTest {
 
         var credential = mojo.buildCredential();
 
-        assertThat(credential).isInstanceOf(
-                dev.cyberstamp.sigmund.core.FingerprintCredential.class);
+        assertThat(credential).isInstanceOf(KeyCredential.class);
         assertThat(credential.type()).isEqualTo("openpgp4");
     }
 
@@ -26,8 +27,7 @@ class InspectSignerMojoTest {
 
         var credential = mojo.buildCredential();
 
-        assertThat(credential).isInstanceOf(
-                dev.cyberstamp.sigmund.core.FingerprintCredential.class);
+        assertThat(credential).isInstanceOf(KeyCredential.class);
         assertThat(credential.type()).isEqualTo("openpgp6");
     }
 
@@ -38,20 +38,7 @@ class InspectSignerMojoTest {
 
         var credential = mojo.buildCredential();
 
-        assertThat(credential).isInstanceOf(
-                dev.cyberstamp.sigmund.core.EmailCredential.class);
-    }
-
-    @Test
-    void buildCredentialFromSigstore() {
-        var mojo = new InspectSignerMojo();
-        mojo.sigstoreIssuer = "https://issuer.example.com";
-        mojo.sigstoreSubject = "https://github.com/org/repo";
-
-        var credential = mojo.buildCredential();
-
-        assertThat(credential).isInstanceOf(
-                dev.cyberstamp.sigmund.core.SigstoreCredential.class);
+        assertThat(credential).isInstanceOf(IdentityCredential.class);
     }
 
     @Test

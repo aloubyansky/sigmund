@@ -3,7 +3,7 @@ package dev.cyberstamp.sigmund.core;
 /**
  * Verification result for a Sigstore signature bundle.
  * <p>
- * Carries Sigstore-specific fields: the extracted Sigstore credential,
+ * Carries Sigstore-specific fields: the identity the certificate proves,
  * the Rekor transparency log index, and the SAN subject type from the
  * Fulcio certificate. The {@code subjectType} uses RFC 5280 {@code GeneralName}
  * tag values (1 = rfc822Name for email, 6 = uniformResourceIdentifier
@@ -13,7 +13,7 @@ package dev.cyberstamp.sigmund.core;
  */
 public final class SigstoreVerifyResult extends VerifyResult {
 
-    private final SigstoreCredential sigstoreCredential;
+    private final IdentityCredential identity;
     private final String logIndex;
     private final int subjectType;
 
@@ -24,15 +24,15 @@ public final class SigstoreVerifyResult extends VerifyResult {
      * @param reason why verification could not complete, or {@code null}
      * @param signerDisplayName human-readable signer (typically the OIDC subject), or {@code null}
      * @param algorithm the algorithm name, or {@code null}
-     * @param sigstoreCredential extracted Sigstore certificate credential, or {@code null}
+     * @param identity the identity the certificate proves, or {@code null}
      * @param logIndex the Rekor transparency log entry index, or {@code null}
      * @param subjectType the SAN type from the Sigstore certificate
      */
     public SigstoreVerifyResult(ClaimOutcome outcome, IndeterminateReason reason,
-            String signerDisplayName, String algorithm, SigstoreCredential sigstoreCredential,
+            String signerDisplayName, String algorithm, IdentityCredential identity,
             String logIndex, int subjectType) {
         super(outcome, reason, signerDisplayName, algorithm);
-        this.sigstoreCredential = sigstoreCredential;
+        this.identity = identity;
         this.logIndex = logIndex;
         this.subjectType = subjectType;
     }
@@ -54,12 +54,13 @@ public final class SigstoreVerifyResult extends VerifyResult {
     }
 
     /**
-     * Returns the extracted Sigstore certificate credential, or {@code null}.
+     * Returns the identity the certificate proves: the OIDC issuer, plus the subject and the
+     * Fulcio certificate extensions it attested.
      *
-     * @return the Sigstore credential, or {@code null}
+     * @return the identity, or {@code null} when the certificate names no issuer
      */
-    public SigstoreCredential sigstoreCredential() {
-        return sigstoreCredential;
+    public IdentityCredential identity() {
+        return identity;
     }
 
     /**
@@ -68,7 +69,7 @@ public final class SigstoreVerifyResult extends VerifyResult {
      * @return the issuer URL, or {@code null}
      */
     public String issuer() {
-        return sigstoreCredential != null ? sigstoreCredential.issuer() : null;
+        return identity != null ? identity.issuer() : null;
     }
 
     /**

@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -21,7 +22,9 @@ import java.util.List;
  *        {@code sigstore}; the same name formats and toolchains are configured by
  * @param outcome what verification established
  * @param reason why verification could not complete, {@code null} unless indeterminate
- * @param attesterCredentials the credentials the claim proved, empty unless it verified
+ * @param attesterCredentials the credentials the claim proved: empty unless its signature
+ *        verified; a claim left indeterminate because an identity could not be looked up
+ *        keeps the key credentials its signature proved, for the report
  * @param attesterDisplayName a human-readable attester description, or {@code null}
  * @param role the capacity the attester acted in
  * @param trustRoot the trust root the claim was verified against
@@ -105,6 +108,34 @@ public record ClaimResult(
                 result.signerDisplayName(), AttesterRole.UNKNOWN, trustRoot, evidence,
                 claim.claimTime(), claim.claimTimeSource(), verifiedAt, result.algorithm(),
                 verifiedBy);
+    }
+
+    /**
+     * Returns a copy that also proves the given credentials, such as identities a directory
+     * vouched for once the key was known.
+     *
+     * @param additional the credentials to add
+     * @return the copy
+     */
+    public ClaimResult withAdditionalCredentials(List<Credential> additional) {
+        List<Credential> credentials = new ArrayList<>(attesterCredentials);
+        credentials.addAll(additional);
+        return new ClaimResult(kind, outcome, reason, credentials, attesterDisplayName, role,
+                trustRoot, evidence, claimTime, claimTimeSource, verifiedAt, algorithm,
+                verifiedBy);
+    }
+
+    /**
+     * Returns a copy that could not be resolved: the signature verified, but something the
+     * verdict depends on, such as the signer's identity, could not be established.
+     *
+     * @param unresolvedReason why the claim could not be resolved
+     * @return an indeterminate copy keeping the credentials already proven
+     */
+    public ClaimResult unresolved(IndeterminateReason unresolvedReason) {
+        return new ClaimResult(kind, ClaimOutcome.INDETERMINATE, unresolvedReason,
+                attesterCredentials, attesterDisplayName, role, trustRoot, evidence, claimTime,
+                claimTimeSource, verifiedAt, algorithm, verifiedBy);
     }
 
     /**

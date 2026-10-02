@@ -20,107 +20,299 @@ class SigmundConfigParserTest {
         @Test
         void minimalSignerEmailString() {
             var config = parse("""
+                    issuers: [keys.openpgp.org]
                     signers:
                       bob: "bob@example.com"
                     """);
             var bob = config.signers().get("bob");
             assertThat(bob).isNotNull();
-            assertThat(bob.displayName()).isEqualTo("bob");
             assertThat(bob.credentials().size()).isEqualTo(1);
-            assertThat(bob.credentials().get(0)).isInstanceOf(EmailCredential.class);
-            assertThat(((EmailCredential) bob.credentials().get(0)).email()).isEqualTo("bob@example.com");
+            assertThat(bob.credentials().get(0)).isInstanceOf(IdentityCredential.class);
+            assertThat(((IdentityCredential) bob.credentials().get(0)).attribute(IdentityCredential.EMAIL))
+                    .isEqualTo("bob@example.com");
         }
 
         @Test
         void objectSignerWithFingerprints() {
             var config = parse("""
+                    issuers: [keys.openpgp.org]
                     signers:
                       alice:
-                        name: "Alice"
                         email: "alice@example.com"
-                        openpgp4: "4AEE18F83AFDEB23"
-                        openpgp6: "ABCD1234ABCD1234"
+                        openpgp4: "4AEE18F83AFDEB23000000000000000000000000"
+                        openpgp6: "ABCD1234ABCD1234000000000000000000000000000000000000000000000000"
                     """);
             var alice = config.signers().get("alice");
-            assertThat(alice.displayName()).isEqualTo("Alice");
             assertThat(alice.credentials().size()).isEqualTo(3);
 
             var types = alice.credentials().stream().map(Credential::type).toList();
-            assertThat(types.contains("openpgp4")).isTrue();
-            assertThat(types.contains("openpgp6")).isTrue();
-            assertThat(types.contains("email")).isTrue();
+            assertThat(types).contains("openpgp4", "openpgp6", Credential.TYPE_IDENTITY);
         }
 
         @Test
-        void objectSignerWithSigstoreRepoUri() {
+        void objectSignerWithIdentityRepoUri() {
             var config = parse("""
                     signers:
                       ci-pipeline:
-                        name: "CI Pipeline"
-                        sigstore:
-                          issuer: "https://token.actions.githubusercontent.com"
-                          source-repository-uri: "https://github.com/org/repo"
+                        identities:
+                          - issuer: "https://token.actions.githubusercontent.com"
+                            source-repository-uri: "https://github.com/org/repo"
                     """);
             var ci = config.signers().get("ci-pipeline");
-            assertThat(ci.displayName()).isEqualTo("CI Pipeline");
             assertThat(ci.credentials().size()).isEqualTo(1);
-            assertThat(ci.credentials().get(0)).isInstanceOf(SigstoreCredential.class);
-            var sc = (SigstoreCredential) ci.credentials().get(0);
+            assertThat(ci.credentials().get(0)).isInstanceOf(IdentityCredential.class);
+            var sc = (IdentityCredential) ci.credentials().get(0);
             assertThat(sc.issuer()).isEqualTo("https://token.actions.githubusercontent.com");
-            assertThat(sc.sourceRepositoryUri()).isEqualTo("https://github.com/org/repo");
-            assertThat(sc.subject()).isNull();
+            assertThat(sc.attribute("source-repository-uri")).isEqualTo("https://github.com/org/repo");
+            assertThat(sc.attribute(IdentityCredential.SUBJECT)).isNull();
         }
 
         @Test
-        void objectSignerWithSigstoreSubject() {
+        void objectSignerWithIdentitySubject() {
             var config = parse("""
+                    issuers: [keys.openpgp.org]
                     signers:
                       ci-pipeline:
-                        sigstore:
-                          issuer: "https://token.actions.githubusercontent.com"
-                          subject: "https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0"
+                        identities:
+                          - issuer: "https://token.actions.githubusercontent.com"
+                            subject: "https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0"
                     """);
             var ci = config.signers().get("ci-pipeline");
-            assertThat(ci.credentials().get(0)).isInstanceOf(SigstoreCredential.class);
-            var sc = (SigstoreCredential) ci.credentials().get(0);
-            assertThat(sc.subject()).isEqualTo(
+            assertThat(ci.credentials().get(0)).isInstanceOf(IdentityCredential.class);
+            var sc = (IdentityCredential) ci.credentials().get(0);
+            assertThat(sc.attribute(IdentityCredential.SUBJECT)).isEqualTo(
                     "https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0");
         }
 
         @Test
-        void sigstoreUnknownFieldThrows() {
+        void identityUnknownFieldThrows() {
             assertThatThrownBy(() -> parse("""
                     signers:
                       ci-pipeline:
-                        sigstore:
-                          issuer: "https://token.actions.githubusercontent.com"
-                          oidc-subject: "https://github.com/org/repo"
+                        identities:
+                          - issuer: "https://token.actions.githubusercontent.com"
+                            oidc-subject: "https://github.com/org/repo"
                     """))
                     .isInstanceOf(PolicyConfigException.class)
                     .hasMessageContaining("oidc-subject");
         }
 
         @Test
-        void objectSignerWithSigstoreAllFields() {
+        void misspelledAttributeSuggestsTheKnownName() {
+            assertThatThrownBy(() -> parse("""
+                    signers:
+                      ci-pipeline:
+                        identities:
+                          - issuer: "https://token.actions.githubusercontent.com"
+                            build-config-ur: "https://github.com/org/repo/.github/workflows/release.yml"
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("did you mean 'build-config-uri'");
+        }
+
+        @Test
+        void extensionFromTheFulcioRegistryIsAccepted() {
             var config = parse("""
                     signers:
                       ci-pipeline:
+                        identities:
+                          - issuer: "https://token.actions.githubusercontent.com"
+                            source-repository-ref: "refs/heads/main"
+                    """);
+            var sc = (IdentityCredential) config.signers().get("ci-pipeline").credentials().get(0);
+            assertThat(sc.attribute("source-repository-ref")).isEqualTo("refs/heads/main");
+        }
+
+        @Test
+        void identityWithOnlyAnIssuerThrows() {
+            assertThatThrownBy(() -> parse("""
+                    signers:
+                      ci-pipeline:
+                        identities:
+                          - issuer: "https://token.actions.githubusercontent.com"
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("at least one attribute besides its issuer");
+        }
+
+        @Test
+        void identityWithoutIssuerNeedsAListedOidcIssuer() {
+            assertThatThrownBy(() -> parse("""
+                    signers:
+                      ci-pipeline:
+                        identities:
+                          - source-repository-uri: "https://github.com/org/repo"
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("no listed issuer can assert source-repository-uri");
+        }
+
+        @Test
+        void unclassifiableIssuerInTheListThrows() {
+            assertThatThrownBy(() -> parse("""
+                    issuers:
+                      - keyserver.ubuntu.com
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("keyserver.ubuntu.com")
+                    .hasMessageContaining("neither a known directory");
+        }
+
+        @Test
+        void knownDirectoryWithoutSchemeIsListedByItsUrl() {
+            var config = parse("""
+                    issuers:
+                      - keys.openpgp.org
+                      - https://keys.openpgp.org/
+                    """);
+            assertThat(config.trustPolicy().issuers()).containsExactly("https://keys.openpgp.org");
+        }
+
+        @Test
+        void emailWithoutAnyIssuerThrows() {
+            assertThatThrownBy(() -> parse("""
+                    signers:
+                      alice:
+                        email: "alice@example.com"
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("no listed issuer can assert email")
+                    .hasMessageContaining("keys.openpgp.org");
+        }
+
+        @Test
+        void identityNamesItsOwnIssuerWithoutListingIt() {
+            var config = parse("""
+                    signers:
+                      bot:
+                        identities:
+                          - issuer: "https://accounts.google.com"
+                            email: "bot@example.com"
+                    """);
+            var identity = (IdentityCredential) config.signers().get("bot").credentials().get(0);
+            assertThat(identity.issuer()).isEqualTo("https://accounts.google.com");
+            assertThat(identity.attribute(IdentityCredential.EMAIL)).isEqualTo("bot@example.com");
+            assertThat(config.trustPolicy().issuers()).isEmpty();
+        }
+
+        @Test
+        void emailIsAnAddressOnly() {
+            assertThatThrownBy(() -> parse("""
+                    signers:
+                      bot:
+                        email:
+                          address: "bot@example.com"
+                          issuer: "https://accounts.google.com"
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("to name its issuer, use 'identities'");
+        }
+
+        @Test
+        void unknownSignerKeyThrowsRatherThanDroppingACredential() {
+            assertThatThrownBy(() -> parse("""
+                    signers:
+                      ci:
                         sigstore:
                           issuer: "https://token.actions.githubusercontent.com"
                           source-repository-uri: "https://github.com/org/repo"
-                          build-trigger: "release"
-                          build-config-uri: "https://github.com/org/repo/.github/workflows/release.yml@refs/heads/main"
-                          runner-environment: "github-hosted"
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("unknown key 'sigstore'");
+        }
+
+        @Test
+        void nameIsNotASignerKey() {
+            assertThatThrownBy(() -> parse("""
+                    signers:
+                      alice:
+                        name: "Alice"
+                        pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("unknown key 'name'");
+        }
+
+        @Test
+        void oneSignerMayCarrySeveralIdentities() {
+            var config = parse("""
+                    signers:
+                      alice:
+                        identities:
+                          - issuer: keys.openpgp.org
+                            email: "alice@example.com"
+                          - issuer: "https://accounts.google.com"
+                            email: "alice@example.com"
+                    """);
+            var issuers = config.signers().get("alice").credentials().stream()
+                    .map(c -> ((IdentityCredential) c).issuer())
+                    .toList();
+            assertThat(issuers).containsExactly(IssuerKind.KEYS_OPENPGP_ORG, "https://accounts.google.com");
+        }
+
+        @Test
+        void inlineDirectoryCannotAssertWorkflowAttributes() {
+            assertThatThrownBy(() -> parse("""
+                    signers:
+                      ci:
+                        identities:
+                          - issuer: keys.openpgp.org
+                            source-repository-uri: "https://github.com/org/repo"
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("issuer 'https://keys.openpgp.org' cannot assert source-repository-uri");
+        }
+
+        @Test
+        void keyIdIsRejectedAsAFingerprint() {
+            assertThatThrownBy(() -> parse("""
+                    signers:
+                      alice:
+                        pgp4: "4AEE18F83AFDEB23"
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("Signer 'alice'")
+                    .hasMessageContaining("not a full fingerprint");
+        }
+
+        @Test
+        void identityWithoutIssuerUsesTheList() {
+            var config = parse("""
+                    issuers:
+                      - https://token.actions.githubusercontent.com
+                    signers:
+                      ci-pipeline:
+                        identities:
+                          - source-repository-uri: "https://github.com/org/repo"
+                    """);
+            var sc = (IdentityCredential) config.signers().get("ci-pipeline").credentials().get(0);
+            assertThat(sc.issuer()).isNull();
+            assertThat(config.trustPolicy().issuers())
+                    .containsExactly("https://token.actions.githubusercontent.com");
+        }
+
+        @Test
+        void objectSignerWithIdentityAllFields() {
+            var config = parse("""
+                    issuers: [keys.openpgp.org]
+                    signers:
+                      ci-pipeline:
+                        identities:
+                          - issuer: "https://token.actions.githubusercontent.com"
+                            source-repository-uri: "https://github.com/org/repo"
+                            build-trigger: "release"
+                            build-config-uri: "https://github.com/org/repo/.github/workflows/release.yml@refs/heads/main"
+                            runner-environment: "github-hosted"
                     """);
             var ci = config.signers().get("ci-pipeline");
-            assertThat(ci.credentials().get(0)).isInstanceOf(SigstoreCredential.class);
-            var sc = (SigstoreCredential) ci.credentials().get(0);
+            assertThat(ci.credentials().get(0)).isInstanceOf(IdentityCredential.class);
+            var sc = (IdentityCredential) ci.credentials().get(0);
             assertThat(sc.issuer()).isEqualTo("https://token.actions.githubusercontent.com");
-            assertThat(sc.sourceRepositoryUri()).isEqualTo("https://github.com/org/repo");
-            assertThat(sc.buildTrigger()).isEqualTo("release");
-            assertThat(sc.buildConfigUri()).isEqualTo(
+            assertThat(sc.attribute("source-repository-uri")).isEqualTo("https://github.com/org/repo");
+            assertThat(sc.attribute("build-trigger")).isEqualTo("release");
+            assertThat(sc.attribute("build-config-uri")).isEqualTo(
                     "https://github.com/org/repo/.github/workflows/release.yml@refs/heads/main");
-            assertThat(sc.runnerEnvironment()).isEqualTo("github-hosted");
+            assertThat(sc.attribute("runner-environment")).isEqualTo("github-hosted");
         }
 
         @Test
@@ -128,9 +320,9 @@ class SigmundConfigParserTest {
             var config = parse("""
                     signers:
                       alice:
-                        pgp4: "4AEE18F83AFDEB23"
+                        pgp4: "4AEE18F83AFDEB23000000000000000000000000"
                     """);
-            var fp = (FingerprintCredential) config.signers().get("alice").credentials().get(0);
+            var fp = (KeyCredential) config.signers().get("alice").credentials().get(0);
             assertThat(fp.type()).isEqualTo("openpgp4");
         }
 
@@ -139,9 +331,9 @@ class SigmundConfigParserTest {
             var config = parse("""
                     signers:
                       alice:
-                        pgp6: "ABCD1234ABCD1234"
+                        pgp6: "ABCD1234ABCD1234000000000000000000000000000000000000000000000000"
                     """);
-            var fp = (FingerprintCredential) config.signers().get("alice").credentials().get(0);
+            var fp = (KeyCredential) config.signers().get("alice").credentials().get(0);
             assertThat(fp.type()).isEqualTo("openpgp6");
         }
 
@@ -150,9 +342,9 @@ class SigmundConfigParserTest {
             var config = parse("""
                     signers:
                       alice:
-                        openpgp4: "4AEE18F83AFDEB23"
+                        openpgp4: "4AEE18F83AFDEB23000000000000000000000000"
                     """);
-            var fp = (FingerprintCredential) config.signers().get("alice").credentials().get(0);
+            var fp = (KeyCredential) config.signers().get("alice").credentials().get(0);
             assertThat(fp.type()).isEqualTo("openpgp4");
         }
 
@@ -161,94 +353,93 @@ class SigmundConfigParserTest {
             var config = parse("""
                     signers:
                       alice:
-                        openpgp6: "ABCD1234ABCD1234"
+                        openpgp6: "ABCD1234ABCD1234000000000000000000000000000000000000000000000000"
                     """);
-            var fp = (FingerprintCredential) config.signers().get("alice").credentials().get(0);
+            var fp = (KeyCredential) config.signers().get("alice").credentials().get(0);
             assertThat(fp.type()).isEqualTo("openpgp6");
         }
 
         @Test
         void objectSignerWithEmailAndFingerprint() {
             var config = parse("""
+                    issuers: [keys.openpgp.org]
                     signers:
                       alice:
-                        name: "Alice"
                         email: "alice@example.com"
-                        pgp4: "4AEE18F83AFDEB23"
+                        pgp4: "4AEE18F83AFDEB23000000000000000000000000"
                     """);
             var alice = config.signers().get("alice");
-            assertThat(alice.displayName()).isEqualTo("Alice");
             assertThat(alice.credentials().stream()
-                    .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("alice@example.com")))
+                    .anyMatch(c -> c instanceof IdentityCredential ec
+                            && ec.attribute(IdentityCredential.EMAIL).equals("alice@example.com")))
                     .isTrue();
         }
 
         @Test
         void organizationWithMembers() {
             var config = parse("""
+                    issuers: [keys.openpgp.org]
                     signers:
                       apache:
-                        name: "Apache Software Foundation"
                         members:
                           - openpgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
                             email: "dev@maven.apache.org"
                           - openpgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
                     """);
             var apache = config.signers().get("apache");
-            assertThat(apache.displayName()).isEqualTo("Apache Software Foundation");
             assertThat(apache.credentials().size()).isEqualTo(3);
 
             var fps = apache.credentials().stream()
-                    .filter(c -> c instanceof FingerprintCredential)
-                    .map(c -> ((FingerprintCredential) c).fingerprint())
+                    .filter(c -> c instanceof KeyCredential)
+                    .map(c -> ((KeyCredential) c).fingerprint())
                     .toList();
             assertThat(fps.size()).isEqualTo(2);
             assertThat(fps.contains("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12")).isTrue();
             assertThat(fps.contains("BBE7232D7991050B54C8EA0ADC08637CA615D22C")).isTrue();
 
             assertThat(apache.credentials().stream()
-                    .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("dev@maven.apache.org")))
+                    .anyMatch(c -> c instanceof IdentityCredential ec
+                            && ec.attribute(IdentityCredential.EMAIL).equals("dev@maven.apache.org")))
                     .isTrue();
         }
 
         @Test
         void membersWithMultipleCredentialTypes() {
             var config = parse("""
+                    issuers: [keys.openpgp.org]
                     signers:
                       team:
-                        name: "Release Team"
                         members:
-                          - openpgp4: "AAAA1111AAAA1111"
-                            openpgp6: "BBBB2222BBBB2222"
+                          - openpgp4: "AAAA1111AAAA1111000000000000000000000000"
+                            openpgp6: "BBBB2222BBBB2222000000000000000000000000000000000000000000000000"
                             email: "alice@example.com"
                     """);
             var team = config.signers().get("team");
             assertThat(team.credentials().size()).isEqualTo(3);
 
             var types = team.credentials().stream().map(Credential::type).toList();
-            assertThat(types.contains("openpgp4")).isTrue();
-            assertThat(types.contains("openpgp6")).isTrue();
-            assertThat(types.contains("email")).isTrue();
+            assertThat(types).contains("openpgp4", "openpgp6", Credential.TYPE_IDENTITY);
         }
 
         @Test
         void topLevelCredentialsCombinedWithMembers() {
             var config = parse("""
+                    issuers: [keys.openpgp.org]
                     signers:
                       org:
-                        name: "My Org"
                         email: "org@example.com"
                         members:
-                          - openpgp4: "CCCC3333CCCC3333"
+                          - openpgp4: "CCCC3333CCCC3333000000000000000000000000"
                     """);
             var org = config.signers().get("org");
             assertThat(org.credentials().size()).isEqualTo(2);
             assertThat(org.credentials().stream()
-                    .anyMatch(c -> c instanceof EmailCredential ec && ec.email().equals("org@example.com")))
+                    .anyMatch(c -> c instanceof IdentityCredential ec
+                            && ec.attribute(IdentityCredential.EMAIL).equals("org@example.com")))
                     .isTrue();
             assertThat(org.credentials().stream()
-                    .anyMatch(c -> c instanceof FingerprintCredential fc
-                            && fc.fingerprint().equals("CCCC3333CCCC3333")))
+                    .anyMatch(c -> c instanceof KeyCredential fc
+                            && fc.fingerprint().equals("CCCC3333CCCC3333000000000000000000000000")))
                     .isTrue();
         }
 
@@ -257,7 +448,6 @@ class SigmundConfigParserTest {
             assertThatThrownBy(() -> parse("""
                     signers:
                       empty-org:
-                        name: "Empty Org"
                         members: []
                     """))
                     .isInstanceOf(PolicyConfigException.class);
@@ -268,11 +458,10 @@ class SigmundConfigParserTest {
             assertThatThrownBy(() -> parse("""
                     signers:
                       bad-org:
-                        name: "Bad Org"
                         members:
-                          - openpgp4: "AAAA1111AAAA1111"
+                          - openpgp4: "AAAA1111AAAA1111000000000000000000000000"
                             members:
-                              - openpgp4: "BBBB2222BBBB2222"
+                              - openpgp4: "BBBB2222BBBB2222000000000000000000000000"
                     """))
                     .isInstanceOf(PolicyConfigException.class);
         }
@@ -282,7 +471,6 @@ class SigmundConfigParserTest {
             assertThatThrownBy(() -> parse("""
                     signers:
                       bad-org:
-                        name: "Bad Org"
                         members: "not-an-array"
                     """))
                     .isInstanceOf(PolicyConfigException.class);
@@ -295,6 +483,7 @@ class SigmundConfigParserTest {
         @Test
         void artifactGroupsExpandInTrust() {
             String yaml = """
+                    issuers: [keys.openpgp.org]
                     signers:
                       alice: "alice@example.com"
                     artifacts:
@@ -324,7 +513,7 @@ class SigmundConfigParserTest {
             var config = parse("""
                     signers:
                       alice:
-                        openpgp4: "4AEE18F83AFDEB23"
+                        openpgp4: "4AEE18F83AFDEB23000000000000000000000000"
                     trust:
                       "org.example:*": [alice]
                     """);
@@ -337,6 +526,7 @@ class SigmundConfigParserTest {
         @Test
         void trustMappingsSingleString() {
             var config = parse("""
+                    issuers: [keys.openpgp.org]
                     signers:
                       bob: "bob@example.com"
                     trust:
@@ -361,7 +551,6 @@ class SigmundConfigParserTest {
             var config = parse("""
                     signers:
                       apache:
-                        name: "Apache Software Foundation"
                         members:
                           - openpgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
                           - openpgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
@@ -376,11 +565,11 @@ class SigmundConfigParserTest {
             var creds = expected.get(0).credentials();
             assertThat(creds.size()).isEqualTo(2);
             assertThat(creds.stream()
-                    .anyMatch(c -> c instanceof FingerprintCredential fc
+                    .anyMatch(c -> c instanceof KeyCredential fc
                             && fc.fingerprint().equals("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12")))
                     .isTrue();
             assertThat(creds.stream()
-                    .anyMatch(c -> c instanceof FingerprintCredential fc
+                    .anyMatch(c -> c instanceof KeyCredential fc
                             && fc.fingerprint().equals("BBE7232D7991050B54C8EA0ADC08637CA615D22C")))
                     .isTrue();
         }
@@ -549,12 +738,12 @@ class SigmundConfigParserTest {
         void parsesCompleteConfig() {
             var config = parse("""
                     version: 1
+                    issuers: [keys.openpgp.org]
                     signers:
                       alice:
-                        name: "Alice"
                         email: "alice@example.com"
-                        pgp4: "4AEE18F83AFDEB23"
-                        pgp6: "ABCD1234ABCD1234"
+                        pgp4: "4AEE18F83AFDEB23000000000000000000000000"
+                        pgp6: "ABCD1234ABCD1234000000000000000000000000000000000000000000000000"
                       bob: "bob@example.com"
                     signing:
                       signer: alice

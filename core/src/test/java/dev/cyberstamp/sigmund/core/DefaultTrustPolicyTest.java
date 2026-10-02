@@ -45,7 +45,8 @@ class DefaultTrustPolicyTest {
         void listedEvidencePolicy() {
             var policy = new DefaultTrustPolicy(
                     Map.of(), List.of(), ListedEvidencePolicy.ALL,
-                    UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
+                    UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
+                    List.of());
             assertThat(policy.listedEvidence()).isEqualTo(ListedEvidencePolicy.ALL);
         }
 
@@ -53,7 +54,8 @@ class DefaultTrustPolicyTest {
         void unlistedEvidencePolicy() {
             var policy = new DefaultTrustPolicy(
                     Map.of(), List.of(), ListedEvidencePolicy.ANY,
-                    UnlistedEvidencePolicy.WARN, UntrustedPolicy.FAIL);
+                    UnlistedEvidencePolicy.WARN, UntrustedPolicy.FAIL,
+                    List.of());
             assertThat(policy.unlistedEvidence()).isEqualTo(UnlistedEvidencePolicy.WARN);
         }
 
@@ -61,7 +63,8 @@ class DefaultTrustPolicyTest {
         void untrustedPolicy() {
             var policy = new DefaultTrustPolicy(
                     Map.of(), List.of(), ListedEvidencePolicy.ANY,
-                    UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.WARN);
+                    UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.WARN,
+                    List.of());
             assertThat(policy.onUntrusted()).isEqualTo(UntrustedPolicy.WARN);
         }
 
@@ -69,7 +72,8 @@ class DefaultTrustPolicyTest {
         void storesAllValues() {
             var policy = new DefaultTrustPolicy(
                     Map.of(), List.of(), ListedEvidencePolicy.ANY,
-                    UnlistedEvidencePolicy.REQUIRE, UntrustedPolicy.WARN);
+                    UnlistedEvidencePolicy.REQUIRE, UntrustedPolicy.WARN,
+                    List.of());
             assertThat(policy.listedEvidence()).isEqualTo(ListedEvidencePolicy.ANY);
             assertThat(policy.unlistedEvidence()).isEqualTo(UnlistedEvidencePolicy.REQUIRE);
             assertThat(policy.onUntrusted()).isEqualTo(UntrustedPolicy.WARN);
@@ -81,12 +85,13 @@ class DefaultTrustPolicyTest {
 
         @Test
         void expectedSignersReturnsEmptyForUnmatchedPattern() {
-            var signer = new SignerIdentity("alice", "Alice",
-                    List.of(new FingerprintCredential("openpgp4", "AABB")));
+            var signer = new SignerIdentity("alice",
+                    List.of(new KeyCredential("openpgp4", "AABB000000000000000000000000000000000000")));
             var policy = new DefaultTrustPolicy(
                     Map.of("org.example:*", List.of(signer)),
                     List.of(), ListedEvidencePolicy.ALL,
-                    UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
+                    UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
+                    List.of());
 
             var unmatched = testArtifact("com.other", "lib", "1.0");
             assertThat(policy.expectedSigners(unmatched).isEmpty()).isTrue();
@@ -94,12 +99,13 @@ class DefaultTrustPolicyTest {
 
         @Test
         void expectedSignersReturnsSignersForMatchedPattern() {
-            var signer = new SignerIdentity("alice", "Alice",
-                    List.of(new FingerprintCredential("openpgp4", "AABB")));
+            var signer = new SignerIdentity("alice",
+                    List.of(new KeyCredential("openpgp4", "AABB000000000000000000000000000000000000")));
             var policy = new DefaultTrustPolicy(
                     Map.of("org.example:*", List.of(signer)),
                     List.of(), ListedEvidencePolicy.ALL,
-                    UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
+                    UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
+                    List.of());
 
             var matched = testArtifact("org.example", "lib", "1.0");
             var signers = policy.expectedSigners(matched);

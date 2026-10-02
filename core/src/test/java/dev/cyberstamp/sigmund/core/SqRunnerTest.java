@@ -13,6 +13,19 @@ import org.junit.jupiter.api.io.TempDir;
 class SqRunnerTest {
 
     @Test
+    void primaryFingerprintIsReadFromTheCertificate(@TempDir Path tempDir) throws Exception {
+        BcKeyStore store = new BcKeyStore(null, tempDir.resolve("cert-d"), tempDir.resolve("bc"));
+        String primary = new BcRunner(store, null, null).generateKey("A <a@example.org>", "ed25519");
+        Path certFile = tempDir.resolve("cert.pgp");
+        Files.write(certFile, store.findPublicKey(primary).ring().getEncoded());
+        String subkey = "1111111111111111111111111111111111111111";
+
+        assertThat(SqRunner.primaryFingerprintOf(certFile, subkey)).isEqualTo(primary.toUpperCase());
+        assertThat(SqRunner.primaryFingerprintOf(certFile, primary)).isNull();
+        assertThat(SqRunner.primaryFingerprintOf(null, subkey)).isNull();
+    }
+
+    @Test
     void parseCertInfoRsaCert() {
         String output = """
                 OpenPGP Certificate.

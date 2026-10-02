@@ -28,7 +28,7 @@ class BcKeyStoreTest {
         store.storeCert(pubRing);
 
         String fingerprint = BcKeyStore.bytesToHex(key.getFingerprint());
-        PGPPublicKeyRing found = store.findPublicKey(fingerprint);
+        PGPPublicKeyRing found = store.findPublicKey(fingerprint).ring();
         assertThat(found).isNotNull();
     }
 

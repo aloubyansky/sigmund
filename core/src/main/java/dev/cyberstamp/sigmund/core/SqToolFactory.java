@@ -21,7 +21,7 @@ final class SqToolFactory implements SignatureToolFactory {
         String executable = settings.getOrDefault("executable", "sq");
         Path home = resolveHome(settings);
         String fingerprint = settings.get("signing-fingerprint");
-        if (fingerprint == null && credential instanceof FingerprintCredential fp) {
+        if (fingerprint == null && credential instanceof KeyCredential fp) {
             fingerprint = fp.fingerprint();
         }
         if (fingerprint != null) {

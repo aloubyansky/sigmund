@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -50,7 +51,6 @@ import org.bouncycastle.openpgp.PGPSignatureSubpacketVector;
 import org.bouncycastle.openpgp.PGPUtil;
 import org.bouncycastle.openpgp.api.OpenPGPKey;
 import org.bouncycastle.openpgp.api.bc.BcOpenPGPApi;
-import org.bouncycastle.openpgp.api.bc.BcOpenPGPImplementation;
 import org.bouncycastle.openpgp.bc.BcPGPObjectFactory;
 import org.bouncycastle.openpgp.operator.bc.BcAEADSecretKeyEncryptorBuilder;
 import org.bouncycastle.openpgp.operator.bc.BcKeyFingerprintCalculator;
@@ -79,7 +79,7 @@ import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyEncryptorBuilder;
  * @see BcToolFactory
  * @see BcKeyStore
  */
-class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
+class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporter,
         CertExporter, SignerIdentityResolver, SignerInspection {
 
     private static final String NAME = "bc";
@@ -167,6 +167,24 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
     @Override
     public String name() {
         return NAME;
+    }
+
+    /**
+     * Releases the HTTP client used to fetch keys, if one was created.
+     *
+     * <p>
+     * {@link HttpClient} can be closed from Java 21 on; on Java 17 it has no close method,
+     * and its resources are released once the client is no longer reachable.
+     */
+    @Override
+    public void close() {
+        if (httpClient instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception ignored) {
+                // nothing left to release
+            }
+        }
     }
 
     /**
@@ -330,13 +348,20 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      *
      * <p>
      * Short-circuits if the key is already in the local keystore (previously
-     * fetched or pre-existing). Otherwise iterates configured keyservers,
+     * fetched or pre-existing). Otherwise, iterates configured keyservers,
      * checking the {@link KeyFetchCache} before each attempt. On success,
      * stores the key ephemerally (in-memory) or persistently (cert-d) based
      * on the {@code importToKeyring} flag. Connection-level failures (timeout,
      * refused) trip the per-keyserver circuit breaker. If the key is not found
      * on any healthy server, it is added to the negative cache to prevent
      * re-querying across artifacts.
+     *
+     * <p>
+     * A copy with user IDs is preferred, so reports can show who a key claims to belong to:
+     * keys.openpgp.org serves keys whose owners have not verified an address without any.
+     * That preference is safe because user IDs are display text only — the key material is
+     * proven by the signature, and identities come only from directories the policy names.
+     * The server that supplied the stored copy is recorded with the key.
      */
     @Override
     public boolean fetchKey(String keyId) {
@@ -346,11 +371,11 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
         if (!fetchCache.shouldAttemptKey(keyId)) {
             return false;
         }
-        PGPPublicKeyRing existing = keyStore.findPublicKey(keyId);
-        if (existing != null && hasUserIds(existing)) {
+        BcKeyStore.FoundKey existing = keyStore.findPublicKey(keyId);
+        if (existing != null && hasUserIds(existing.ring())) {
             return true;
         }
-        boolean fetched = false;
+        boolean fetched = existing != null;
         for (String keyserver : keyservers) {
             if (!fetchCache.shouldAttempt(keyserver, keyId)) {
                 continue;
@@ -380,6 +405,7 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
             } else {
                 keyStore.cacheEphemeral(keyRing);
             }
+            keyStore.recordFetchedFrom(keyRing, keyserver);
             fetchCache.recordSuccess(keyserver, keyId);
             return keyRing;
         } catch (Exception e) {
@@ -399,11 +425,11 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      */
     @Override
     public String exportCert(String fingerprint) {
-        PGPPublicKeyRing keyRing = keyStore.findPublicKey(fingerprint);
-        if (keyRing == null) {
+        BcKeyStore.FoundKey found = keyStore.findPublicKey(fingerprint);
+        if (found == null) {
             throw new ToolExecutionException("Certificate not found: " + fingerprint);
         }
-        return armorKeyRing(keyRing);
+        return armorKeyRing(found.ring());
     }
 
     /**
@@ -421,12 +447,19 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      * {@inheritDoc}
      *
      * <p>
-     * Supports {@link FingerprintCredential} and {@link EmailCredential}.
+     * Supports key material, looked up by fingerprint, and identities carrying an email
+     * address, looked up by the address in local stores. Looking a key up by address finds
+     * candidates; it proves nothing about who owns the address.
      */
     @Override
     public boolean canInspect(Credential credential) {
-        return credential instanceof FingerprintCredential
-                || credential instanceof EmailCredential;
+        return credential instanceof KeyCredential || emailOf(credential) != null;
+    }
+
+    private static String emailOf(Credential credential) {
+        return credential instanceof IdentityCredential identity
+                ? identity.attribute(IdentityCredential.EMAIL)
+                : null;
     }
 
     /**
@@ -444,7 +477,7 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
 
         inspectLocalStores(credential, results);
 
-        if (credential instanceof FingerprintCredential fc && httpClient != null) {
+        if (credential instanceof KeyCredential fc && httpClient != null) {
             String keyId = fc.fingerprint();
             for (String keyserver : keyservers) {
                 PGPPublicKeyRing keyRing = fetchKeyFromHkp(keyId, keyserver);
@@ -463,10 +496,13 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
     private void inspectLocalStores(Credential credential, List<SignerSourceResult> results) {
         if (keyStore.hasGnupgPubring()) {
             PGPPublicKeyRing key = null;
-            if (credential instanceof FingerprintCredential fc) {
+            if (credential instanceof KeyCredential fc) {
                 key = keyStore.findInGnupg(fc.fingerprint());
-            } else if (credential instanceof EmailCredential ec) {
-                key = keyStore.findInGnupgByEmail(ec.email());
+            } else {
+                String email = emailOf(credential);
+                if (email != null) {
+                    key = keyStore.findInGnupgByEmail(email);
+                }
             }
             results.add(key != null
                     ? new SignerSourceResult(SOURCE_LOCAL, SOURCE_GNUPG_PUBRING, true, extractKeyInfo(key))
@@ -475,10 +511,13 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
 
         if (keyStore.hasCertD()) {
             PGPPublicKeyRing key = null;
-            if (credential instanceof FingerprintCredential fc) {
+            if (credential instanceof KeyCredential fc) {
                 key = keyStore.findInCertDStore(fc.fingerprint());
-            } else if (credential instanceof EmailCredential ec) {
-                key = keyStore.findInCertDByEmail(ec.email());
+            } else {
+                String email = emailOf(credential);
+                if (email != null) {
+                    key = keyStore.findInCertDByEmail(email);
+                }
             }
             results.add(key != null
                     ? new SignerSourceResult(SOURCE_LOCAL, SOURCE_CERT_D, true, extractKeyInfo(key))
@@ -486,10 +525,13 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
         }
 
         PGPPublicKeyRing ephemeral = null;
-        if (credential instanceof FingerprintCredential fc) {
+        if (credential instanceof KeyCredential fc) {
             ephemeral = keyStore.findInEphemeralStore(fc.fingerprint());
-        } else if (credential instanceof EmailCredential ec) {
-            ephemeral = keyStore.findInEphemeralByEmail(ec.email());
+        } else {
+            String email = emailOf(credential);
+            if (email != null) {
+                ephemeral = keyStore.findInEphemeralByEmail(email);
+            }
         }
         if (ephemeral != null) {
             results.add(new SignerSourceResult(SOURCE_LOCAL, SOURCE_EPHEMERAL, true,
@@ -584,15 +626,14 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
                     null);
         }
 
-        PGPPublicKeyRing pubKeyRing = keyStore.findPublicKey(fingerprint);
-        if (pubKeyRing == null) {
+        BcKeyStore.FoundKey found = keyStore.findPublicKey(fingerprint);
+        if (found == null) {
             return OpenPgpVerifyResult.indeterminate(IndeterminateReason.KEY_UNAVAILABLE, null, algorithm, version, fingerprint,
                     fingerprint);
         }
 
-        String userId = keyStore.findPrimaryUserId(fingerprint);
-        return verifySignature(artifactFile, opgu, pubKeyRing, version,
-                fingerprint, algorithm, userId);
+        return verifySignature(artifactFile, opgu, found, version, fingerprint, algorithm,
+                keyStore.primaryUserIdOf(found.ring()));
     }
 
     private String extractKeyIdFromSignature(OpenPgpClaim opgu) {
@@ -612,8 +653,9 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      * Performs the cryptographic signature verification.
      */
     private OpenPgpVerifyResult verifySignature(Path artifactFile, OpenPgpClaim opgu,
-            PGPPublicKeyRing pubKeyRing, int version, String fingerprint,
+            BcKeyStore.FoundKey found, int version, String fingerprint,
             String algorithm, String userId) {
+        PGPPublicKeyRing pubKeyRing = found.ring();
         try {
             byte[] sigBytes = AscCombiner.dearmor(opgu.armoredBlock());
             PGPSignature signature = parseSignature(sigBytes);
@@ -638,10 +680,27 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
             boolean valid = verifyDetachedSignature(signature, verifyKey, artifactFile);
             return new OpenPgpVerifyResult(
                     valid ? ClaimOutcome.VERIFIED : ClaimOutcome.FAILED, null,
-                    userId, algorithm, version, fingerprint, fingerprint);
+                    userId, algorithm, version, fingerprint, fingerprint)
+                    .withKeyFingerprints(hex(verifyKey.getFingerprint()),
+                            primaryFingerprintOf(pubKeyRing, verifyKey))
+                    .withKeySource(found.source());
         } catch (Exception e) {
             return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint, fingerprint);
         }
+    }
+
+    /**
+     * Returns the certificate's primary fingerprint when the verifying key is a subkey.
+     */
+    private static String primaryFingerprintOf(PGPPublicKeyRing ring, PGPPublicKey verifyKey) {
+        PGPPublicKey primary = ring.getPublicKey();
+        return primary == null || primary.getKeyID() == verifyKey.getKeyID()
+                ? null
+                : hex(primary.getFingerprint());
+    }
+
+    private static String hex(byte[] bytes) {
+        return HexFormat.of().withUpperCase().formatHex(bytes);
     }
 
     /**
@@ -973,7 +1032,7 @@ class BcRunner implements SignatureTool, KeyGenerator, KeyImporter,
      * Distinguishes connection-level failures (which trip the circuit breaker)
      * from HTTP-level errors (key not found on a healthy server).
      */
-    private PGPPublicKeyRing fetchKeyFromHkp(String keyId, String keyserver) {
+    PGPPublicKeyRing fetchKeyFromHkp(String keyId, String keyserver) {
         String url = buildHkpUrl(keyserver, keyId);
         try {
             HttpRequest request = HttpRequest.newBuilder()

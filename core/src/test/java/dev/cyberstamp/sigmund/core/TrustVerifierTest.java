@@ -16,8 +16,8 @@ import org.junit.jupiter.api.io.TempDir;
 class TrustVerifierTest {
 
     private static final String FP = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
-    private static final SignerIdentity ALICE = new SignerIdentity("alice", "Alice",
-            List.of(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, FP)));
+    private static final SignerIdentity ALICE = new SignerIdentity("alice",
+            List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)));
     private static final ArtifactCoords COORDS = new ArtifactCoords("org.example", "lib", "", "jar", "1.0");
 
     @TempDir
@@ -36,7 +36,8 @@ class TrustVerifierTest {
     private static ArtifactResult assess(TrustPolicy policy, List<Path> evidenceFiles,
             ClaimResult... claims) {
         EvidenceProvider provider = provider(claims);
-        return new TrustVerifier(policy, List.of(provider))
+        return new TrustVerifier(policy, List.of(provider),
+                new ClaimIdentityResolver(policy, Map.of(), false))
                 .assess(COORDS, artifact, evidenceFiles);
     }
 
@@ -80,7 +81,8 @@ class TrustVerifierTest {
     private static TrustPolicy expecting(SignerIdentity signer,
             ListedEvidencePolicy listedEvidence) {
         return new DefaultTrustPolicy(Map.of(COORDS.namespace(), List.of(signer)), List.of(),
-                listedEvidence, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
+                listedEvidence, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
+                List.of());
     }
 
     @Nested
@@ -96,8 +98,8 @@ class TrustVerifierTest {
 
         @Test
         void aClaimFromAnotherSignerIsUnsatisfied() {
-            SignerIdentity mallory = new SignerIdentity("mallory", "Mallory",
-                    List.of(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, "DEADBEEF")));
+            SignerIdentity mallory = new SignerIdentity("mallory",
+                    List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, "DEADBEEF00000000000000000000000000000000")));
 
             ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ALL),
                     List.of(evidenceFile), verifiedBy(mallory));
@@ -145,8 +147,8 @@ class TrustVerifierTest {
 
         @Test
         void allClaimsRejectsEvidenceFromAnUnlistedSigner() {
-            SignerIdentity stranger = new SignerIdentity("stranger", "Stranger",
-                    List.of(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, "BEEF")));
+            SignerIdentity stranger = new SignerIdentity("stranger",
+                    List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, "BEEF000000000000000000000000000000000000")));
 
             ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ALL),
                     List.of(evidenceFile), verifiedBy(ALICE), verifiedBy(stranger));
@@ -156,8 +158,8 @@ class TrustVerifierTest {
 
         @Test
         void anyClaimAcceptsOnTheStrengthOfTheOneItNeeded() {
-            SignerIdentity stranger = new SignerIdentity("stranger", "Stranger",
-                    List.of(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, "BEEF")));
+            SignerIdentity stranger = new SignerIdentity("stranger",
+                    List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, "BEEF000000000000000000000000000000000000")));
 
             ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ANY),
                     List.of(evidenceFile), verifiedBy(ALICE), verifiedBy(stranger));

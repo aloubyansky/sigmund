@@ -8,6 +8,7 @@ Sigmund uses a `sigmund.yaml` file for configuration. This reference documents e
 - [Complete Example](#complete-example)
 - [Section Reference](#section-reference)
   - [version](#version)
+  - [issuers](#issuers)
   - [signers](#signers)
   - [signing](#signing)
   - [artifacts](#artifacts)
@@ -46,32 +47,33 @@ The **first file found wins**. Configuration files are not merged.
 # Schema version (optional, defaults to 1)
 version: 1
 
+# Issuers trusted to vouch for identities in entries that name none
+issuers:
+  - keys.openpgp.org
+  - https://token.actions.githubusercontent.com
+
 # Identity registry — define all trusted signers
 signers:
   # Full form: organization with multiple members
   apache:
-    name: "Apache Software Foundation"
     members:
       - pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
         email: "dev@maven.apache.org"
       - pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
   
-  # Single-key signer with multiple credential types
+  # Keys already seen, plus an address for keys to come
   jane:
-    name: "Jane Doe"
     pgp4: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
     pgp6: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
     email: "jane@example.com"
   
-  # CI/CD identity using Sigstore credentials
+  # CI/CD identity, attested by a Sigstore certificate
   github-bot:
-    name: "GitHub Actions Bot"
-    sigstore:
-      issuer: "https://token.actions.githubusercontent.com"
-      source-repository-uri: "https://github.com/myorg/myrepo"
-    email: "bot@example.com"
+    identities:
+      - source-repository-uri: "https://github.com/myorg/myrepo"
+        build-config-uri: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/heads/main"
   
-  # Minimal form: email-only signer
+  # Minimal form: an address, vouched for by a listed issuer
   jackson-dev: "tatu@fasterxml.com"
 
 # Artifact-to-signer trust mappings
@@ -181,6 +183,28 @@ The schema version for this configuration file. Currently, only version `1` is d
 version: 1
 ```
 
+### `issuers`
+
+**Type:** Array of issuer names  
+**Default:** `[]` (empty)
+
+The issuers trusted to vouch for identities in signer entries that do not name their own. This is the default grant for identities: a fingerprint needs no issuer, because the signature proves the key, but an email address or a CI workflow is only as good as whoever vouched for it.
+
+```yaml
+issuers:
+  - keys.openpgp.org
+  - https://token.actions.githubusercontent.com
+```
+
+Every issuer is an `https://` URL, and its kind is known from it, so it needs no configuration:
+
+- **`https://keys.openpgp.org`** — a directory that publishes an address on a key only after the address owner confirms it. It vouches for `email`. As a known directory it may be written without the scheme, `keys.openpgp.org`.
+- **Any other `https://` URL** — an OIDC issuer, proven through a Sigstore (Fulcio) certificate. It vouches for the certificate `subject`, `email` when the subject is an address, and the Fulcio certificate extensions listed under [`identities`](#object-form).
+
+Any other name without `https://` is a config error. Results always record the URL. The list is policy: it cannot be set from the command line, because it decides whether an identity is accepted at all.
+
+An entry may name its own `issuer` instead, which trusts that issuer for that entry only — it does not have to be listed. Listing an issuer makes it vouch for every entry that names none, so trusting an OIDC provider for one bot is better done inline.
+
 ### `signers`
 
 **Type:** Map of signer ID → signer definition  
@@ -190,44 +214,67 @@ Defines the identity registry of trusted signers. Each signer can be specified i
 
 #### Minimal Form (Email Only)
 
-A simple string value representing an email address.
+A simple string value: an email address, vouched for by one of the listed [`issuers`](#issuers).
 
 ```yaml
 signers:
   jackson-dev: "tatu@fasterxml.com"
 ```
 
-#### Single-Key Signer
+#### Object Form
 
-An object with credential fields. At least one credential type must be specified.
+An object with credential fields. At least one credential must be specified, and unknown keys are errors — an ignored key would silently drop a credential.
 
 ```yaml
 signers:
   jane:
-    name: "Jane Doe"                    # Optional display name
     pgp4: "ABCD...EF12"                 # OpenPGP v4 fingerprint (40 hex chars)
     pgp6: "1234...CDEF"                 # OpenPGP v6 fingerprint (64 hex chars)
-    email: "jane@example.com"           # Email address
-    sigstore:                           # Sigstore credential (matchable fields)
-      issuer: "https://token.actions.githubusercontent.com"
-      subject: "https://github.com/org/repo/.github/workflows/ci.yml@refs/heads/main"
+    email: "jane@example.com"           # Address vouched for by a listed issuer
+    identities:
+      - issuer: "https://token.actions.githubusercontent.com"   # optional; else the list
+        source-repository-uri: "https://github.com/org/repo"
 ```
 
 **Credential types:**
 
-- **`pgp4`** — OpenPGP v4 fingerprint (40 hexadecimal characters). Matched against OpenPGP v4 signatures. Alias: `openpgp4`.
-- **`pgp6`** — OpenPGP v6 fingerprint (64 hexadecimal characters). Matched against OpenPGP v6 signatures. Alias: `openpgp6`.
-- **`email`** — Email address. Matched case-insensitively against PGP user IDs and Sigstore OIDC subjects (when subject is an email).
-- **`sigstore`** — Sigstore certificate credential with matchable fields. Only the fields you specify need to match. Available fields:
-  - `issuer` — OIDC issuer URL
-  - `subject` — SAN subject (exact workflow+ref match, changes per release)
-  - `source-repository-uri` — source repository URL (stable across releases)
-  - `source-repository-owner-uri` — repository owner URL
-  - `build-trigger` — build trigger event (e.g., `release`, `push`)
-  - `build-config-uri` — build configuration URI (e.g., workflow file URI with ref)
-  - `runner-environment` — runner environment (e.g., `github-hosted`)
+- **`pgp4`** — OpenPGP v4 fingerprint, the full 40 hexadecimal characters. Alias: `openpgp4`.
+- **`pgp6`** — OpenPGP v6 fingerprint, the full 64 hexadecimal characters. Alias: `openpgp6`.
 
-  > **Signing-time vs verification-time matching:** When both `issuer` and `subject` are set and the signer is used for signing (`signing.signer`), the OIDC token is validated at signing time — mismatched identities are rejected before requesting a Fulcio certificate. All other fields (`source-repository-uri`, `build-trigger`, etc.) are Fulcio certificate extensions and are matched at verification time only. For CI pipelines where the `subject` includes a git ref that changes per release, use `issuer` + `source-repository-uri` for stable verification-time matching without config churn.
+  Fingerprints match exactly, ignoring case, against the key that made the signature or the primary key it belongs to. A 64-bit key ID is rejected at load: colliding key IDs can be generated, so a key ID would accept any key that shares it.
+
+- **`email`** — An address, accepted only as vouched for by one of the listed [`issuers`](#issuers). To name the issuer, write it under `identities` instead.
+
+  It matches, ignoring case, an address that a directory served for the signing key, or the address in a Sigstore certificate from that issuer. A user ID on an OpenPGP key is **never** matched on its own: anyone can put any address on a key they generate. When a key is not already pinned by a fingerprint, the directory is asked for the addresses it has verified for that key; if it cannot be reached, the artifact is `INDETERMINATE` (`key-unavailable`), never accepted.
+
+  An address is what lets a policy accept a key the publisher generates later. Its limit is that directory bindings are current state: after a publisher verifies the address for a new key, the directory serves the old key without it, so old signatures can no longer be tied to the address by a verifier that never saw them. Pair addresses with fingerprints — fingerprints for the keys already seen, the address for keys to come. What an address trusts is the directory's verification and the security of the email account.
+
+- **`identities`** — A list of complete identities, each an `issuer` (optional; otherwise the listed [`issuers`](#issuers)) and the attributes that issuer must have attested. Only the attributes you name need to match, and at least one besides `issuer` is required. One signer may carry several, for example the same address from two issuers:
+
+  ```yaml
+  identities:
+    - issuer: keys.openpgp.org
+      email: "alice@example.com"
+    - issuer: "https://accounts.google.com"
+      email: "alice@example.com"
+  ```
+
+  What an entry may name depends on its issuer's kind. A directory attests `email` only. An OIDC issuer attests the certificate `subject`, `email` when the subject is an address, and the Fulcio certificate extensions:
+  - `subject` — SAN subject (exact workflow+ref match, changes per release)
+  - `source-repository-uri`, `source-repository-ref`, `source-repository-digest`, `source-repository-identifier` — the source repository
+  - `source-repository-owner-uri`, `source-repository-owner-identifier` — its owner
+  - `source-repository-visibility-at-signing`
+  - `build-config-uri`, `build-config-digest` — the build configuration, e.g. the workflow file
+  - `build-signer-uri`, `build-signer-digest` — the workflow that signed, when it differs
+  - `build-trigger` — build trigger event (e.g., `release`, `push`)
+  - `runner-environment` — runner environment (e.g., `github-hosted`)
+  - `run-invocation-uri`, `deployment-environment`, `token-subject`
+
+  A misspelled attribute is an error with the nearest known name suggested, never ignored: an ignored attribute would widen the match. So is an attribute the entry's issuers cannot attest, such as `source-repository-uri` from a directory.
+
+  > **Stability versus precision:** `subject` carries the git ref, so it changes with every release. `source-repository-uri` is stable but alone accepts any workflow in the repository, including ones that are not the release pipeline; pair it with `build-config-uri`, and where it matters `build-trigger` and `runner-environment`.
+
+  > **Signing-time vs verification-time matching:** When both `issuer` and `subject` are set and the signer is used for signing (`signing.signer`), the OIDC token is validated at signing time — mismatched identities are rejected before requesting a Fulcio certificate. The other attributes are matched at verification time only.
 
 **Aliases:** `openpgp4` and `openpgp6` are accepted aliases for `pgp4` and `pgp6` respectively.
 
@@ -238,7 +285,6 @@ When a signer represents an organization, use the `members` array to list indivi
 ```yaml
 signers:
   apache:
-    name: "Apache Software Foundation"
     members:
       - pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
         email: "dev@maven.apache.org"
@@ -409,7 +455,7 @@ verification:
 
 - **`resolve-signers`** (boolean, default: `true`)
   
-  Whether to fetch missing keys from keyservers to resolve signer identities (names and emails). When `true` and a key is not found locally, tools attempt to fetch it from the configured keyservers. The behavior depends on the tool and `import-to-keyring`:
+  Whether to fetch missing keys from keyservers, and to ask directories named in `issuers` for the verified addresses of keys a policy entry needs. When `false`, a signature whose signer can only be established through a directory is `INDETERMINATE` (`key-unavailable`). When `true` and a key is not found locally, tools attempt to fetch it from the configured keyservers. The behavior depends on the tool and `import-to-keyring`:
 
   | `resolve-signers` | `import-to-keyring` | BC | GPG |
   |---|---|---|---|
@@ -432,7 +478,7 @@ verification:
 
 - **`keyservers`** (array of strings, default: `[hkps://keys.openpgp.org]`)
   
-  Keyserver URLs for fetching missing keys. Defaults to `hkps://keys.openpgp.org` because it verifies email addresses before publishing, preventing impersonation.
+  Keyserver URLs for fetching missing keys. The first keyserver that has a key supplies it, and the result records which one did. Keyservers supply key material only: the signature proves the key whoever served it, and a user ID a keyserver serves never becomes an identity — identities come only from [`issuers`](#issuers). That is why this is safe to change from the command line.
   
   ```yaml
   keyservers:
@@ -631,7 +677,6 @@ version: 1
 
 signers:
   release-team:
-    name: "Release Engineering"
     pgp4: "ABCD...EF12"  # v4 fingerprint for GPG compatibility
     pgp6: "1234...CDEF"  # v6 fingerprint for PQC
 
@@ -666,16 +711,16 @@ signing:
 
 No tool settings needed — ambient OIDC credentials from GitHub Actions are used automatically.
 
-To match signed artifacts against a specific Sigstore identity at verification time, add a signer with Sigstore credentials:
+To match signed artifacts against a specific Sigstore identity at verification time, add a signer with that identity:
 
 ```yaml
 version: 1
 
 signers:
   ci-bot:
-    sigstore:
-      issuer: "https://token.actions.githubusercontent.com"
-      source-repository-uri: "https://github.com/myorg/myrepo"
+    identities:
+      - issuer: "https://token.actions.githubusercontent.com"
+        source-repository-uri: "https://github.com/myorg/myrepo"
 
 signing:
   signer: ci-bot
@@ -689,12 +734,10 @@ version: 1
 
 signers:
   release-lead:
-    name: "Release Lead"
     pgp4: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
-    sigstore:
-      issuer: "https://token.actions.githubusercontent.com"
-      source-repository-uri: "https://github.com/myorg/myrepo"
-    email: "release@example.com"
+    identities:
+      - issuer: "https://token.actions.githubusercontent.com"
+        source-repository-uri: "https://github.com/myorg/myrepo"
 
 signing:
   signer: release-lead
@@ -711,7 +754,7 @@ tools:
     trusted-root: /etc/sigmund/trusted_root.json
 ```
 
-This produces both a `.asc` (OpenPGP) and a `.sigstore.json` (Sigstore bundle) for each artifact. Verifiers match the `email` credential across both backends.
+This produces both a `.asc` (OpenPGP) and a `.sigstore.json` (Sigstore bundle) for each artifact. Verifiers accept the `.asc` by the fingerprint and the bundle by the workflow identity.
 
 ### Strict Trust Policy
 

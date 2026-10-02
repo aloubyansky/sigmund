@@ -154,8 +154,8 @@ public interface SignatureTool {
      * <p>
      * The tool knows what credentials its results prove. For OpenPGP tools, this maps
      * the verified packet version to the credential type:
-     * {@code version < 6} → {@code FingerprintCredential("openpgp4", ...)},
-     * {@code version >= 6} → {@code FingerprintCredential("openpgp6", ...)}.
+     * {@code version < 6} → {@code KeyCredential("openpgp4", ...)},
+     * {@code version >= 6} → {@code KeyCredential("openpgp6", ...)}.
      * <p>
      * Returns an empty list unless the result is {@link ClaimOutcome#VERIFIED}: an
      * unverified claim proves no credential.

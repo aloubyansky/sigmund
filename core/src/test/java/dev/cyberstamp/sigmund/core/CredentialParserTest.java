@@ -46,8 +46,9 @@ class CredentialParserTest {
     @Test
     void fromEmail() {
         var cred = CredentialParser.fromEmail("user@example.com");
-        assertThat(cred.type()).isEqualTo("email");
-        assertThat(cred.email()).isEqualTo("user@example.com");
+        assertThat(cred.type()).isEqualTo(Credential.TYPE_IDENTITY);
+        assertThat(cred.issuer()).isNull();
+        assertThat(cred.attribute(IdentityCredential.EMAIL)).isEqualTo("user@example.com");
     }
 
     @Test
@@ -57,51 +58,30 @@ class CredentialParserTest {
     }
 
     @Test
-    void fromSigstoreWithIssuerAndSubject() {
-        var cred = CredentialParser.fromSigstore("https://token.actions.githubusercontent.com",
-                "https://github.com/org/repo");
-        assertThat(cred.type()).isEqualTo("sigstore");
-        assertThat(cred.issuer()).isEqualTo("https://token.actions.githubusercontent.com");
-        assertThat(cred.subject()).isEqualTo("https://github.com/org/repo");
-    }
-
-    @Test
-    void fromSigstoreNullIssuerThrows() {
-        assertThatThrownBy(() -> CredentialParser.fromSigstore(null, "subject"))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void fromSigstoreBlankSubjectThrows() {
-        assertThatThrownBy(() -> CredentialParser.fromSigstore("https://issuer", "  "))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
     void parseDetectsEmail() {
         var cred = CredentialParser.parse("user@example.com");
-        assertThat(cred).isInstanceOf(EmailCredential.class);
+        assertThat(cred).isInstanceOf(IdentityCredential.class);
     }
 
     @Test
     void parseDetectsFingerprint40() {
         var cred = CredentialParser.parse(FP40);
-        assertThat(cred).isInstanceOf(FingerprintCredential.class);
+        assertThat(cred).isInstanceOf(KeyCredential.class);
         assertThat(cred.type()).isEqualTo("openpgp4");
     }
 
     @Test
     void parseDetectsFingerprint64() {
         var cred = CredentialParser.parse(FP64);
-        assertThat(cred).isInstanceOf(FingerprintCredential.class);
+        assertThat(cred).isInstanceOf(KeyCredential.class);
         assertThat(cred.type()).isEqualTo("openpgp6");
     }
 
     @Test
-    void parseDetectsFingerprint16() {
-        var cred = CredentialParser.parse(FP16);
-        assertThat(cred).isInstanceOf(FingerprintCredential.class);
-        assertThat(cred.type()).isEqualTo("openpgp4");
+    void parseRejectsKeyId() {
+        assertThatThrownBy(() -> CredentialParser.parse(FP16))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("full fingerprint");
     }
 
     @Test
