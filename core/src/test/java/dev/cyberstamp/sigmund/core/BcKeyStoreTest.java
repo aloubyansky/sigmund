@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.List;
 import java.util.Set;
 import org.bouncycastle.openpgp.PGPPublicKeyRing;
 import org.bouncycastle.openpgp.PGPSecretKeyRing;
@@ -72,34 +73,74 @@ class BcKeyStoreTest {
     }
 
     /**
-     * Verifies that a key cached via {@link BcKeyStore#cacheEphemeral(PGPPublicKeyRing)}
-     * is returned by {@link BcKeyStore#findPublicKey(String)}, making it available for
-     * verification without being written to disk.
+     * Verifies that a key added via {@link BcKeyStore#addFetched(PGPPublicKeyRing, String)}
+     * is returned by {@link BcKeyStore#findPublicKey(String)} with the keyserver it came from.
      */
     @Test
-    void cacheEphemeralMakesKeyFindable(@TempDir Path tempDir) throws Exception {
+    void fetchedKeyIsFindableWithItsKeyserver(@TempDir Path tempDir) throws Exception {
         BcKeyStore store = new BcKeyStore(null, tempDir.resolve("cert-d"), tempDir.resolve("bc-private"));
 
         OpenPGPKey key = generateEd25519Key("Ephemeral <ephemeral@example.com>");
         PGPPublicKeyRing pubRing = key.toCertificate().getPGPPublicKeyRing();
-        store.cacheEphemeral(pubRing);
+        store.addFetched(pubRing, "hkps://keys.example.org");
 
         String fingerprint = BcKeyStore.bytesToHex(key.getFingerprint());
-        assertThat(store.findPublicKey(fingerprint)).isNotNull();
+        assertThat(store.findPublicKey(fingerprint).source())
+                .isEqualTo(TrustRootRef.keyserver("hkps://keys.example.org"));
+    }
+
+    @Test
+    void persistingStoreWritesFetchedKeysToCertDAndStillNamesTheKeyserver(@TempDir Path tempDir)
+            throws Exception {
+        Path certD = tempDir.resolve("cert-d");
+        BcKeyStore store = new BcKeyStore(null, certD, tempDir.resolve("bc-private"), true);
+
+        OpenPGPKey key = generateEd25519Key("Persisted <persisted@example.com>");
+        store.addFetched(key.toCertificate().getPGPPublicKeyRing(), "hkps://keys.example.org");
+
+        String fingerprint = BcKeyStore.bytesToHex(key.getFingerprint());
+        assertThat(Files.isDirectory(certD)).isTrue();
+        BcKeyStore laterSession = new BcKeyStore(null, certD, tempDir.resolve("bc-private"));
+        assertThat(laterSession.findPublicKey(fingerprint).source())
+                .isEqualTo(TrustRootRef.certD(certD));
+        assertThat(store.findPublicKey(fingerprint).source())
+                .isEqualTo(TrustRootRef.keyserver("hkps://keys.example.org"));
+    }
+
+    @Test
+    void inspectionAnswersPerStore(@TempDir Path tempDir) throws Exception {
+        Path certD = tempDir.resolve("cert-d");
+        BcKeyStore store = new BcKeyStore(null, certD, tempDir.resolve("bc-private"));
+        OpenPGPKey stored = generateEd25519Key("Stored <stored@example.com>");
+        store.storeCert(stored.toCertificate().getPGPPublicKeyRing());
+        OpenPGPKey fetched = generateEd25519Key("Fetched <fetched@example.com>");
+        store.addFetched(fetched.toCertificate().getPGPPublicKeyRing(), "hkps://keys.example.org");
+
+        List<BcKeyStore.KeyLookup> byFingerprint = store.inspect(BcKeyStore.bytesToHex(fetched.getFingerprint()), null);
+        assertThat(byFingerprint).extracting(BcKeyStore.KeyLookup::source)
+                .containsExactly(TrustRootRef.certD(certD), TrustRootRef.keyserver("hkps://keys.example.org"));
+        assertThat(byFingerprint.get(0).ring()).isNull();
+        assertThat(byFingerprint.get(1).ring()).isNotNull();
+
+        List<BcKeyStore.KeyLookup> byEmail = store.inspect(null, "Stored@Example.com");
+        assertThat(byEmail).extracting(BcKeyStore.KeyLookup::source).containsExactly(TrustRootRef.certD(certD));
+        assertThat(byEmail.get(0).ring()).isNotNull();
+
+        assertThat(store.inspect(null, null)).isEmpty();
     }
 
     /**
-     * Verifies that {@link BcKeyStore#cacheEphemeral(PGPPublicKeyRing)} does not write
+     * Verifies that {@link BcKeyStore#addFetched(PGPPublicKeyRing, String)} does not write
      * any files to the cert-d directory. The key exists only in memory.
      */
     @Test
-    void ephemeralKeyNotPersistedToDisk(@TempDir Path tempDir) throws Exception {
+    void fetchedKeyNotPersistedByDefault(@TempDir Path tempDir) throws Exception {
         Path certD = tempDir.resolve("cert-d");
         BcKeyStore store = new BcKeyStore(null, certD, tempDir.resolve("bc-private"));
 
         OpenPGPKey key = generateEd25519Key("NoDisk <nodisk@example.com>");
         PGPPublicKeyRing pubRing = key.toCertificate().getPGPPublicKeyRing();
-        store.cacheEphemeral(pubRing);
+        store.addFetched(pubRing, "hkps://keys.example.org");
 
         assertThat(Files.exists(certD)).as("cert-d directory should not be created for ephemeral keys").isFalse();
     }

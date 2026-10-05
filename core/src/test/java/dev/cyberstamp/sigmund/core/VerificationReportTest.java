@@ -50,7 +50,7 @@ class VerificationReportTest {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
                     List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, fingerprint)),
                     attester, AttesterRole.UNKNOWN,
-                    TrustRootRef.keyring(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
+                    TrustRootRef.certD(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
                     Instant.parse("2026-03-12T10:04:11Z"), ClaimTimeSource.SIGNER,
                     Instant.EPOCH, "Ed25519", "bc");
         }
@@ -74,7 +74,7 @@ class VerificationReportTest {
 
             assertThat(groups.get(0).detail()).containsExactly(
                     "  credential openpgp4 " + FP,
-                    "  trust root openpgp-keyring /home/alice/.local/share/pgp.cert.d");
+                    "  trust root openpgp-cert-d /home/alice/.local/share/pgp.cert.d");
         }
 
         @Test
@@ -171,7 +171,7 @@ class VerificationReportTest {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
                     List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)),
                     "Alice <alice@example.com>", AttesterRole.PUBLISHER,
-                    TrustRootRef.keyring(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
+                    TrustRootRef.certD(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
                     claimTime, ClaimTimeSource.SIGNER, Instant.parse("2026-09-24T08:00:00Z"),
                     "Ed25519", "bc");
         }

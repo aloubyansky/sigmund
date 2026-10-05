@@ -84,45 +84,50 @@ class BcToolFactoryTest {
     void ephemeralKeySignAndVerifyRoundTrip(@TempDir Path tempDir) throws Exception {
         BcKeyStore store = new BcKeyStore(null, tempDir.resolve("cert-d"),
                 tempDir.resolve("bc-private"));
-        BcRunner generator = new BcRunner(store, null, null);
-        String fingerprint = generator.generateKey("CI <ci@example.com>", "ed25519");
+        String fingerprint;
+        try (BcRunner generator = new BcRunner(store, null, null)) {
+            fingerprint = generator.generateKey("CI <ci@example.com>", "ed25519");
+        }
 
         PGPSecretKeyRing ring = store.findSecretKey(fingerprint);
         byte[] armoredKey = armorSecretKey(ring);
 
-        BcRunner signer = new BcRunner(store, null, null,
-                armoredKey, null, false, false, List.of());
-        assertThat(signer.canSign()).isTrue();
+        try (BcRunner signer = new BcRunner(store, null, null,
+                armoredKey, null, null)) {
+            assertThat(signer.canSign()).isTrue();
 
-        Path artifact = tempDir.resolve("artifact.jar");
-        Files.writeString(artifact, "test artifact content");
-        Path sigFile = tempDir.resolve("artifact.jar.asc");
+            Path artifact = tempDir.resolve("artifact.jar");
+            Files.writeString(artifact, "test artifact content");
+            Path sigFile = tempDir.resolve("artifact.jar.asc");
 
-        SignResult signResult = signer.sign(artifact, sigFile);
-        assertThat(signResult.algorithm()).isNotNull();
-        assertThat(Files.exists(sigFile)).isTrue();
+            SignResult signResult = signer.sign(artifact, sigFile);
+            assertThat(signResult.algorithm()).isNotNull();
+            assertThat(Files.exists(sigFile)).isTrue();
 
-        String armored = Files.readString(sigFile);
-        OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
-        OpenPgpClaim claim = new OpenPgpClaim(
-                armored, info.version(), info.issuerFingerprint(), info.algorithmId(), null);
+            String armored = Files.readString(sigFile);
+            OpenPgpSignaturePacketInfo info = AscCombiner.inspectSignaturePacket(armored);
+            OpenPgpClaim claim = new OpenPgpClaim(
+                    armored, info.version(), info.issuerFingerprint(), info.algorithmId(), null);
 
-        VerifyResult result = signer.verify(artifact, claim);
-        assertThat(result.isVerified()).isTrue();
+            VerifyResult result = signer.verify(artifact, claim);
+            assertThat(result.isVerified()).isTrue();
+        }
     }
 
     @Test
     void ephemeralKeyOnlyBcInSigner(@TempDir Path tempDir) throws Exception {
         BcKeyStore store = new BcKeyStore(null, tempDir.resolve("cert-d"),
                 tempDir.resolve("bc-private"));
-        BcRunner generator = new BcRunner(store, null, null);
-        String fingerprint = generator.generateKey("CI <ci@example.com>", "ed25519");
+        String fingerprint;
+        try (BcRunner generator = new BcRunner(store, null, null)) {
+            fingerprint = generator.generateKey("CI <ci@example.com>", "ed25519");
+        }
 
         PGPSecretKeyRing ring = store.findSecretKey(fingerprint);
         byte[] armoredKey = armorSecretKey(ring);
 
         BcRunner bcSigner = new BcRunner(store, null, null,
-                armoredKey, null, false, false, List.of());
+                armoredKey, null, null);
 
         Signer signer = new Signer(List.of(bcSigner));
 

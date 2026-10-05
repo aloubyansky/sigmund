@@ -24,8 +24,10 @@ class BcRunnerSignerInspectionTest {
         }
         BcKeyStore store = new BcKeyStore(null, certD,
                 tempDir.resolve("bc-private"));
-        return new BcRunner(store, null, null, null, null,
-                resolveSigners, false, keyservers);
+        KeyserverFetcher fetcher = resolveSigners && !keyservers.isEmpty()
+                ? new KeyserverFetcher(store, keyservers)
+                : null;
+        return new BcRunner(store, null, null, null, null, fetcher);
     }
 
     @Test
@@ -57,6 +59,7 @@ class BcRunnerSignerInspectionTest {
                         "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"));
         assertThat(results.isEmpty()).isFalse();
         assertThat(results.stream().allMatch(r -> !r.found())).isTrue();
-        assertThat(results.stream().anyMatch(r -> "cert-d store".equals(r.sourceLabel()))).isTrue();
+        assertThat(results.stream().anyMatch(
+                r -> r.sourceLabel().startsWith(TrustRootRef.KIND_OPENPGP_CERT_D + " "))).isTrue();
     }
 }

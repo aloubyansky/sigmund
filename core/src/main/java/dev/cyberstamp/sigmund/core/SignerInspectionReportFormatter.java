@@ -8,8 +8,8 @@ import java.util.function.Consumer;
  * Formats a {@link SignerInspectionReport} as human-readable text output.
  *
  * <p>
- * Results are grouped into local sources (GnuPG pubring, cert-d store,
- * ephemeral cache) and remote sources (HKP keyservers), each with per-source
+ * Results are grouped into local sources (the GnuPG keyring, the cert-d store, keys fetched
+ * this session) and remote sources (HKP keyservers), each with per-source
  * detail sections showing key metadata.
  *
  * <p>

@@ -5,18 +5,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
-import java.net.ConnectException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
 import java.security.spec.ECGenParameterSpec;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -86,15 +79,9 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
 
     private static final String SOURCE_LOCAL = "local";
     private static final String SOURCE_HKP = "hkp";
-    private static final String SOURCE_GNUPG_PUBRING = "GnuPG pubring";
-    private static final String SOURCE_CERT_D = "cert-d store";
-    private static final String SOURCE_EPHEMERAL = "ephemeral cache";
 
     private static final Set<String> SUPPORTED_CREDENTIAL_TYPES = Set.of(
             Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6);
-
-    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
     private final BcOpenPGPApi api;
     private final BcKeyStore keyStore;
@@ -103,11 +90,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
     private final byte[] tskBytes;
     private final PassphraseProvider passphraseProvider;
     private final OpenPgpSignatureFormat format;
-    private final boolean resolveSigners;
-    private final boolean importToKeyring;
-    private final List<String> keyservers;
-    private final KeyFetchCache fetchCache;
-    private final HttpClient httpClient;
+    private final KeyserverFetcher fetcher;
 
     /**
      * Creates a new BC runner without passphrase support or key fetching.
@@ -117,7 +100,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
      * @param tskFile the path to a TSK file for signing, or {@code null}
      */
     BcRunner(BcKeyStore keyStore, String signingFingerprint, Path tskFile) {
-        this(keyStore, signingFingerprint, tskFile, null, null, false, false, List.of());
+        this(keyStore, signingFingerprint, tskFile, null, null, null);
     }
 
     /**
@@ -130,7 +113,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
      */
     BcRunner(BcKeyStore keyStore, String signingFingerprint, Path tskFile,
             PassphraseProvider passphraseProvider) {
-        this(keyStore, signingFingerprint, tskFile, null, passphraseProvider, false, false, List.of());
+        this(keyStore, signingFingerprint, tskFile, null, passphraseProvider, null);
     }
 
     /**
@@ -141,13 +124,12 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
      * @param tskFile the path to a TSK file for signing, or {@code null}
      * @param tskBytes raw TSK key material (e.g. from an env var), or {@code null}
      * @param passphraseProvider provides passphrases for encrypted keys, or {@code null}
-     * @param resolveSigners whether to fetch missing keys from keyservers
-     * @param importToKeyring whether to persist fetched keys to disk (cert-d) or cache in memory
-     * @param keyservers keyserver URLs to fetch from
+     * @param fetcher fetches missing keys from keyservers, or {@code null} when keys are not
+     *        fetched
      */
     BcRunner(BcKeyStore keyStore, String signingFingerprint, Path tskFile,
             byte[] tskBytes, PassphraseProvider passphraseProvider,
-            boolean resolveSigners, boolean importToKeyring, List<String> keyservers) {
+            KeyserverFetcher fetcher) {
         this.api = new BcOpenPGPApi();
         this.keyStore = keyStore;
         this.signingFingerprint = signingFingerprint;
@@ -155,13 +137,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
         this.tskBytes = tskBytes != null ? tskBytes.clone() : null;
         this.passphraseProvider = passphraseProvider;
         this.format = new OpenPgpSignatureFormat();
-        this.resolveSigners = resolveSigners;
-        this.importToKeyring = importToKeyring;
-        this.keyservers = keyservers != null ? List.copyOf(keyservers) : List.of();
-        this.fetchCache = new KeyFetchCache();
-        this.httpClient = resolveSigners && !this.keyservers.isEmpty()
-                ? HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build()
-                : null;
+        this.fetcher = fetcher;
     }
 
     @Override
@@ -170,20 +146,12 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
     }
 
     /**
-     * Releases the HTTP client used to fetch keys, if one was created.
-     *
-     * <p>
-     * {@link HttpClient} can be closed from Java 21 on; on Java 17 it has no close method,
-     * and its resources are released once the client is no longer reachable.
+     * Releases the keyserver fetcher's HTTP client, if keys are fetched.
      */
     @Override
     public void close() {
-        if (httpClient instanceof AutoCloseable closeable) {
-            try {
-                closeable.close();
-            } catch (Exception ignored) {
-                // nothing left to release
-            }
+        if (fetcher != null) {
+            fetcher.close();
         }
     }
 
@@ -252,7 +220,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
      */
     @Override
     public TrustRootRef trustRoot() {
-        return TrustRootRef.keyring(keyStore.certDHome());
+        return TrustRootRef.certD(keyStore.certDHome());
     }
 
     /**
@@ -334,87 +302,23 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
      * {@inheritDoc}
      *
      * <p>
-     * BC can always fetch ephemerally (in-memory) regardless of the
-     * {@code importToKeyring} setting. Returns {@code true} when
-     * {@code resolveSigners} is enabled and at least one keyserver is configured.
+     * BC can always fetch, whether the key store keeps fetched keys in memory or persists
+     * them. Returns {@code true} when a keyserver fetcher is configured.
      */
     @Override
     public boolean canFetchKeys() {
-        return resolveSigners && !keyservers.isEmpty();
+        return fetcher != null;
     }
 
     /**
      * {@inheritDoc}
      *
      * <p>
-     * Short-circuits if the key is already in the local keystore (previously
-     * fetched or pre-existing). Otherwise, iterates configured keyservers,
-     * checking the {@link KeyFetchCache} before each attempt. On success,
-     * stores the key ephemerally (in-memory) or persistently (cert-d) based
-     * on the {@code importToKeyring} flag. Connection-level failures (timeout,
-     * refused) trip the per-keyserver circuit breaker. If the key is not found
-     * on any healthy server, it is added to the negative cache to prevent
-     * re-querying across artifacts.
-     *
-     * <p>
-     * A copy with user IDs is preferred, so reports can show who a key claims to belong to:
-     * keys.openpgp.org serves keys whose owners have not verified an address without any.
-     * That preference is safe because user IDs are display text only — the key material is
-     * proven by the signature, and identities come only from directories the policy names.
-     * The server that supplied the stored copy is recorded with the key.
+     * Delegates to the {@link KeyserverFetcher}, which adds what it fetches to the key store.
      */
     @Override
     public boolean fetchKey(String keyId) {
-        if (!canFetchKeys()) {
-            return false;
-        }
-        if (!fetchCache.shouldAttemptKey(keyId)) {
-            return false;
-        }
-        BcKeyStore.FoundKey existing = keyStore.findPublicKey(keyId);
-        if (existing != null && hasUserIds(existing.ring())) {
-            return true;
-        }
-        boolean fetched = existing != null;
-        for (String keyserver : keyservers) {
-            if (!fetchCache.shouldAttempt(keyserver, keyId)) {
-                continue;
-            }
-            PGPPublicKeyRing ring = fetchFromHkpAndStore(keyId, keyserver);
-            if (ring != null) {
-                fetched = true;
-                if (hasUserIds(ring)) {
-                    return true;
-                }
-            }
-        }
-        if (!fetched) {
-            fetchCache.recordKeyNotFound(keyId);
-        }
-        return fetched;
-    }
-
-    PGPPublicKeyRing fetchFromHkpAndStore(String keyId, String keyserver) {
-        try {
-            PGPPublicKeyRing keyRing = fetchKeyFromHkp(keyId, keyserver);
-            if (keyRing == null) {
-                return null;
-            }
-            if (importToKeyring) {
-                keyStore.storeCert(keyRing);
-            } else {
-                keyStore.cacheEphemeral(keyRing);
-            }
-            keyStore.recordFetchedFrom(keyRing, keyserver);
-            fetchCache.recordSuccess(keyserver, keyId);
-            return keyRing;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static boolean hasUserIds(PGPPublicKeyRing ring) {
-        return ring.getPublicKey().getUserIDs().hasNext();
+        return fetcher != null && fetcher.fetch(keyId);
     }
 
     /**
@@ -425,7 +329,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
      */
     @Override
     public String exportCert(String fingerprint) {
-        BcKeyStore.FoundKey found = keyStore.findPublicKey(fingerprint);
+        BcKeyStore.KeyLookup found = keyStore.findPublicKey(fingerprint);
         if (found == null) {
             throw new ToolExecutionException("Certificate not found: " + fingerprint);
         }
@@ -466,21 +370,21 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
      * {@inheritDoc}
      *
      * <p>
-     * Queries local stores (GnuPG pubring, cert-d, ephemeral cache) and, for
+     * Queries local stores (the GnuPG keyring, cert-d, keys fetched this session) and, for
      * fingerprint credentials, each configured HKP keyserver independently.
      * Each source produces a separate {@link SignerSourceResult} with full key
      * metadata when found.
      */
     @Override
     public List<SignerSourceResult> inspect(Credential credential) {
-        List<SignerSourceResult> results = new ArrayList<>(3 + keyservers.size());
+        List<SignerSourceResult> results = new ArrayList<>();
 
         inspectLocalStores(credential, results);
 
-        if (credential instanceof KeyCredential fc && httpClient != null) {
+        if (credential instanceof KeyCredential fc && fetcher != null) {
             String keyId = fc.fingerprint();
-            for (String keyserver : keyservers) {
-                PGPPublicKeyRing keyRing = fetchKeyFromHkp(keyId, keyserver);
+            for (String keyserver : fetcher.keyservers()) {
+                PGPPublicKeyRing keyRing = fetcher.download(keyId, keyserver);
                 if (keyRing != null) {
                     results.add(new SignerSourceResult(SOURCE_HKP, keyserver, true,
                             extractKeyInfo(keyRing)));
@@ -494,48 +398,12 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
     }
 
     private void inspectLocalStores(Credential credential, List<SignerSourceResult> results) {
-        if (keyStore.hasGnupgPubring()) {
-            PGPPublicKeyRing key = null;
-            if (credential instanceof KeyCredential fc) {
-                key = keyStore.findInGnupg(fc.fingerprint());
-            } else {
-                String email = emailOf(credential);
-                if (email != null) {
-                    key = keyStore.findInGnupgByEmail(email);
-                }
-            }
-            results.add(key != null
-                    ? new SignerSourceResult(SOURCE_LOCAL, SOURCE_GNUPG_PUBRING, true, extractKeyInfo(key))
-                    : new SignerSourceResult(SOURCE_LOCAL, SOURCE_GNUPG_PUBRING, false, null));
-        }
-
-        if (keyStore.hasCertD()) {
-            PGPPublicKeyRing key = null;
-            if (credential instanceof KeyCredential fc) {
-                key = keyStore.findInCertDStore(fc.fingerprint());
-            } else {
-                String email = emailOf(credential);
-                if (email != null) {
-                    key = keyStore.findInCertDByEmail(email);
-                }
-            }
-            results.add(key != null
-                    ? new SignerSourceResult(SOURCE_LOCAL, SOURCE_CERT_D, true, extractKeyInfo(key))
-                    : new SignerSourceResult(SOURCE_LOCAL, SOURCE_CERT_D, false, null));
-        }
-
-        PGPPublicKeyRing ephemeral = null;
-        if (credential instanceof KeyCredential fc) {
-            ephemeral = keyStore.findInEphemeralStore(fc.fingerprint());
-        } else {
-            String email = emailOf(credential);
-            if (email != null) {
-                ephemeral = keyStore.findInEphemeralByEmail(email);
-            }
-        }
-        if (ephemeral != null) {
-            results.add(new SignerSourceResult(SOURCE_LOCAL, SOURCE_EPHEMERAL, true,
-                    extractKeyInfo(ephemeral)));
+        String fingerprint = credential instanceof KeyCredential key ? key.fingerprint() : null;
+        for (BcKeyStore.KeyLookup lookup : keyStore.inspect(fingerprint, emailOf(credential))) {
+            String label = lookup.source().displayName();
+            results.add(lookup.ring() != null
+                    ? new SignerSourceResult(SOURCE_LOCAL, label, true, extractKeyInfo(lookup.ring()))
+                    : new SignerSourceResult(SOURCE_LOCAL, label, false, null));
         }
     }
 
@@ -626,7 +494,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
                     null);
         }
 
-        BcKeyStore.FoundKey found = keyStore.findPublicKey(fingerprint);
+        BcKeyStore.KeyLookup found = keyStore.findPublicKey(fingerprint);
         if (found == null) {
             return OpenPgpVerifyResult.indeterminate(IndeterminateReason.KEY_UNAVAILABLE, null, algorithm, version, fingerprint,
                     fingerprint);
@@ -653,7 +521,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
      * Performs the cryptographic signature verification.
      */
     private OpenPgpVerifyResult verifySignature(Path artifactFile, OpenPgpClaim opgu,
-            BcKeyStore.FoundKey found, int version, String fingerprint,
+            BcKeyStore.KeyLookup found, int version, String fingerprint,
             String algorithm, String userId) {
         PGPPublicKeyRing pubKeyRing = found.ring();
         try {
@@ -1022,59 +890,6 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
             return HashAlgorithmTags.SHA384;
         }
         return HashAlgorithmTags.SHA256;
-    }
-
-    // --- HKP key import internals ---
-
-    /**
-     * Fetches a public key from an HKP keyserver.
-     * <p>
-     * Distinguishes connection-level failures (which trip the circuit breaker)
-     * from HTTP-level errors (key not found on a healthy server).
-     */
-    PGPPublicKeyRing fetchKeyFromHkp(String keyId, String keyserver) {
-        String url = buildHkpUrl(keyserver, keyId);
-        try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(REQUEST_TIMEOUT)
-                    .GET()
-                    .build();
-            HttpResponse<byte[]> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofByteArray());
-            if (response.statusCode() != 200) {
-                return null;
-            }
-            try (InputStream in = PGPUtil.getDecoderStream(
-                    new ByteArrayInputStream(response.body()))) {
-                return new PGPPublicKeyRing(in, new BcKeyFingerprintCalculator());
-            }
-        } catch (HttpTimeoutException | ConnectException e) {
-            fetchCache.recordConnectionFailure(keyserver);
-            return null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /**
-     * Builds the HKP lookup URL for the given keyserver and key ID.
-     */
-    private String buildHkpUrl(String keyserver, String keyId) {
-        String base;
-        if (keyserver.startsWith("hkps://")) {
-            base = "https://" + keyserver.substring(7);
-        } else if (keyserver.startsWith("hkp://")) {
-            base = "http://" + keyserver.substring(6);
-        } else if (keyserver.startsWith("https://") || keyserver.startsWith("http://")) {
-            base = keyserver;
-        } else {
-            base = "https://" + keyserver;
-        }
-        if (!base.endsWith("/")) {
-            base += "/";
-        }
-        return base + "pks/lookup?op=get&options=mr&search=0x" + keyId;
     }
 
     /**

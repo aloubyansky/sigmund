@@ -605,7 +605,7 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
      */
     @Override
     public TrustRootRef trustRoot() {
-        return TrustRootRef.keyring(gpgHome);
+        return TrustRootRef.gnupgKeyring(gpgHome);
     }
 
     /**

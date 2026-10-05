@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -14,7 +15,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class BcRunnerFetchKeyTest {
+class KeyserverFetcherTest {
 
     @TempDir
     Path tempDir;
@@ -23,32 +24,35 @@ class BcRunnerFetchKeyTest {
         return new BcKeyStore(null, tempDir.resolve("cert-d"), tempDir.resolve("bc-private"));
     }
 
-    private BcRunner createRunner(BcKeyStore store, boolean resolve, List<String> keyservers) {
-        return new BcRunner(store, null, null, null, null,
-                resolve, false, keyservers);
-    }
-
     @Nested
     class CanFetchKeys {
 
         @Test
-        void trueWhenResolveEnabledAndKeyserversPresent() {
-            BcRunner runner = createRunner(createStore(), true,
-                    List.of("hkps://keys.openpgp.org"));
-            assertThat(runner.canFetchKeys()).isTrue();
+        void trueWhenKeysAreFetchedFromKeyservers(@TempDir Path dir) {
+            assertThat(verifyOnly(dir, "true", "hkps://keys.openpgp.org").canFetchKeys()).isTrue();
         }
 
         @Test
-        void falseWhenResolveDisabled() {
-            BcRunner runner = createRunner(createStore(), false,
-                    List.of("hkps://keys.openpgp.org"));
-            assertThat(runner.canFetchKeys()).isFalse();
+        void falseWhenResolveDisabled(@TempDir Path dir) {
+            assertThat(verifyOnly(dir, "false", "hkps://keys.openpgp.org").canFetchKeys()).isFalse();
         }
 
         @Test
-        void falseWhenNoKeyservers() {
-            BcRunner runner = createRunner(createStore(), true, List.of());
-            assertThat(runner.canFetchKeys()).isFalse();
+        void falseWhenNoKeyservers(@TempDir Path dir) {
+            assertThat(verifyOnly(dir, "true", "").canFetchKeys()).isFalse();
+        }
+
+        @Test
+        void aFetcherNeedsAKeyserver() {
+            assertThatThrownBy(() -> new KeyserverFetcher(createStore(), List.of()))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        private BcRunner verifyOnly(Path dir, String resolveSigners, String keyservers) {
+            return (BcRunner) new BcToolFactory().createVerifyOnly(Map.of(
+                    "cert-d-home", dir.resolve("cert-d").toString(),
+                    "resolve-signers", resolveSigners,
+                    "keyservers", keyservers));
         }
     }
 
@@ -69,14 +73,14 @@ class BcRunnerFetchKeyTest {
             assertThat(strippedKey.getPublicKey().getUserIDs().hasNext()).isFalse();
 
             BcKeyStore verifierStore = createStore();
-            verifierStore.cacheEphemeral(strippedKey);
+            verifierStore.addFetched(strippedKey, "hkps://keys.example.org");
 
             PGPPublicKeyRing cached = verifierStore.findPublicKey(fp).ring();
             assertThat(cached).isNotNull();
             assertThat(cached.getPublicKey().getUserIDs().hasNext())
                     .as("Cached key should have no UIDs initially").isFalse();
 
-            verifierStore.cacheEphemeral(fullKey);
+            verifierStore.addFetched(fullKey, "hkps://keys.example.org");
             cached = verifierStore.findPublicKey(fp).ring();
             assertThat(cached).isNotNull();
             assertThat(cached.getPublicKey().getUserIDs().hasNext())
@@ -93,7 +97,7 @@ class BcRunnerFetchKeyTest {
             PGPPublicKeyRing strippedKey = stripUserIds(fullKey);
 
             BcKeyStore verifierStore = createStore();
-            verifierStore.cacheEphemeral(strippedKey);
+            verifierStore.addFetched(strippedKey, "hkps://keys.example.org");
 
             PGPPublicKeyRing found = verifierStore.findPublicKey(fp).ring();
             assertThat(found).as("Key without UIDs should still be findable").isNotNull();
@@ -117,11 +121,11 @@ class BcRunnerFetchKeyTest {
             responses.put("hkps://server1", strippedKey);
             responses.put("hkps://server2", fullKey);
 
-            StubBcRunner runner = new StubBcRunner(fetchStore, responses,
+            StubFetcher fetcher = new StubFetcher(fetchStore, responses,
                     List.of("hkps://server1", "hkps://server2"));
 
-            assertThat(runner.fetchKey(fp)).isTrue();
-            assertThat(runner.queriedServers).isEqualTo(List.of("hkps://server1", "hkps://server2"));
+            assertThat(fetcher.fetch(fp)).isTrue();
+            assertThat(fetcher.queriedServers).isEqualTo(List.of("hkps://server1", "hkps://server2"));
             assertThat(fetchStore.findPublicKey(fp).source()).isEqualTo(TrustRootRef.keyserver("hkps://server2"));
         }
 
@@ -134,12 +138,12 @@ class BcRunnerFetchKeyTest {
 
             BcKeyStore fetchStore = new BcKeyStore(null,
                     tempDir.resolve("fetch-cd"), tempDir.resolve("fetch-bp"));
-            StubBcRunner runner = new StubBcRunner(fetchStore,
+            StubFetcher fetcher = new StubFetcher(fetchStore,
                     Map.of("hkps://server1", fullKey, "hkps://server2", fullKey),
                     List.of("hkps://server1", "hkps://server2"));
 
-            assertThat(runner.fetchKey(fp)).isTrue();
-            assertThat(runner.queriedServers).isEqualTo(List.of("hkps://server1"));
+            assertThat(fetcher.fetch(fp)).isTrue();
+            assertThat(fetcher.queriedServers).isEqualTo(List.of("hkps://server1"));
         }
 
         @Test
@@ -151,11 +155,11 @@ class BcRunnerFetchKeyTest {
 
             BcKeyStore fetchStore = new BcKeyStore(null,
                     tempDir.resolve("fetch-cd"), tempDir.resolve("fetch-bp"));
-            StubBcRunner runner = new StubBcRunner(fetchStore,
+            StubFetcher fetcher = new StubFetcher(fetchStore,
                     Map.of("hkps://server1", strippedKey),
                     List.of("hkps://server1", "hkps://server2"));
 
-            assertThat(runner.fetchKey(fp)).isTrue();
+            assertThat(fetcher.fetch(fp)).isTrue();
         }
 
         @Test
@@ -170,10 +174,10 @@ class BcRunnerFetchKeyTest {
             Map<String, PGPPublicKeyRing> responses = new HashMap<>();
             responses.put("hkps://server2", fullKey);
 
-            StubBcRunner runner = new StubBcRunner(fetchStore, responses,
+            StubFetcher fetcher = new StubFetcher(fetchStore, responses,
                     List.of("hkps://server1", "hkps://server2"));
 
-            assertThat(runner.fetchKey(fp)).isTrue();
+            assertThat(fetcher.fetch(fp)).isTrue();
             assertThat(fetchStore.findPublicKey(fp).source()).isEqualTo(TrustRootRef.keyserver("hkps://server2"));
         }
 
@@ -182,11 +186,11 @@ class BcRunnerFetchKeyTest {
             BcKeyStore fetchStore = new BcKeyStore(null,
                     tempDir.resolve("fetch-cd"), tempDir.resolve("fetch-bp"));
 
-            StubBcRunner runner = new StubBcRunner(fetchStore, Map.of(),
+            StubFetcher fetcher = new StubFetcher(fetchStore, Map.of(),
                     List.of("hkps://server1", "hkps://server2"));
 
-            assertThat(runner.fetchKey("AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD")).isFalse();
-            assertThat(runner.queriedServers).isEqualTo(List.of("hkps://server1", "hkps://server2"));
+            assertThat(fetcher.fetch("AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD")).isFalse();
+            assertThat(fetcher.queriedServers).isEqualTo(List.of("hkps://server1", "hkps://server2"));
         }
 
         @Test
@@ -197,28 +201,28 @@ class BcRunnerFetchKeyTest {
 
             BcKeyStore fetchStore = new BcKeyStore(null,
                     tempDir.resolve("fetch-cd"), tempDir.resolve("fetch-bp"));
-            fetchStore.cacheEphemeral(genStore.findPublicKey(fp).ring());
+            fetchStore.addFetched(genStore.findPublicKey(fp).ring(), "hkps://keys.example.org");
 
-            StubBcRunner runner = new StubBcRunner(fetchStore, Map.of(),
+            StubFetcher fetcher = new StubFetcher(fetchStore, Map.of(),
                     List.of("hkps://server1"));
 
-            assertThat(runner.fetchKey(fp)).isTrue();
-            assertThat(runner.queriedServers).isEmpty();
+            assertThat(fetcher.fetch(fp)).isTrue();
+            assertThat(fetcher.queriedServers).isEmpty();
         }
     }
 
-    private static class StubBcRunner extends BcRunner {
+    private static class StubFetcher extends KeyserverFetcher {
         private final Map<String, PGPPublicKeyRing> responses;
         final List<String> queriedServers = new ArrayList<>();
 
-        StubBcRunner(BcKeyStore store, Map<String, PGPPublicKeyRing> responses,
+        StubFetcher(BcKeyStore store, Map<String, PGPPublicKeyRing> responses,
                 List<String> keyservers) {
-            super(store, null, null, null, null, true, false, keyservers);
+            super(store, keyservers);
             this.responses = responses;
         }
 
         @Override
-        PGPPublicKeyRing fetchKeyFromHkp(String keyId, String keyserver) {
+        PGPPublicKeyRing download(String keyId, String keyserver) {
             queriedServers.add(keyserver);
             return responses.get(keyserver);
         }

@@ -189,7 +189,7 @@ checked against, and each artifact the evidence it was read from:
 SATISFIED (2)
   openpgp VERIFIED by bc (Ed25519) - Jane Doe <jane@example.com>
     credential openpgp4 DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF
-    trust root openpgp-keyring /home/jane/.local/share/pgp.cert.d
+    trust root openpgp-cert-d /home/jane/.local/share/pgp.cert.d
     com.example:lib:1.0
       evidence lib-1.0.jar.asc sha256:ba7816bf8f01 (sidecar)
       claimed 2026-03-12T10:04:11Z (signer)

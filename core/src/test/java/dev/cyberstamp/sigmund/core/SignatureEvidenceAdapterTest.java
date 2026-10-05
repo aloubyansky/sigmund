@@ -55,7 +55,7 @@ class SignatureEvidenceAdapterTest {
         @Test
         void recordsTheTrustRootTheToolVerifiedAgainst(@TempDir Path dir) throws Exception {
             Path evidence = Files.writeString(dir.resolve("lib.jar.asc"), "abc");
-            TrustRootRef root = TrustRootRef.keyring(dir.resolve("cert-d"));
+            TrustRootRef root = TrustRootRef.certD(dir.resolve("cert-d"));
             var adapter = adapterWith(singleClaimFormat(),
                     List.of(mockTool("bc", true, true, passVerifyResult(), List.of(), root)));
 

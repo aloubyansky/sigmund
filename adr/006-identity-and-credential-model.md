@@ -368,8 +368,9 @@ Every key records the source that supplied it — directory, keyserver URL, loca
 store, GnuPG keyring — and every claim carries it in its `TrustRootRef`.
 Provenance is recorded always and consulted only for identities: a hostile
 source cannot forge a fingerprint match, because the signature proves the key,
-but it can serve any UID. `BcRunner.fetchKey` records the source of every key it
-stores. It still prefers a keyserver copy that carries UIDs, so reports can show
+but it can serve any UID. The key store records the keyserver that supplied each
+key in the same step that stores it (`BcKeyStore.addFetched`). The
+`KeyserverFetcher` still prefers a keyserver copy that carries UIDs, so reports can show
 who a key claims to belong to: with UIDs never matched, that preference affects
 display text only and cannot widen acceptance.
 

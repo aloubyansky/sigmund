@@ -67,17 +67,18 @@ final class BcToolFactory implements SignatureToolFactory {
                 ? explicitProvider
                 : resolvePassphraseProvider(settings);
         return new BcRunner(keyStore, fingerprint, tskFile, tskBytes, provider,
-                false, false, List.of());
+                null);
     }
 
     @Override
     public SignatureTool createVerifyOnly(Map<String, String> settings) {
         BcKeyStore keyStore = buildKeyStore(settings);
         boolean resolveSigners = "true".equals(settings.get("resolve-signers"));
-        boolean importToKeyring = "true".equals(settings.get("import-to-keyring"));
         List<String> keyservers = DiscoveryConfig.parseKeyserversSetting(settings.get("keyservers"));
-        return new BcRunner(keyStore, null, null, null, null,
-                resolveSigners, importToKeyring, keyservers);
+        KeyserverFetcher fetcher = resolveSigners && !keyservers.isEmpty()
+                ? new KeyserverFetcher(keyStore, keyservers)
+                : null;
+        return new BcRunner(keyStore, null, null, null, null, fetcher);
     }
 
     /**
@@ -87,7 +88,8 @@ final class BcToolFactory implements SignatureToolFactory {
         Path gnupgHome = resolveGnupgHome(settings);
         Path certDHome = resolveCertDHome(settings);
         Path bcPrivateHome = resolveBcPrivateHome(settings, certDHome);
-        return new BcKeyStore(gnupgHome, certDHome, bcPrivateHome);
+        return new BcKeyStore(gnupgHome, certDHome, bcPrivateHome,
+                "true".equals(settings.get("import-to-keyring")));
     }
 
     /**

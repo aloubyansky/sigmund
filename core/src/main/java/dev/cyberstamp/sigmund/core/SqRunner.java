@@ -713,7 +713,7 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     @Override
     public TrustRootRef trustRoot() {
         String home = sqEnv.get(SEQUOIA_HOME);
-        return new TrustRootRef(TrustRootRef.KIND_OPENPGP_KEYRING,
+        return new TrustRootRef(TrustRootRef.KIND_OPENPGP_CERT_D,
                 home != null ? home : "sq default store");
     }
 

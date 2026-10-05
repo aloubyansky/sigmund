@@ -102,7 +102,7 @@ class VerifyMojoTest {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
                     List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)),
                     "Alice <alice@example.com>", AttesterRole.UNKNOWN,
-                    TrustRootRef.keyring(Path.of("/home/alice/.local/share/pgp.cert.d")),
+                    TrustRootRef.certD(Path.of("/home/alice/.local/share/pgp.cert.d")),
                     new EvidenceRef(Path.of("lib-1.0.jar.asc"),
                             DigestSet.sha256(FP.toLowerCase()), Evidence.SOURCE_SIDECAR),
                     Instant.parse("2026-03-12T10:04:11Z"), ClaimTimeSource.SIGNER,
@@ -148,7 +148,7 @@ class VerifyMojoTest {
             assertThat(log.lines).containsSubsequence(
                     "info:   openpgp VERIFIED by bc (Ed25519) - Alice <alice@example.com>",
                     "info:     credential openpgp4 " + FP,
-                    "info:     trust root openpgp-keyring /home/alice/.local/share/pgp.cert.d",
+                    "info:     trust root openpgp-cert-d /home/alice/.local/share/pgp.cert.d",
                     "info:     com.example:lib:1.0",
                     "info:       evidence lib-1.0.jar.asc sha256:4aee18f83afd (sidecar)",
                     "info:       claimed 2026-03-12T10:04:11Z (signer)");

@@ -111,11 +111,18 @@ BC manages keys across three sources, searched in order:
 
 4. **Ephemeral cache** — in-memory cache for keys fetched from keyservers when `import-to-keyring` is false. Keys are available for verification during the session but are not persisted to disk.
 
-The key lookup algorithm in `BcKeyStore.findPublicKey()`:
-1. Check GnuPG pubring for matching fingerprint
-2. Check cert-d for matching fingerprint (primary key or subkey)
-3. Extract public keys from BC private store if a matching secret key exists
-4. Check ephemeral in-memory cache
+The key lookup algorithm in `BcKeyStore.findPublicKey()` returns the key together with its source:
+1. Check the ephemeral in-memory cache
+2. Check GnuPG pubring for matching fingerprint
+3. Check cert-d for matching fingerprint (primary key or subkey)
+4. Extract public keys from BC private store if a matching secret key exists
+
+A key fetched this session reports the keyserver that served it, wherever it was stored; otherwise the store it was found in is reported. Claims carry that source in their trust root.
+
+Responsibilities are split three ways:
+- **`BcKeyStore`** — where keys live: lookup in order, per-store answers for `inspect-signer`, storing generated keys, and storing fetched keys (`addFetched`), which keeps them in memory or writes them to cert-d according to `import-to-keyring` and records the keyserver in the same step.
+- **`KeyserverFetcher`** — talking to HKP keyservers: the HTTP client, the per-build `KeyFetchCache` with its per-server circuit breaker, and the preference for a copy carrying user IDs, which are display text only. It hands what it fetches to the store. The factory creates one when `resolve-signers` is on and keyservers are configured.
+- **`BcRunner`** — signing, verification, key generation and signer inspection, using the store and, when keys may be fetched, the fetcher.
 
 ### Sequoia Keystore
 

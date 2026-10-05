@@ -312,7 +312,7 @@ class SqRunnerTest {
         void namesTheIsolatedStoreWhenOneIsConfigured(@TempDir Path home) {
             TrustRootRef root = new SqRunner(home).trustRoot();
 
-            assertThat(root.kind()).isEqualTo(TrustRootRef.KIND_OPENPGP_KEYRING);
+            assertThat(root.kind()).isEqualTo(TrustRootRef.KIND_OPENPGP_CERT_D);
             assertThat(root.identifier()).isEqualTo(home.toString());
         }
 
@@ -321,7 +321,7 @@ class SqRunnerTest {
         void namesSqsDefaultStoreWhenNoHomeIsConfigured() {
             TrustRootRef root = new SqRunner((Path) null).trustRoot();
 
-            assertThat(root.kind()).isEqualTo(TrustRootRef.KIND_OPENPGP_KEYRING);
+            assertThat(root.kind()).isEqualTo(TrustRootRef.KIND_OPENPGP_CERT_D);
             assertThat(root.identifier()).isEqualTo("sq default store");
         }
     }
