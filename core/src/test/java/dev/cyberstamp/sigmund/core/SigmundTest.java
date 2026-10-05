@@ -294,7 +294,11 @@ class SigmundTest {
             var tool2 = mockVerifyingTool("gpg", format, true,
                     new OpenPgpVerifyResult(ClaimOutcome.INDETERMINATE, IndeterminateReason.UNSUPPORTED_ALGORITHM, null, null,
                             4, null, null));
-            try (var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2).build()) {
+            // only the two tools above: an installed sq would otherwise join the toolchain
+            DiscoveryConfig onlyTheseTools = new DiscoveryConfig(false, false, List.of(),
+                    List.of("bc", "gpg"));
+            try (var sigmund = Sigmund.builder().discoveryConfig(onlyTheseTools)
+                    .addTool(tool1).addTool(tool2).build()) {
 
                 SignatureVerificationReport report = sigmund.verify(artifact, sigFile);
 
