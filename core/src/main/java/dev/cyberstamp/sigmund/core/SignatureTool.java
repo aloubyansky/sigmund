@@ -19,8 +19,9 @@ import java.util.Set;
  * <h2>Verification routing</h2>
  * <p>
  * {@link #canVerify(Claim)} lets each tool declare what it can handle within
- * its format. For OpenPGP, GPG handles {@code packetVersion <= 4} and Sequoia handles
- * {@code packetVersion >= 5}. This keeps all routing decisions out of the facade.
+ * its format. For OpenPGP, GPG handles {@code packetVersion <= 4} and Sequoia handles the
+ * RFC 9580 versions, 4 and 6; no backend takes LibrePGP's version 5. This keeps all routing
+ * decisions out of the facade.
  *
  * <h2>Credential extraction and trust boundary</h2>
  * <p>

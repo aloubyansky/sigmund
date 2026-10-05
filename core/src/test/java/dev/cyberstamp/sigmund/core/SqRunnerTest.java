@@ -107,6 +107,29 @@ class SqRunnerTest {
     }
 
     @Nested
+    class Routing {
+
+        @Test
+        void verifiesRfc9580SignatureVersions(@TempDir Path tempDir) {
+            SqRunner sq = new SqRunner(tempDir);
+
+            assertThat(sq.canVerify(new OpenPgpClaim("block", 4, null, 1, null))).isTrue();
+            assertThat(sq.canVerify(new OpenPgpClaim("block", 6, null, 27, null))).isTrue();
+        }
+
+        @Test
+        void doesNotClaimLibrePgpV5Signatures(@TempDir Path tempDir) {
+            assertThat(new SqRunner(tempDir).canVerify(new OpenPgpClaim("block", 5, null, 22, null)))
+                    .isFalse();
+        }
+
+        @Test
+        void doesNotClaimSigstoreBundles(@TempDir Path tempDir) {
+            assertThat(new SqRunner(tempDir).canVerify(new SigstoreClaim("{}", null))).isFalse();
+        }
+    }
+
+    @Nested
     class ParseSignerSelfOutputTests {
 
         @Test

@@ -19,7 +19,7 @@ This document describes how Sigmund works internally — the three-tool system, 
   - [Stage 3: Combine](#stage-3-combine)
 - [Verification Pipeline](#verification-pipeline)
   - [BC Verification](#bc-verification)
-  - [sq Verification (v5+ packets)](#sq-verification-v5-packets)
+  - [sq Verification (v4 and v6 packets)](#sq-verification-v4-and-v6-packets)
   - [gpg Verification (v1-v4 packets)](#gpg-verification-v1-v4-packets)
   - [Verification Modes](#verification-modes)
 - [Identity Verification Layer](#identity-verification-layer)
@@ -236,16 +236,17 @@ Each armored block is parsed into a `Claim` and routed to the first available to
 
 BC handles any `OpenPgpClaim` (v4 or v6 classic algorithms). Verification steps:
 
-1. Extract issuer fingerprint from the signature packet's Issuer Fingerprint subpacket (type 33)
-2. Search for the signer's public key in GnuPG pubring, cert-d, or BC private store
-3. If key not found and key fetching is enabled, attempt to import from keyservers
-4. Parse the signature packet using Bouncy Castle's `BcPGPObjectFactory`
-5. Verify the signature against the artifact using BC's `PGPSignature.verify()`
-6. Return `VERIFIED` or `FAILED`
+1. Extract issuer fingerprint from the signature packet's Issuer Fingerprint subpacket (type 33), or the 64-bit key ID when it carries none
+2. Search for the signer's certificate in the key store (`BcKeyStore.findPublicKey()`); if it is absent and key fetching is enabled, fetch it from keyservers (`KeyserverFetcher`)
+3. Parse the signature packet using Bouncy Castle's `BcPGPObjectFactory`
+4. Verify with Bouncy Castle's high-level API (`OpenPGPCertificate` and `OpenPGPDetachedSignatureProcessor`): the signature must be correct and made, at its creation time, by the primary key or a subkey validly bound to it — binding signature, signing flag, a signing subkey's back-signature, not revoked or expired, the primary key's expiry applying to the whole certificate
+5. Return `VERIFIED`, proving the signing key's and the primary key's full fingerprints, or `FAILED`
 
-### sq Verification (v5+ packets)
+The algorithm policy accepts what Sigmund has always accepted, including SHA-1 and RIPEMD-160 signatures and RSA and DSA keys from 1024 bits; rejecting weak algorithms is a separate policy decision.
 
-The issuer fingerprint is extracted from the signature packet, used to look up the signer's certificate in the Sequoia cert store (`sq inspect --cert`), locate the cert file in cert-d, and verify with `sq verify --signer-file`. If the certificate is not in the store, the result is `INDETERMINATE [KEY_UNAVAILABLE]`. If `sq` is not available or the fingerprint cannot be extracted, it is `INDETERMINATE` citing `TOOL_UNAVAILABLE` or `UNSUPPORTED_ALGORITHM`.
+### sq Verification (v4 and v6 packets)
+
+Sequoia implements RFC 9580, so it is routed v4 and v6 signatures, including RFC 9980 post-quantum ones; it does not implement LibrePGP's v5. The issuer fingerprint is extracted from the signature packet, used to look up the signer's certificate in the Sequoia cert store (`sq inspect --cert`), locate the cert file in cert-d, and verify with `sq verify --signer-file`. If the certificate is not in the store, the result is `INDETERMINATE [KEY_UNAVAILABLE]`. If `sq` is not available or the fingerprint cannot be extracted, it is `INDETERMINATE` citing `TOOL_UNAVAILABLE` or `UNSUPPORTED_ALGORITHM`.
 
 ### gpg Verification (v1-v4 packets)
 

@@ -649,12 +649,15 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     /**
      * {@inheritDoc}
      * <p>
-     * Accepts {@link OpenPgpClaim}s with {@code packetVersion >= 5}.
+     * Accepts {@link OpenPgpClaim}s with the signature versions RFC 9580 defines, which
+     * Sequoia implements: v4, and v6 including RFC 9980 post-quantum signatures. Version 5 is
+     * LibrePGP's format, which Sequoia does not implement, so a v5 claim is left to a tool that
+     * can read it, or set aside when none can.
      */
     @Override
     public boolean canVerify(Claim claim) {
         return claim instanceof OpenPgpClaim opgu
-                && opgu.packetVersion() >= 5;
+                && (opgu.packetVersion() == 4 || opgu.packetVersion() == 6);
     }
 
     /**
