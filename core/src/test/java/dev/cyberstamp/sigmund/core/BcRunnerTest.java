@@ -3,14 +3,22 @@ package dev.cyberstamp.sigmund.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Date;
 import java.util.Map;
 import java.util.Set;
+import org.bouncycastle.bcpg.ArmoredOutputStream;
+import org.bouncycastle.bcpg.HashAlgorithmTags;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
 import org.bouncycastle.openpgp.PGPSecretKey;
 import org.bouncycastle.openpgp.PGPSecretKeyRing;
+import org.bouncycastle.openpgp.PGPSignature;
+import org.bouncycastle.openpgp.PGPSignatureGenerator;
+import org.bouncycastle.openpgp.PGPSignatureSubpacketGenerator;
+import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentSignerBuilder;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -21,22 +29,45 @@ class BcRunnerTest {
     class KeyExpiry {
 
         @Test
-        void signatureDatedAfterTheKeyExistedIsRejected(@TempDir Path tempDir) throws Exception {
-            try (BcRunner signer = createSigningRunner(tempDir)) {
-                Path artifact = Files.writeString(tempDir.resolve("artifact.txt"), "content");
-                Path signature = tempDir.resolve("artifact.txt.asc");
-                signer.sign(artifact, signature);
+        void signatureDatedBeforeTheKeyExistedIsRejected(@TempDir Path tempDir) throws Exception {
+            BcKeyStore store = new BcKeyStore(null, tempDir.resolve("cert-d"),
+                    tempDir.resolve("bc-private"));
+            String fingerprint;
+            try (BcRunner bcRunner = new BcRunner(store, null, null)) {
+                fingerprint = bcRunner.generateKey("Test <test@example.com>", "nistp256");
+            }
+            Path artifact = Files.writeString(tempDir.resolve("artifact.txt"), "content");
 
-                OpenPgpClaim signed = (OpenPgpClaim) new OpenPgpSignatureFormat()
-                        .parse(Evidence.read(signature, Evidence.SOURCE_SIDECAR)).get(0);
-                // the same signature, claiming to predate the key it was made with
-                OpenPgpClaim backdated = new OpenPgpClaim(signed.armoredBlock(),
-                        signed.packetVersion(), signed.issuerFingerprint(), signed.algorithmId(),
-                        Instant.ofEpochSecond(1));
+            // a signature whose signed creation time predates the key it was made with, as a
+            // leaked key could produce to date a signature into an earlier window
+            OpenPgpClaim backdated = lowLevelSignature(store, fingerprint, artifact,
+                    HashAlgorithmTags.SHA256, Instant.ofEpochSecond(1));
 
-                VerifyResult result = signer.verify(artifact, backdated);
+            try (BcRunner bcRunner = new BcRunner(store, null, null)) {
+                VerifyResult result = bcRunner.verify(artifact, backdated);
 
+                assertThat(backdated.claimTime()).isEqualTo(Instant.ofEpochSecond(1));
                 assertThat(result.isFailed()).isTrue();
+            }
+        }
+
+        @Test
+        void sha1SignatureStillVerifies(@TempDir Path tempDir) throws Exception {
+            BcKeyStore store = new BcKeyStore(null, tempDir.resolve("cert-d"),
+                    tempDir.resolve("bc-private"));
+            String fingerprint;
+            try (BcRunner bcRunner = new BcRunner(store, null, null)) {
+                fingerprint = bcRunner.generateKey("Test <test@example.com>", "nistp256");
+            }
+            Path artifact = Files.writeString(tempDir.resolve("artifact.txt"), "content");
+
+            // older artifacts in Maven repositories are signed with SHA-1; rejecting weak
+            // algorithms is a separate policy decision, not a failed signature
+            OpenPgpClaim claim = lowLevelSignature(store, fingerprint, artifact,
+                    HashAlgorithmTags.SHA1, Instant.now());
+
+            try (BcRunner bcRunner = new BcRunner(store, null, null)) {
+                assertThat(bcRunner.verify(artifact, claim).isVerified()).isTrue();
             }
         }
 
@@ -61,24 +92,50 @@ class BcRunnerTest {
         @Test
         void signatureWithoutIssuerIsMalformedNotUnsupported(@TempDir Path tempDir)
                 throws Exception {
-            BcRunner runner = createVerifyOnly(tempDir);
-            Path artifact = Files.writeString(tempDir.resolve("artifact.txt"), "content");
-            OpenPgpClaim noIssuer = new OpenPgpClaim("not an armored signature", 4, null, 1, null);
+            try (BcRunner runner = createVerifyOnly(tempDir)) {
+                Path artifact = Files.writeString(tempDir.resolve("artifact.txt"), "content");
+                OpenPgpClaim noIssuer = new OpenPgpClaim("not an armored signature", 4, null, 1, null);
 
-            VerifyResult result = runner.verify(artifact, noIssuer);
+                VerifyResult result = runner.verify(artifact, noIssuer);
 
-            assertThat(result.isIndeterminate(IndeterminateReason.EVIDENCE_MALFORMED)).isTrue();
+                assertThat(result.isIndeterminate(IndeterminateReason.EVIDENCE_MALFORMED)).isTrue();
+            }
         }
 
         @Test
         void aClaimOfAnotherKindIsUnsupported(@TempDir Path tempDir) throws Exception {
-            BcRunner runner = createVerifyOnly(tempDir);
-            Path artifact = Files.writeString(tempDir.resolve("artifact.txt"), "content");
+            try (BcRunner runner = createVerifyOnly(tempDir)) {
+                Path artifact = Files.writeString(tempDir.resolve("artifact.txt"), "content");
 
-            VerifyResult result = runner.verify(artifact, new SigstoreClaim("{}", null));
+                VerifyResult result = runner.verify(artifact, new SigstoreClaim("{}", null));
 
-            assertThat(result.isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM)).isTrue();
+                assertThat(result.isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM)).isTrue();
+            }
         }
+    }
+
+    /**
+     * Signs an artifact with the primary key of a stored key ring, choosing the hash and the
+     * signed creation time, and parses the result as a claim.
+     */
+    private static OpenPgpClaim lowLevelSignature(BcKeyStore store, String fingerprint,
+            Path artifact, int hashAlgorithm, Instant creationTime) throws Exception {
+        PGPSecretKey key = store.findSecretKey(fingerprint).getSecretKey();
+        PGPSignatureGenerator generator = new PGPSignatureGenerator(
+                new JcaPGPContentSignerBuilder(key.getPublicKey().getAlgorithm(), hashAlgorithm),
+                key.getPublicKey());
+        generator.init(PGPSignature.BINARY_DOCUMENT, key.extractPrivateKey(null));
+        PGPSignatureSubpacketGenerator hashed = new PGPSignatureSubpacketGenerator();
+        hashed.setSignatureCreationTime(true, Date.from(creationTime));
+        hashed.setIssuerFingerprint(false, key.getPublicKey());
+        generator.setHashedSubpackets(hashed.generate());
+        generator.update(Files.readAllBytes(artifact));
+        Path signature = artifact.resolveSibling(artifact.getFileName() + ".asc");
+        try (OutputStream out = new ArmoredOutputStream(Files.newOutputStream(signature))) {
+            generator.generate().encode(out);
+        }
+        return (OpenPgpClaim) new OpenPgpSignatureFormat()
+                .parse(Evidence.read(signature, Evidence.SOURCE_SIDECAR)).get(0);
     }
 
     private BcRunner createSigningRunner(Path tempDir) {

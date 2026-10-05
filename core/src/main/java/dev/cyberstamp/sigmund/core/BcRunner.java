@@ -42,14 +42,18 @@ import org.bouncycastle.openpgp.PGPSignatureList;
 import org.bouncycastle.openpgp.PGPSignatureSubpacketGenerator;
 import org.bouncycastle.openpgp.PGPSignatureSubpacketVector;
 import org.bouncycastle.openpgp.PGPUtil;
+import org.bouncycastle.openpgp.api.OpenPGPCertificate;
+import org.bouncycastle.openpgp.api.OpenPGPDefaultPolicy;
+import org.bouncycastle.openpgp.api.OpenPGPDetachedSignatureProcessor;
 import org.bouncycastle.openpgp.api.OpenPGPKey;
+import org.bouncycastle.openpgp.api.OpenPGPPolicy;
+import org.bouncycastle.openpgp.api.OpenPGPSignature.OpenPGPDocumentSignature;
 import org.bouncycastle.openpgp.api.bc.BcOpenPGPApi;
 import org.bouncycastle.openpgp.bc.BcPGPObjectFactory;
 import org.bouncycastle.openpgp.operator.bc.BcAEADSecretKeyEncryptorBuilder;
 import org.bouncycastle.openpgp.operator.bc.BcKeyFingerprintCalculator;
 import org.bouncycastle.openpgp.operator.bc.BcPBESecretKeyDecryptorBuilder;
 import org.bouncycastle.openpgp.operator.bc.BcPGPContentSignerBuilder;
-import org.bouncycastle.openpgp.operator.bc.BcPGPContentVerifierBuilderProvider;
 import org.bouncycastle.openpgp.operator.bc.BcPGPDigestCalculatorProvider;
 import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentSignerBuilder;
 import org.bouncycastle.openpgp.operator.jcajce.JcaPGPDigestCalculatorProviderBuilder;
@@ -82,6 +86,20 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
 
     private static final Set<String> SUPPORTED_CREDENTIAL_TYPES = Set.of(
             Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6);
+
+    /**
+     * The algorithm policy for verification: Bouncy Castle's defaults, widened to accept what
+     * Sigmund has always accepted — SHA-1 and RIPEMD-160 document signatures, and RSA and DSA
+     * keys from 1024 bits, which older artifacts in Maven repositories are signed with.
+     * Rejecting weak algorithms is a policy decision with its own outcome, not something to
+     * report as a failed signature, so it is not made here.
+     */
+    private static final OpenPGPPolicy VERIFICATION_POLICY = new OpenPGPDefaultPolicy()
+            .acceptDocumentSignatureHashAlgorithm(HashAlgorithmTags.SHA1)
+            .acceptDocumentSignatureHashAlgorithm(HashAlgorithmTags.RIPEMD160)
+            .acceptPublicKeyAlgorithmWithMinimalStrength(PublicKeyAlgorithmTags.RSA_GENERAL, 1024)
+            .acceptPublicKeyAlgorithmWithMinimalStrength(PublicKeyAlgorithmTags.RSA_SIGN, 1024)
+            .acceptPublicKeyAlgorithmWithMinimalStrength(PublicKeyAlgorithmTags.DSA, 1024);
 
     private final BcOpenPGPApi api;
     private final BcKeyStore keyStore;
@@ -530,30 +548,53 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
             if (signature == null) {
                 return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint, fingerprint);
             }
-
-            PGPPublicKey verifyKey = findVerificationKey(pubKeyRing, signature);
-            if (verifyKey == null) {
+            if (findVerificationKey(pubKeyRing, signature) == null) {
                 return OpenPgpVerifyResult.indeterminate(IndeterminateReason.KEY_UNAVAILABLE, userId, algorithm, version,
                         fingerprint, fingerprint);
             }
 
-            // Judged at the claim time, not now: a signature made while the key was valid
-            // stays valid after the key expires, and one dated outside that window did not
-            // come from a valid key however well the bytes verify.
-            if (!KeyValidity.isValidAt(verifyKey, opgu.claimTime())) {
-                return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint,
-                        fingerprint);
+            OpenPGPCertificate certificate = new OpenPGPCertificate(pubKeyRing,
+                    api.getImplementation(), VERIFICATION_POLICY);
+            OpenPGPDocumentSignature document = verifyAgainst(certificate, signature, artifactFile);
+            if (document == null || document.getIssuer() == null
+                    || !document.isValid(VERIFICATION_POLICY)) {
+                return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint, fingerprint);
             }
-
-            boolean valid = verifyDetachedSignature(signature, verifyKey, artifactFile);
-            return new OpenPgpVerifyResult(
-                    valid ? ClaimOutcome.VERIFIED : ClaimOutcome.FAILED, null,
-                    userId, algorithm, version, fingerprint, fingerprint)
-                    .withKeyFingerprints(hex(verifyKey.getFingerprint()),
-                            primaryFingerprintOf(pubKeyRing, verifyKey))
+            PGPPublicKey signingKey = document.getIssuer().getPGPPublicKey();
+            return OpenPgpVerifyResult.verified(userId, algorithm, version, fingerprint, fingerprint)
+                    .withKeyFingerprints(hex(signingKey.getFingerprint()),
+                            primaryFingerprintOf(pubKeyRing, signingKey))
                     .withKeySource(found.source());
         } catch (Exception e) {
             return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint, fingerprint);
+        }
+    }
+
+    /**
+     * Verifies a detached signature with Bouncy Castle's high-level API, which judges the
+     * signature in the context of its certificate rather than of one key.
+     *
+     * <p>
+     * A signature is valid only when it is cryptographically correct and the key that made it
+     * was, at the signature's creation time, a component of the certificate: the primary key,
+     * or a subkey whose binding signature by that primary verifies, which carries the signing
+     * flag and, for a signing subkey, a valid back-signature (cross-certification) by the
+     * subkey itself — and neither revoked nor expired, with the primary key's expiry applying
+     * to the whole certificate. Judging at creation time keeps a verdict stable after a key
+     * expires. Without these checks, a subkey attached to someone else's primary key would
+     * prove that primary's fingerprint.
+     *
+     * @return the verified signature, or {@code null} when the processor attributed none
+     */
+    private OpenPGPDocumentSignature verifyAgainst(OpenPGPCertificate certificate,
+            PGPSignature signature, Path artifactFile) throws IOException {
+        OpenPGPDetachedSignatureProcessor processor = new OpenPGPDetachedSignatureProcessor(
+                api.getImplementation(), VERIFICATION_POLICY)
+                .addVerificationCertificate(certificate)
+                .addSignature(signature);
+        try (InputStream in = Files.newInputStream(artifactFile)) {
+            List<OpenPGPDocumentSignature> signatures = processor.process(in);
+            return signatures.isEmpty() ? null : signatures.get(0);
         }
     }
 
@@ -600,22 +641,6 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
             }
         }
         return null;
-    }
-
-    /**
-     * Verifies a detached signature against an artifact file.
-     */
-    private boolean verifyDetachedSignature(PGPSignature signature,
-            PGPPublicKey publicKey, Path artifactFile) throws IOException, PGPException {
-        signature.init(new BcPGPContentVerifierBuilderProvider(), publicKey);
-        try (InputStream in = Files.newInputStream(artifactFile)) {
-            byte[] buf = new byte[8192];
-            int len;
-            while ((len = in.read(buf)) >= 0) {
-                signature.update(buf, 0, len);
-            }
-        }
-        return signature.verify();
     }
 
     /**
