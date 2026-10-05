@@ -31,34 +31,66 @@ import org.bouncycastle.openpgp.bc.BcPGPPublicKeyRingCollection;
 import org.bouncycastle.openpgp.operator.bc.BcKeyFingerprintCalculator;
 
 /**
- * Manages key lookup across GnuPG pubring, shared cert-d, and BC's own private key store.
+ * Where Bouncy Castle's keys live: finding them, storing them, and saying where each came from.
  *
  * <p>
  * Key sources are searched in order:
  * <ol>
+ * <li>Keys fetched from keyservers this session and kept in memory</li>
  * <li>GnuPG pubring ({@code pubring.kbx} or legacy {@code pubring.gpg}) — read-only</li>
  * <li>Shared cert-d directory — read/write for certs</li>
  * <li>BC-owned private key store — read/write for TSKs</li>
  * </ol>
+ *
+ * <p>
+ * A fetched key is kept in memory or persisted to cert-d according to the store's
+ * {@code import-to-keyring} setting, and the keyserver that served it is recorded with it in
+ * the same step.
  */
 class BcKeyStore {
+
+    /**
+     * The result of looking a key up: where it was looked for or came from, and the key.
+     *
+     * @param source the keyserver that served the key this session, or the store consulted
+     * @param ring the key ring, or {@code null} when an inspected store has none; a lookup
+     *        that finds nothing anywhere returns no {@code KeyLookup} at all
+     */
+    record KeyLookup(TrustRootRef source, PGPPublicKeyRing ring) {
+    }
 
     private final Path gnupgHome;
     private final Path certDHome;
     private final Path bcPrivateHome;
     private final Map<String, PGPPublicKeyRing> ephemeralKeys = new ConcurrentHashMap<>();
+    private final Map<String, String> fetchedFrom = new ConcurrentHashMap<>();
+    private final boolean persistFetched;
 
     /**
-     * Creates a new key store.
+     * Creates a key store that keeps fetched keys in memory for the session.
      *
      * @param gnupgHome the GnuPG home directory, or {@code null} to skip GnuPG lookup
      * @param certDHome the shared cert-d directory
      * @param bcPrivateHome the BC private key store directory
      */
     BcKeyStore(Path gnupgHome, Path certDHome, Path bcPrivateHome) {
+        this(gnupgHome, certDHome, bcPrivateHome, false);
+    }
+
+    /**
+     * Creates a key store.
+     *
+     * @param gnupgHome the GnuPG home directory, or {@code null} to skip GnuPG lookup
+     * @param certDHome the shared cert-d directory
+     * @param bcPrivateHome the BC private key store directory
+     * @param persistFetched whether fetched keys are written to cert-d — the
+     *        {@code import-to-keyring} setting — rather than kept in memory for the session
+     */
+    BcKeyStore(Path gnupgHome, Path certDHome, Path bcPrivateHome, boolean persistFetched) {
         this.gnupgHome = gnupgHome;
         this.certDHome = certDHome;
         this.bcPrivateHome = bcPrivateHome;
+        this.persistFetched = persistFetched;
     }
 
     /**
@@ -71,41 +103,84 @@ class BcKeyStore {
     }
 
     /**
-     * Searches all key sources for a public key matching the given fingerprint.
+     * Finds the key ring holding a fingerprint, together with where it came from.
      *
-     * @param fingerprint the uppercase hex fingerprint to search for
-     * @return the matching public key ring, or {@code null} if not found
+     * <p>
+     * Stores are searched in order: the in-memory cache of keys fetched this session, the
+     * GnuPG keyring, the cert-d store, then Bouncy Castle's private store. A key fetched in
+     * this session names the keyserver that served it, wherever it was then stored; otherwise
+     * the store it was found in is named. The source explains a differing result — two
+     * machines trusting different stores — and is reported, never used to accept a key: the
+     * signature proves the key whoever served it.
+     *
+     * @param fingerprint the fingerprint of the primary key or a subkey
+     * @return the key and its source, or {@code null} when no store holds it
      */
-    PGPPublicKeyRing findPublicKey(String fingerprint) {
-        PGPPublicKeyRing key = findInEphemeral(fingerprint);
-        if (key != null) {
-            return key;
+    KeyLookup findPublicKey(String fingerprint) {
+        PGPPublicKeyRing ring = findInEphemeral(fingerprint);
+        if (ring != null) {
+            return new KeyLookup(fetchedFromSource(ring), ring);
         }
-        key = findInGnupgPubring(fingerprint);
-        if (key != null) {
-            return key;
+        ring = findInGnupgPubring(fingerprint);
+        if (ring != null) {
+            return found(ring, TrustRootRef.gnupgKeyring(gnupgHome));
         }
-        key = findInCertD(fingerprint);
-        if (key != null) {
-            return key;
+        ring = findInCertD(fingerprint);
+        if (ring != null) {
+            return found(ring, TrustRootRef.certD(certDHome));
         }
-        return findInBcPrivate(fingerprint);
+        ring = findInBcPrivate(fingerprint);
+        return ring == null ? null : found(ring, TrustRootRef.bcPrivateStore(bcPrivateHome));
     }
 
     /**
-     * Caches a public key ring in memory without writing to disk.
+     * Pairs a key ring with where it came from.
      *
      * <p>
-     * Used when key import is disabled — {@link DiscoveryConfig#importToKeyring()}, or the
-     * per-tool {@code import-to-keyring} setting the factories read. The key is available for
-     * verification for the rest of this session but never reaches the cert-d directory, so
-     * fetching a key to check one build does not silently grow the machine's trust surface.
+     * A keyserver recorded for the ring by {@link #addFetched} takes precedence over
+     * the store the ring was found in: a key fetched this session and then persisted to
+     * cert-d, or cached in memory, came from that keyserver, and the store only holds it.
+     * The ring is identified by its primary fingerprint, so the recorded source applies
+     * whether it was looked up by the primary key or a subkey.
      *
-     * @param keyRing the public key ring to cache
+     * @param ring the key ring that was found
+     * @param store the store it was found in, used when no keyserver is recorded for it
+     * @return the key ring and its source
      */
-    void cacheEphemeral(PGPPublicKeyRing keyRing) {
-        String fp = fingerprintHex(keyRing).toUpperCase();
-        ephemeralKeys.put(fp, keyRing);
+    private KeyLookup found(PGPPublicKeyRing ring, TrustRootRef store) {
+        String keyserver = fetchedFrom.get(fingerprintHex(ring).toUpperCase());
+        return new KeyLookup(keyserver != null ? TrustRootRef.keyserver(keyserver) : store, ring);
+    }
+
+    /**
+     * Names the keyserver a key held in memory came from: only fetched keys are kept there,
+     * and {@link #addFetched} records the keyserver as it adds them.
+     */
+    private TrustRootRef fetchedFromSource(PGPPublicKeyRing ring) {
+        return TrustRootRef.keyserver(fetchedFrom.get(fingerprintHex(ring).toUpperCase()));
+    }
+
+    /**
+     * Adds a key fetched from a keyserver, recording the keyserver it came from.
+     *
+     * <p>
+     * Unless the store persists fetched keys, the key is kept in memory: available for
+     * verification for the rest of this session, but never written to the cert-d directory,
+     * so fetching a key to check one build does not silently grow the machine's trust
+     * surface. A persisted key is written to cert-d. Either way, a later lookup in this
+     * session reports the keyserver as the key's source.
+     *
+     * @param keyRing the fetched key ring
+     * @param keyserver the keyserver URL it came from
+     */
+    void addFetched(PGPPublicKeyRing keyRing, String keyserver) {
+        String fingerprint = fingerprintHex(keyRing).toUpperCase();
+        if (persistFetched) {
+            storeCert(keyRing);
+        } else {
+            ephemeralKeys.put(fingerprint, keyRing);
+        }
+        fetchedFrom.put(fingerprint, keyserver);
     }
 
     /**
@@ -167,17 +242,18 @@ class BcKeyStore {
      * @return the primary user ID, or {@code null} if no key or UID found
      */
     String findPrimaryUserId(String fingerprint) {
-        PGPPublicKeyRing keyRing = findPublicKey(fingerprint);
-        if (keyRing == null) {
-            return null;
-        }
-        return extractPrimaryUserId(keyRing);
+        KeyLookup found = findPublicKey(fingerprint);
+        return found == null ? null : primaryUserIdOf(found.ring());
     }
 
     /**
-     * Extracts the first user ID from a public key ring.
+     * Returns the first user ID on a key ring, for display: a user ID is self-certified and
+     * proves nothing about who holds the key.
+     *
+     * @param keyRing the key ring
+     * @return the user ID, or {@code null} when the ring carries none
      */
-    private String extractPrimaryUserId(PGPPublicKeyRing keyRing) {
+    String primaryUserIdOf(PGPPublicKeyRing keyRing) {
         Iterator<String> uids = keyRing.getPublicKey().getUserIDs();
         return uids.hasNext() ? uids.next() : null;
     }
@@ -248,79 +324,49 @@ class BcKeyStore {
     }
 
     /**
-     * Searches the GnuPG pubring for a key matching the given fingerprint.
-     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
+     * Looks a signer up in each local store separately, for an inspection report.
      *
-     * @param fingerprint the hex fingerprint to search for
-     * @return the matching key ring, or {@code null} if not found
+     * <p>
+     * The GnuPG pubring and the cert-d store are answered whenever they exist, found or not;
+     * the in-memory cache of fetched keys only when it holds the key. The BC private store
+     * holds secret keys and is not inspected.
+     *
+     * @param fingerprint the fingerprint to look for, or {@code null} to look up by email
+     * @param email the address to look for in user IDs, used when no fingerprint is given
+     * @return one lookup per store — GnuPG pubring, cert-d, then keys fetched this session,
+     *         named by the keyserver that served them — or none when neither a fingerprint nor
+     *         an address is given
      */
-    PGPPublicKeyRing findInGnupg(String fingerprint) {
-        return findInGnupgPubring(fingerprint);
+    List<KeyLookup> inspect(String fingerprint, String email) {
+        String lowerEmail = email == null || email.isEmpty() ? null : email.toLowerCase();
+        if (fingerprint == null && lowerEmail == null) {
+            return List.of();
+        }
+        List<KeyLookup> lookups = new ArrayList<>(3);
+        if (hasGnupgPubring()) {
+            lookups.add(new KeyLookup(TrustRootRef.gnupgKeyring(gnupgHome), fingerprint != null
+                    ? findInGnupgPubring(fingerprint)
+                    : findByEmailInPubring(lowerEmail)));
+        }
+        if (hasCertD()) {
+            lookups.add(new KeyLookup(TrustRootRef.certD(certDHome), fingerprint != null
+                    ? findInCertD(fingerprint)
+                    : findByEmailInCertD(lowerEmail)));
+        }
+        PGPPublicKeyRing fetched = fingerprint != null
+                ? findInEphemeral(fingerprint)
+                : findByEmailInEphemeral(lowerEmail);
+        if (fetched != null) {
+            lookups.add(new KeyLookup(fetchedFromSource(fetched), fetched));
+        }
+        return List.copyOf(lookups);
     }
 
-    /**
-     * Searches the GnuPG pubring for a key whose User ID contains the given email.
-     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
-     *
-     * @param email the email to search for (case-insensitive)
-     * @return the matching key ring, or {@code null} if not found
-     */
-    PGPPublicKeyRing findInGnupgByEmail(String email) {
-        if (email == null || email.isEmpty())
-            return null;
-        return findByEmailInPubring(email.toLowerCase());
-    }
-
-    /**
-     * Searches the cert-d directory for a cert matching the given fingerprint.
-     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
-     *
-     * @param fingerprint the hex fingerprint to search for
-     * @return the matching key ring, or {@code null} if not found
-     */
-    PGPPublicKeyRing findInCertDStore(String fingerprint) {
-        return findInCertD(fingerprint);
-    }
-
-    /**
-     * Searches the cert-d directory for a cert whose User ID contains the given email.
-     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
-     *
-     * @param email the email to search for (case-insensitive)
-     * @return the matching key ring, or {@code null} if not found
-     */
-    PGPPublicKeyRing findInCertDByEmail(String email) {
-        if (email == null || email.isEmpty())
-            return null;
-        return findByEmailInCertD(email.toLowerCase());
-    }
-
-    /**
-     * Searches the in-memory ephemeral cache for a key matching the given fingerprint.
-     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
-     *
-     * @param fingerprint the hex fingerprint to search for
-     * @return the matching key ring, or {@code null} if not found
-     */
-    PGPPublicKeyRing findInEphemeralStore(String fingerprint) {
-        return findInEphemeral(fingerprint);
-    }
-
-    /**
-     * Searches the in-memory ephemeral cache for a key whose User ID contains
-     * the given email.
-     * Exposed as a per-source lookup for {@link BcRunner#inspect}.
-     *
-     * @param email the email to search for (case-insensitive)
-     * @return the matching key ring, or {@code null} if not found
-     */
-    PGPPublicKeyRing findInEphemeralByEmail(String email) {
-        if (email == null || email.isEmpty())
-            return null;
-        String lower = email.toLowerCase();
+    private PGPPublicKeyRing findByEmailInEphemeral(String lowerEmail) {
         for (PGPPublicKeyRing ring : ephemeralKeys.values()) {
-            if (uidContainsEmail(ring, lower))
+            if (uidContainsEmail(ring, lowerEmail)) {
                 return ring;
+            }
         }
         return null;
     }
@@ -329,7 +375,7 @@ class BcKeyStore {
      * Returns {@code true} if a GnuPG pubring file ({@code pubring.kbx} or
      * legacy {@code pubring.gpg}) exists.
      */
-    boolean hasGnupgPubring() {
+    private boolean hasGnupgPubring() {
         return gnupgHome != null
                 && (Files.isRegularFile(gnupgHome.resolve("pubring.kbx"))
                         || Files.isRegularFile(gnupgHome.resolve("pubring.gpg")));
@@ -338,7 +384,7 @@ class BcKeyStore {
     /**
      * Returns {@code true} if the cert-d home directory exists.
      */
-    boolean hasCertD() {
+    private boolean hasCertD() {
         return certDHome != null && Files.isDirectory(certDHome);
     }
 
@@ -368,7 +414,7 @@ class BcKeyStore {
     /**
      * Searches a PGP keyring file for a key matching the fingerprint.
      */
-    private PGPPublicKeyRing findInKeyRingCollection(Path keyringFile, String fingerprint) {
+    private static PGPPublicKeyRing findInKeyRingCollection(Path keyringFile, String fingerprint) {
         try (InputStream in = new BufferedInputStream(Files.newInputStream(keyringFile));
                 InputStream decoded = PGPUtil.getDecoderStream(in)) {
             PGPPublicKeyRingCollection collection = new BcPGPPublicKeyRingCollection(decoded);
@@ -386,7 +432,7 @@ class BcKeyStore {
     /**
      * Searches a GnuPG keybox ({@code .kbx}) file for a key matching the fingerprint.
      */
-    private PGPPublicKeyRing findInKeyBox(Path kbxFile, String fingerprint) {
+    private static PGPPublicKeyRing findInKeyBox(Path kbxFile, String fingerprint) {
         try (InputStream in = new BufferedInputStream(Files.newInputStream(kbxFile))) {
             BcKeyBox keyBox = new BcKeyBox(in);
             for (KeyBlob blob : keyBox.getKeyBlobs()) {
@@ -480,7 +526,7 @@ class BcKeyStore {
     /**
      * Checks whether a public key ring contains a key matching the given fingerprint.
      */
-    private boolean matchesFingerprint(PGPPublicKeyRing ring, String fingerprint) {
+    private static boolean matchesFingerprint(PGPPublicKeyRing ring, String fingerprint) {
         String upper = fingerprint.toUpperCase();
         Iterator<PGPPublicKey> keys = ring.getPublicKeys();
         while (keys.hasNext()) {
@@ -496,7 +542,7 @@ class BcKeyStore {
     /**
      * Reads a PGP public key ring from a file.
      */
-    private PGPPublicKeyRing readPublicKeyRing(Path file) {
+    static PGPPublicKeyRing readPublicKeyRing(Path file) {
         try (InputStream in = new BufferedInputStream(Files.newInputStream(file));
                 InputStream decoded = PGPUtil.getDecoderStream(in)) {
             return new PGPPublicKeyRing(decoded, new BcKeyFingerprintCalculator());
@@ -575,14 +621,14 @@ class BcKeyStore {
     /**
      * Extracts the primary key fingerprint as a hex string from a public key ring.
      */
-    private String fingerprintHex(PGPPublicKeyRing ring) {
+    private static String fingerprintHex(PGPPublicKeyRing ring) {
         return bytesToHex(ring.getPublicKey().getFingerprint());
     }
 
     /**
      * Extracts the primary key fingerprint as a hex string from a secret key ring.
      */
-    private String fingerprintHex(PGPSecretKeyRing ring) {
+    private static String fingerprintHex(PGPSecretKeyRing ring) {
         return bytesToHex(ring.getPublicKey().getFingerprint());
     }
 

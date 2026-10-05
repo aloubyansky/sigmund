@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
+import java.util.Map;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -61,7 +62,7 @@ class VerifyResultTest {
             SigstoreVerifyResult result = SigstoreVerifyResult.indeterminate(IndeterminateReason.EVIDENCE_MALFORMED);
 
             assertThat(result.isIndeterminate(IndeterminateReason.EVIDENCE_MALFORMED)).isTrue();
-            assertThat(result.sigstoreCredential()).isNull();
+            assertThat(result.identity()).isNull();
             assertThat(result.logIndex()).isNull();
         }
 
@@ -143,10 +144,8 @@ class VerifyResultTest {
 
         @Test
         void sigstoreReturnsOidcSubject() {
-            var sc = new SigstoreCredential.Builder()
-                    .issuer("https://accounts.google.com")
-                    .subject("alice@example.com")
-                    .build();
+            var sc = new IdentityCredential("https://accounts.google.com",
+                    Map.of(IdentityCredential.SUBJECT, "alice@example.com"));
             var result = new SigstoreVerifyResult(ClaimOutcome.VERIFIED, null, "alice@example.com", "ECDSA",
                     sc, "12345", 1);
             assertThat(result.signerIdentifier()).isEqualTo("alice@example.com");

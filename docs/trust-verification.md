@@ -78,15 +78,17 @@ Trust policies are defined in `sigmund.yaml` in your project root. The file has 
 
 The `signers` section defines trusted identities. Each signer has a unique ID and one or more credentials that can prove their identity.
 
-#### Three Forms
+#### Two Forms
 
-**Minimal form** — a single email address:
+**Minimal form** — a single email address, vouched for by a listed issuer:
 ```yaml
+issuers:
+  - keys.openpgp.org
 signers:
   jackson-dev: "tatu@fasterxml.com"
 ```
 
-**Short form** — an object with credential keys (no `name`):
+**Object form** — credential keys; unknown keys are errors:
 ```yaml
 signers:
   jane:
@@ -94,47 +96,47 @@ signers:
     email: "jane@example.com"
 ```
 
-**Full form** — an object with a display name and credentials:
-```yaml
-signers:
-  apache:
-    name: "Apache Software Foundation"
-    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
-    email: "dev@maven.apache.org"
-```
+The signer's ID (`jane`) is how trust mappings and reports refer to it.
 
 #### Credential Types
 
-Sigmund supports four credential types:
+A signer carries key material, identities, or both:
 
 | Type | YAML Key | Description | Example |
 |------|----------|-------------|---------|
 | OpenPGP v4 | `pgp4` (alias: `openpgp4`) | 40-character v4 fingerprint | `4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12` |
 | OpenPGP v6 | `pgp6` (alias: `openpgp6`) | 64-character v6 fingerprint | `D62AAB339E45E5EA2FD036872B01D46A517A2991...` |
-| Email | `email` | Email address | `dev@example.com` |
-| Sigstore | `sigstore` | Object with matchable certificate fields | (see below) |
+| Email | `email` | Address vouched for by an issuer | `dev@example.com` |
+| Identities | `identities` | List of complete identities: an issuer and the attributes it attested | (see below) |
 
-**Sigstore credentials** (for Sigstore-signed artifacts):
+Fingerprints must be full; a 64-bit key ID is rejected at load because colliding key IDs can be generated.
+
+An **email address is only as good as whoever vouches for it**. A user ID on an OpenPGP key proves nothing — anyone can put any address on a key they generate — so an address matches only when an issuer vouched for it: a directory that verifies addresses before publishing them (`keys.openpgp.org`), or the OIDC provider behind a Sigstore certificate. Issuers are listed once in the top-level `issuers` section, which a bare `email:` uses, or named on an entry under `identities`. See [issuers](configuration.md#issuers).
+
+**Fingerprints for the keys already seen, an address for keys to come.** A fingerprint is stable, works offline and proves every signature the key ever made, but it covers only that key. An address lets the policy accept a key the publisher generates later: when a signature's key is not pinned, the directory is asked which verified addresses it serves for that key. Directory bindings are current state — after a rotation the directory serves the old key without the address — so keep the old fingerprints alongside the address.
+
+**Identities** — each entry is complete: who vouched (`issuer`) and what they attested. A CI workflow attested by a Sigstore certificate:
 ```yaml
 signers:
   github-actions:
-    name: "My GitHub Actions"
-    sigstore:
-      issuer: "https://token.actions.githubusercontent.com"
-      source-repository-uri: "https://github.com/myorg/myrepo"
+    identities:
+      - issuer: "https://token.actions.githubusercontent.com"
+        source-repository-uri: "https://github.com/myorg/myrepo"
+        build-config-uri: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/heads/main"
 ```
+
+`issuer` may be omitted to accept any issuer listed in `issuers`. Attribute names are checked at load, and a misspelling is an error suggesting the nearest known name. One signer may carry several identities, such as the same address vouched for by `keys.openpgp.org` and by an OIDC provider.
 
 **Multiple credentials per signer:**
 ```yaml
 signers:
   alice:
-    name: "Alice Developer"
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"  # v4 fingerprint
     pgp6: "D62AAB339E45E5EA2FD036872B01D46A517A2991EF8B8F67C32CF07A49CBDAA0"  # v6 fingerprint
     email: "alice@example.com"
 ```
 
-When a signature is verified, Sigmund extracts all proven credentials (fingerprint, email, etc.). A signer matches if **any** of their configured credentials matches **any** proven credential from the signature. Fingerprints are matched first; email is used as a fallback when fingerprints are not available.
+When a signature is verified, Sigmund extracts the credentials it proves: the full fingerprints of the signing key and its primary key, the identity in a Sigstore certificate, and — only when a policy entry needs it and no pinned fingerprint already matched — the addresses a directory verified for the key. A signer matches if **any** of their configured credentials matches **any** proven credential.
 
 ### 2. Trust Mappings
 
@@ -218,11 +220,11 @@ verification:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `resolve-signers` | `true` | Fetch unknown GPG keys from keyservers to resolve signer identities |
+| `resolve-signers` | `true` | Fetch unknown keys from keyservers, and ask directories named in `issuers` for verified addresses |
 | `import-to-keyring` | `false` | Import fetched keys to the local keyring |
 | `keyservers` | `hkps://keys.openpgp.org` | List of keyservers for fetching GPG keys |
 
-**Why `keys.openpgp.org`?** It's the only major keyserver that verifies email addresses before publishing, preventing impersonation via unverified key uploads. Other keyservers (e.g., `keyserver.ubuntu.com`) can be added if needed.
+**Keyservers supply key material only.** The signature proves the key whoever served it, and a user ID a keyserver serves never becomes an identity, so adding a keyserver such as `keyserver.ubuntu.com` cannot widen what is accepted. Identities come only from `issuers`; `keys.openpgp.org` is both the default keyserver and the directory Sigmund can ask for verified addresses.
 
 ## Complete Example
 
@@ -232,15 +234,17 @@ Here's a full `sigmund.yaml` with all trust-related sections:
 # Sigmund trust configuration
 # See: https://github.com/cyberstamp/sigmund/blob/main/docs/trust-verification.md
 
+# Issuers trusted to vouch for identities
+issuers:
+  - keys.openpgp.org
+
 # Define trusted signers
 signers:
-  # Full form: organization with display name
+  # Key already seen, plus an address for keys to come
   apache:
-    name: "Apache Software Foundation"
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
     email: "dev@maven.apache.org"
   
-  # Short form: credentials only
   quarkus-team:
     pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
     email: "quarkus-dev@googlegroups.com"
@@ -248,9 +252,8 @@ signers:
   # Minimal form: email string
   jackson-dev: "tatu@fasterxml.com"
   
-  # Multiple credentials (PGP + Sigstore)
+  # Multiple keys and an address
   alice:
-    name: "Alice Developer"
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
     pgp6: "D62AAB339E45E5EA2FD036872B01D46A517A2991EF8B8F67C32CF07A49CBDAA0"
     email: "alice@example.com"
@@ -386,28 +389,25 @@ The generated file can be used directly with `mvn sigmund:verify`.
 
 ```yaml
 signers:
-  signer-1:
-    name: "Alice Developer"
+  alice-developer:  # user ID on the key, unverified: Alice Developer <alice@example.com>
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
-    email: "alice@example.com"
   
   signer-2:
-    name: "Bob Maintainer"
     pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
 
 trust:
-  io.quarkus.*: signer-1
+  io.quarkus.*: alice-developer
   org.apache.maven.*: signer-2
-  com.example:specific-lib: signer-1
+  com.example:specific-lib: alice-developer
 
 signature-optional:
   - com.internal.utils:helper-lib
 ```
 
 **Tips:**
-- Review the generated file before committing — rename signer IDs to something meaningful
+- Review the generated file before committing — rename signer IDs to something meaningful; the comment shows the user ID each key carries, which is unverified and not used for matching
 - Adjust wildcard patterns if they're too broad or too narrow
-- Add display names to signers for better reporting
+- Add `email:` for signers whose future keys you want to accept, with the directory listed under `issuers`
 
 ### Generation Options
 
@@ -541,9 +541,7 @@ When `mvn sigmund:verify` reports untrusted artifacts, you have several options:
 ```yaml
 signers:
   new-signer:
-    name: "New Developer"
-    pgp4: "<fingerprint-from-output>"
-    email: "<email-from-output>"
+    pgp4: "<full-fingerprint-from-output>"
 
 trust:
   com.example.*: new-signer

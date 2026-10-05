@@ -26,14 +26,14 @@ do when the result is untrusted. Three limitations block the design direction:
 - **"Expected signer" cannot express a new requirement type.** Adding "and a
   builder claim from our CI" has nowhere to go, because the value of a mapping
   is a signer, not a requirement (§3.2).
-- **Roles are absent**, so a builder claim silently satisfies a rule meant for a
-  publisher — the false-green §3.3 exists to prevent.
+- **Only one signer set per target.** A rule cannot say "the publisher's key
+  AND our CI's Sigstore identity"; any listed signer satisfies it.
 - **Enforcement is one dial.** `on-untrusted` conflates outcomes that need
   different treatment: a missing signature is a coverage decision, a failed
   signature is an attack signal (§3.5, §3.6).
 
 ADR-005 supplies the outcome vocabulary and roll-up; ADR-006 supplies
-credentials, issuers and matchers. What remains is the document that states what
+credentials. What remains is the document that states what
 must be true for an artifact, and what happens when it is not.
 
 ## Decision
@@ -43,18 +43,20 @@ must be true for an artifact, and what happens when it is not.
 ```yaml
 version: 2
 
-issuers:                      # ADR-006: trust grants
+issuers:                      # ADR-006: default issuers for identity entries
   - keys.openpgp.org
+  - https://token.actions.githubusercontent.com
 
-signers:
+signers:                      # ADR-006
   apache:
-    credentials:
-      - openpgp4: 4AEE18F83AFDEB23
+    pgp4: 4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12   # keys already seen
+    email: release@apache.org                          # keys to come
+  acme-release:
+    pgp4: 9B1C0E7F2D4A6B83C5E1F09A7D3B2C4E6F8A0B1D
   acme-ci:
-    role: builder
-    credentials:
-      - issuer: https://token.actions.githubusercontent.com
-        source-repository-uri: https://github.com/acme/widget
+    identities:
+      - source-repository-uri: https://github.com/acme/widget
+        build-config-uri: https://github.com/acme/widget/.github/workflows/release.yml
 
 artifacts:                    # unchanged: named pattern groups
   apache-stack:
@@ -63,17 +65,17 @@ artifacts:                    # unchanged: named pattern groups
 
 rules:
   - targets: [apache-stack]
-    requires:
-      - publisher: [apache]
+    requires: [apache]
 
   - targets: ["com.acme.*"]
+    requires: [acme-release, acme-ci]     # both
+
+  - targets: ["org.jboss.*"]
     requires:
-      - publisher: [acme-release]
-      - builder: [acme-ci]
+      - any-of: [jboss, redhat]           # either
 
   - targets: ["com.internal.*"]
-    requires:
-      - publisher: [release-team]
+    requires: [release-team]
     on-no-claim: allow        # what `signature-optional` used to say
 
 defaults:
@@ -105,29 +107,30 @@ claim-set overrides.
   applies — no merging across rules, so the matched rule fully explains the
   outcome. Two rules with identical specificity for the same target are a config
   error, not a silent pick.
-- **`PolicyRuleRef`** (ADR-005) carries the rule's pattern and its location in
-  the file, so a surprising verdict traces to the line that caused it.
+- **The matched-rule reference** on the artifact result (ADR-005) carries the
+  rule's pattern and its location in the file, so a surprising verdict traces to the line that caused it.
 
 ### Requirements
 
-Each entry in `requires` is a role-scoped clause: a role, and the signers whose
-credentials may satisfy it.
+Each entry in `requires` is a clause: a signer id, or `any-of` with a list of
+signer ids.
 
 ```yaml
 requires:
-  - publisher: [apache, jboss]      # any listed signer satisfies this clause
-  - builder: [acme-ci]
+  - acme-release                    # this signer
+  - any-of: [acme-ci, acme-ci-eu]   # and one of these
 ```
 
-- **Clauses are conjunctive; signers within a clause are disjunctive.** Two
-  clauses mean "a publisher claim AND a builder claim"; two signers in one
-  clause mean either will do. Without role-scoped clauses the role dimension is
-  decorative (§3.3).
-- A clause is satisfied by a **verified claim** whose attester credential
-  matches one of the listed signers' matchers *and* whose role equals the
-  clause's role. Role comes from the issuer profile's `default-role`, or from a
-  `role:` on the signer; a derived-versus-asserted mismatch is a config error
-  (ADR-006, §3.3).
+- **Clauses are conjunctive; signers within `any-of` are disjunctive.**
+  `requires: [a, b]` means both. Reading it as "either" fails closed — the
+  artifact is `UNSATISFIED` — which is the safe direction for the mistake.
+- A clause is satisfied by a **verified claim** whose proven credentials match
+  one of the named signers' credentials (ADR-006).
+- **No roles.** A clause names signers, and a signer's credentials already say
+  what it is: an OpenPGP key or a CI workflow identity. "A publisher claim AND a
+  builder claim" is written as the two signers. A role label would add a
+  second, unchecked statement of the same thing; it is deferred until an
+  attestation consumer needs the capacity spelled out (§3.3).
 - **`claim-set`** governs claims beyond those that satisfied the clauses:
   `all` (default) requires every remaining claim to be verified and accepted;
   `any` records and ignores them. This replaces `listed-evidence`.
@@ -161,10 +164,39 @@ would.
 ### Validation
 
 The parser is strict: unknown keys are errors. Beyond that it checks that
-signer references in `requires` exist, that every credential matcher can be
-asserted by some trusted issuer (ADR-006), that no setting exists for `FAILED`,
+signer references in `requires` exist, that every identity entry can be
+asserted by one of its issuers (ADR-006), that no setting exists for `FAILED`,
 that target patterns are GAV-shaped, and that no two rules tie on specificity.
 Errors name the file, the location and the fix.
+
+`requires` has exactly two clause shapes, and the parser normalizes both to one
+model — a conjunction of disjunctions, `List<Set<String>>` by signer id, a
+scalar clause being a one-member set. Two edge cases are errors rather than
+readings:
+
+- **An empty `requires`**, which would read as "a rule applies and nothing is
+  required" and make every matched artifact vacuously `SATISFIED`. A rule that
+  tolerates artifacts says so through enforcement, such as `on-no-claim: allow`.
+- **A bare scalar**, `requires: acme-release`. It would be a third shape to save
+  two characters; `requires` is always a sequence.
+
+### Schema
+
+A JSON Schema for the policy document ships as a resource and is published for
+editors: with it, YAML language servers in IntelliJ and VS Code offer
+completion, hover documentation and unknown-key errors while the file is being
+written. It states the structure — keys, value types, the two clause shapes as
+a `oneOf`, `additionalProperties: false` throughout.
+
+**The parser stays authoritative.** The schema cannot express cross-references,
+specificity ties or issuer assertability, and a schema validator's errors point
+at a JSON path where the parser names the rule and the fix. So the schema is not
+consulted at runtime and adds no dependency to verification.
+
+Drift between the two is caught by a test that runs on every build: every
+valid fixture and every example in the documentation passes both the schema and
+the parser, and every invalid fixture the parser rejects for a structural
+reason is rejected by the schema too.
 
 ## Consequences
 
@@ -172,18 +204,21 @@ Errors name the file, the location and the fix.
 `DefaultTrustPolicy`, `ListedEvidencePolicy`, `UnlistedEvidencePolicy`,
 `UntrustedPolicy`, and the `trust`, `signature-optional` and `policy` sections.
 
-**Added:** `rules`, `requires`, `defaults`, per-rule enforcement, `claim-set`,
-and `role:` on a signer.
+**Added:** `rules`, `requires` with `any-of`, `defaults`, per-rule
+enforcement, `claim-set`; a published JSON Schema for the document.
 
 **`TrustPolicy` becomes** a rule lookup plus a `RequirementEvaluator`
 (ADR-005) — `matchRule(subject)` and `evaluate(subject, verifiedClaims)` — so
 the roll-up stays independent of schema details.
 
-**Bootstrap** (`generateTrustConfig`) emits `rules` with a single `publisher`
-clause per group, and `on-no-claim: allow` for artifacts observed without
-evidence, replacing the `signature-optional` list. Roles stay `unknown` unless
-an issuer profile supplies one, and an `unknown` role satisfies only a clause
-written for `unknown`.
+**Bootstrap** (`generateTrustConfig`) emits `rules` with one clause per group —
+the observed signer, or `any-of` where a group was observed signed by several —
+and `on-no-claim: allow` for artifacts observed without evidence, replacing the
+`signature-optional` list.
+
+**`AttesterRole` and `ClaimResult.role` are removed.** Nothing sets a role other
+than `UNKNOWN`, and without role-scoped clauses nothing reads one. They return
+with attestations if a consumer needs them.
 
 **Behaviour users would notice:** a policy that used to pass with a tolerated
 unsigned artifact now also verifies any signature that artifact carries; a

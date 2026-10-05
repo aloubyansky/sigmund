@@ -3,14 +3,13 @@ package dev.cyberstamp.sigmund.sigstore;
 import dev.cyberstamp.sigmund.core.Claim;
 import dev.cyberstamp.sigmund.core.ClaimOutcome;
 import dev.cyberstamp.sigmund.core.Credential;
-import dev.cyberstamp.sigmund.core.EmailCredential;
+import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
 import dev.cyberstamp.sigmund.core.SignResult;
 import dev.cyberstamp.sigmund.core.SignatureFormat;
 import dev.cyberstamp.sigmund.core.SignatureTool;
 import dev.cyberstamp.sigmund.core.SigningInfo;
 import dev.cyberstamp.sigmund.core.SigstoreClaim;
-import dev.cyberstamp.sigmund.core.SigstoreCredential;
 import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
 import dev.cyberstamp.sigmund.core.ToolExecutionException;
 import dev.cyberstamp.sigmund.core.TrustRootRef;
@@ -27,9 +26,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
-import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1UTF8String;
@@ -61,11 +62,34 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
     // Sigstore certificate extension OIDs
     private static final String OID_ISSUER_V2 = "1.3.6.1.4.1.57264.1.8";
     private static final String OID_ISSUER_V1 = "1.3.6.1.4.1.57264.1.1";
-    private static final String OID_SOURCE_REPOSITORY_URI = "1.3.6.1.4.1.57264.1.12";
-    private static final String OID_SOURCE_REPOSITORY_OWNER_URI = "1.3.6.1.4.1.57264.1.16";
-    private static final String OID_BUILD_TRIGGER = "1.3.6.1.4.1.57264.1.20";
-    private static final String OID_BUILD_CONFIG_URI = "1.3.6.1.4.1.57264.1.18";
-    private static final String OID_RUNNER_ENVIRONMENT = "1.3.6.1.4.1.57264.1.11";
+    private static final String FULCIO_OID_PREFIX = "1.3.6.1.4.1.57264.1.";
+
+    /**
+     * Fulcio certificate extensions by OID suffix, named as in Fulcio's OID registry. The
+     * deprecated GitHub-specific extensions ({@code .2}–{@code .6}) are left out.
+     */
+    private static final Map<String, String> FULCIO_EXTENSIONS = fulcioExtensions();
+
+    private static Map<String, String> fulcioExtensions() {
+        Map<String, String> extensions = new LinkedHashMap<>();
+        extensions.put("9", "build-signer-uri");
+        extensions.put("10", "build-signer-digest");
+        extensions.put("11", "runner-environment");
+        extensions.put("12", "source-repository-uri");
+        extensions.put("13", "source-repository-digest");
+        extensions.put("14", "source-repository-ref");
+        extensions.put("15", "source-repository-identifier");
+        extensions.put("16", "source-repository-owner-uri");
+        extensions.put("17", "source-repository-owner-identifier");
+        extensions.put("18", "build-config-uri");
+        extensions.put("19", "build-config-digest");
+        extensions.put("20", "build-trigger");
+        extensions.put("21", "run-invocation-uri");
+        extensions.put("22", "source-repository-visibility-at-signing");
+        extensions.put("23", "deployment-environment");
+        extensions.put("24", "token-subject");
+        return Collections.unmodifiableMap(extensions);
+    }
 
     private final SigstoreSignatureFormat format;
     private final KeylessSigner signer;
@@ -234,11 +258,10 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
     /**
      * Extracts proven credentials from a Sigstore verification result.
      * <p>
-     * Produces a {@link SigstoreCredential} carrying all available certificate
-     * extension fields, and optionally an {@link EmailCredential} when the SAN
-     * subject type is {@code rfc822Name}. This dual extraction enables cross-backend
-     * identity matching: a signer configured with only an {@code email} credential
-     * matches both OpenPGP (via UID parsing) and Sigstore (via the {@link EmailCredential}).
+     * A verified bundle proves one identity: the OIDC issuer that authenticated the signer,
+     * with the certificate subject, the subject as {@code email} when it is an address, and
+     * every Fulcio certificate extension present. A certificate that names no issuer proves
+     * nothing, since an identity is only as good as whoever vouched for it.
      *
      * @param result the verification result
      * @return the proven credentials, or empty if verification did not pass
@@ -248,18 +271,8 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
         if (!result.isVerified()) {
             return List.of();
         }
-        SigstoreVerifyResult sr = (SigstoreVerifyResult) result;
-        SigstoreCredential sc = sr.sigstoreCredential();
-        String subject = sr.signerDisplayName();
-
-        List<Credential> credentials = new ArrayList<>(2);
-        if (sc != null) {
-            credentials.add(sc);
-        }
-        if (subject != null && sr.subjectType() == GeneralName.rfc822Name) {
-            credentials.add(new EmailCredential(subject));
-        }
-        return List.copyOf(credentials);
+        IdentityCredential identity = ((SigstoreVerifyResult) result).identity();
+        return identity == null ? List.of() : List.of(identity);
     }
 
     /**
@@ -319,74 +332,51 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
     private SigstoreVerifyResult buildSuccessResult(Bundle bundle) {
         X509Certificate cert = (X509Certificate) bundle.getCertPath().getCertificates().get(0);
 
-        SigstoreCredential sigstoreCredential = extractSigstoreCredential(cert);
         String subject = extractSubject(cert);
         int subjectType = resolveSubjectType(cert);
+        IdentityCredential identity = identityOf(cert);
         String logIndex = extractLogIndex(bundle);
         String algorithm = cert.getPublicKey().getAlgorithm();
 
         return new SigstoreVerifyResult(ClaimOutcome.VERIFIED, null, subject, algorithm,
-                sigstoreCredential, logIndex, subjectType);
+                identity, logIndex, subjectType);
     }
 
     /**
-     * Extracts all available Sigstore certificate extension fields into a {@link SigstoreCredential}.
+     * Extracts the identity a Fulcio certificate proves.
      * <p>
-     * Collects the OIDC issuer, subject, and all additional certificate metadata
-     * (source repository, build trigger, workflow name, runner environment). Returns
-     * {@code null} if no fields are present — this can happen with older Fulcio
-     * certificates or non-standard issuers.
+     * The issuer is who vouched; the subject, the subject as an email address when the SAN is
+     * an {@code rfc822Name}, and every Fulcio extension present are what it attested.
      *
      * @param cert the Fulcio signing certificate
-     * @return a {@link SigstoreCredential} with all available fields, or {@code null}
+     * @return the identity, or {@code null} when the certificate names no issuer or attests
+     *         nothing
      */
-    private SigstoreCredential extractSigstoreCredential(X509Certificate cert) {
-        var builder = new SigstoreCredential.Builder();
-        boolean hasField = false;
-
+    static IdentityCredential identityOf(X509Certificate cert) {
         String issuer = extractIssuer(cert);
-        if (issuer != null) {
-            builder.issuer(issuer);
-            hasField = true;
+        if (issuer == null) {
+            return null;
         }
+        Map<String, String> attributes = new LinkedHashMap<>();
+        addSubject(attributes, cert);
+        for (Map.Entry<String, String> extension : FULCIO_EXTENSIONS.entrySet()) {
+            String value = extractExtension(cert, FULCIO_OID_PREFIX + extension.getKey());
+            if (value != null && !value.isBlank()) {
+                attributes.put(extension.getValue(), value);
+            }
+        }
+        return attributes.isEmpty() ? null : new IdentityCredential(issuer, attributes);
+    }
 
+    private static void addSubject(Map<String, String> attributes, X509Certificate cert) {
         String subject = extractSubject(cert);
-        if (subject != null) {
-            builder.subject(subject);
-            hasField = true;
+        if (subject == null) {
+            return;
         }
-
-        String sourceRepoUri = extractExtension(cert, OID_SOURCE_REPOSITORY_URI);
-        if (sourceRepoUri != null) {
-            builder.sourceRepositoryUri(sourceRepoUri);
-            hasField = true;
+        attributes.put(IdentityCredential.SUBJECT, subject);
+        if (resolveSubjectType(cert) == GeneralName.rfc822Name) {
+            attributes.put(IdentityCredential.EMAIL, subject);
         }
-
-        String sourceRepoOwnerUri = extractExtension(cert, OID_SOURCE_REPOSITORY_OWNER_URI);
-        if (sourceRepoOwnerUri != null) {
-            builder.sourceRepositoryOwnerUri(sourceRepoOwnerUri);
-            hasField = true;
-        }
-
-        String buildTrigger = extractExtension(cert, OID_BUILD_TRIGGER);
-        if (buildTrigger != null) {
-            builder.buildTrigger(buildTrigger);
-            hasField = true;
-        }
-
-        String buildConfigUri = extractExtension(cert, OID_BUILD_CONFIG_URI);
-        if (buildConfigUri != null) {
-            builder.buildConfigUri(buildConfigUri);
-            hasField = true;
-        }
-
-        String runnerEnv = extractExtension(cert, OID_RUNNER_ENVIRONMENT);
-        if (runnerEnv != null) {
-            builder.runnerEnvironment(runnerEnv);
-            hasField = true;
-        }
-
-        return hasField ? builder.build() : null;
     }
 
     /**
@@ -396,7 +386,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
      * UTF-8 string. Falls back to V1 OID ({@code 1.3.6.1.4.1.57264.1.1})
      * which contains raw UTF-8 bytes in the octet string.
      */
-    private String extractIssuer(X509Certificate cert) {
+    private static String extractIssuer(X509Certificate cert) {
         byte[] v2 = cert.getExtensionValue(OID_ISSUER_V2);
         if (v2 != null) {
             return parseAsn1Utf8Extension(v2);
@@ -419,7 +409,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
      * @param oid the extension OID to retrieve
      * @return the UTF-8 string value, or {@code null}
      */
-    private String extractExtension(X509Certificate cert, String oid) {
+    private static String extractExtension(X509Certificate cert, String oid) {
         byte[] value = cert.getExtensionValue(oid);
         if (value == null)
             return null;
@@ -429,7 +419,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
         return parseRawUtf8Extension(value);
     }
 
-    private String parseAsn1Utf8Extension(byte[] extensionValue) {
+    private static String parseAsn1Utf8Extension(byte[] extensionValue) {
         try {
             ASN1OctetString outer = ASN1OctetString.getInstance(extensionValue);
             ASN1UTF8String inner = ASN1UTF8String.getInstance(outer.getOctets());
@@ -439,7 +429,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
         }
     }
 
-    private String parseRawUtf8Extension(byte[] extensionValue) {
+    private static String parseRawUtf8Extension(byte[] extensionValue) {
         try {
             ASN1OctetString outer = ASN1OctetString.getInstance(extensionValue);
             return new String(outer.getOctets(), java.nio.charset.StandardCharsets.UTF_8);
@@ -451,7 +441,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
     /**
      * Extracts the signer identity from the certificate's Subject Alternative Name.
      */
-    private String extractSubject(X509Certificate cert) {
+    private static String extractSubject(X509Certificate cert) {
         try {
             // Fulcio certs encode the signer identity as a Subject Alternative Name;
             // each SAN is a List of [Integer type, Object value]
@@ -472,7 +462,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
      *
      * @return the {@link GeneralName} tag value (1 = rfc822Name, 6 = URI), or {@code -1}
      */
-    private int resolveSubjectType(X509Certificate cert) {
+    private static int resolveSubjectType(X509Certificate cert) {
         try {
             Collection<List<?>> sans = cert.getSubjectAlternativeNames();
             if (sans == null || sans.isEmpty()) {

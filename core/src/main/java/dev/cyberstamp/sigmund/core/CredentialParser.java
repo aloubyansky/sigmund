@@ -1,22 +1,17 @@
 package dev.cyberstamp.sigmund.core;
 
 /**
- * Factory methods for creating {@link Credential} instances from raw user input.
+ * Factory methods for creating {@link Credential} instances from raw user input, such as a
+ * command-line argument naming a signer to inspect.
  *
  * <p>
- * Handles validation and normalization of identifiers. Fingerprints are
- * uppercased and checked for valid hex characters; the OpenPGP key version
- * is inferred from the fingerprint length (40 hex chars → v4, 64 → v6).
- *
- * <p>
- * The {@link #parse(String)} method performs auto-detection: identifiers
- * containing {@code @} are treated as emails, otherwise they are validated
- * as hex fingerprints with a length check (16, 40, or 64 characters).
+ * Fingerprints must be full — 40 hex characters for an OpenPGP v4 key, 64 for v6 — and the
+ * key version is inferred from the length. Key IDs are rejected: they can collide, so they
+ * cannot identify key material.
  *
  * @see Credential
- * @see FingerprintCredential
- * @see EmailCredential
- * @see SigstoreCredential
+ * @see KeyCredential
+ * @see IdentityCredential
  */
 public final class CredentialParser {
 
@@ -24,105 +19,43 @@ public final class CredentialParser {
     }
 
     /**
-     * Creates a {@link FingerprintCredential} from a hex fingerprint string.
+     * Creates OpenPGP key material from a full fingerprint.
      *
-     * <p>
-     * The fingerprint is uppercased and validated as hexadecimal. The credential
-     * type is inferred from length: strings longer than 40 characters are treated
-     * as OpenPGP v6 fingerprints, otherwise v4.
-     *
-     * @param fingerprint hex fingerprint string
-     * @return a fingerprint credential with the inferred key version
-     * @throws IllegalArgumentException if the fingerprint is null, blank, or not valid hex
+     * @param fingerprint the full v4 or v6 fingerprint
+     * @return the key credential
+     * @throws IllegalArgumentException if the value is not a full fingerprint
      */
-    public static FingerprintCredential fromFingerprint(String fingerprint) {
-        if (fingerprint == null || fingerprint.isBlank()) {
-            throw new IllegalArgumentException("Fingerprint must not be empty");
-        }
-        String upper = fingerprint.toUpperCase();
-        if (!upper.matches("[0-9A-F]+")) {
-            throw new IllegalArgumentException(
-                    "Fingerprint must be a hex string: " + fingerprint);
-        }
-        String type = upper.length() > 40
-                ? Credential.TYPE_OPENPGP_V6
-                : Credential.TYPE_OPENPGP_V4;
-        return new FingerprintCredential(type, upper);
+    public static KeyCredential fromFingerprint(String fingerprint) {
+        return KeyCredential.openPgp(fingerprint);
     }
 
     /**
-     * Creates an {@link EmailCredential} from an email address.
+     * Creates an email identity with no issuer, suitable as a lookup query.
      *
      * @param email the email address
-     * @return an email credential
+     * @return the identity
      * @throws IllegalArgumentException if the email is null or blank
      */
-    public static EmailCredential fromEmail(String email) {
-        if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException("Email must not be empty");
-        }
-        return new EmailCredential(email);
+    public static IdentityCredential fromEmail(String email) {
+        return IdentityCredential.email(null, email);
     }
 
     /**
-     * Creates a {@link SigstoreCredential} from an issuer URL and subject.
-     *
-     * @param issuer OIDC issuer URL
-     * @param subject SAN subject (workflow URI or email)
-     * @return a Sigstore credential with issuer and subject set
-     * @throws IllegalArgumentException if either parameter is null or blank
-     */
-    public static SigstoreCredential fromSigstore(String issuer, String subject) {
-        if (issuer == null || issuer.isBlank()) {
-            throw new IllegalArgumentException("Sigstore issuer must not be empty");
-        }
-        if (subject == null || subject.isBlank()) {
-            throw new IllegalArgumentException("Sigstore subject must not be empty");
-        }
-        return new SigstoreCredential.Builder()
-                .issuer(issuer)
-                .subject(subject)
-                .build();
-    }
-
-    /**
-     * Auto-detects the credential type from a raw identifier string.
-     *
-     * <p>
-     * Detection rules:
-     * <ul>
-     * <li>Contains {@code @} → {@link EmailCredential}</li>
-     * <li>16 hex chars → {@link FingerprintCredential} (short key ID, assumed v4)</li>
-     * <li>40 hex chars → {@link FingerprintCredential} (v4 fingerprint)</li>
-     * <li>64 hex chars → {@link FingerprintCredential} (v6 fingerprint)</li>
-     * </ul>
+     * Auto-detects the credential kind from a raw identifier: anything containing {@code @}
+     * is an email address, anything else must be a full fingerprint.
      *
      * @param identifier the raw identifier to parse
      * @return the parsed credential
-     * @throws IllegalArgumentException if the identifier is null, blank, not valid hex,
-     *         or has an unrecognized hex length
+     * @throws IllegalArgumentException if the identifier is blank, or neither an address nor
+     *         a full fingerprint
      */
     public static Credential parse(String identifier) {
         if (identifier == null || identifier.isBlank()) {
-            throw new IllegalArgumentException(
-                    "Identifier must not be empty");
+            throw new IllegalArgumentException("Identifier must not be empty");
         }
         if (identifier.contains("@")) {
-            return new EmailCredential(identifier);
+            return fromEmail(identifier);
         }
-        String upper = identifier.toUpperCase();
-        if (!upper.matches("[0-9A-F]+")) {
-            throw new IllegalArgumentException(
-                    "Identifier '" + identifier + "' is not a valid hex fingerprint or email.");
-        }
-        if (upper.length() != 16 && upper.length() != 40 && upper.length() != 64) {
-            throw new IllegalArgumentException(
-                    "Fingerprint must be 16, 40, or 64 hex characters (got "
-                            + upper.length() + ").");
-        }
-        String type = upper.length() > 40
-                ? Credential.TYPE_OPENPGP_V6
-                : Credential.TYPE_OPENPGP_V4;
-        return new FingerprintCredential(type, upper);
+        return fromFingerprint(identifier);
     }
 }

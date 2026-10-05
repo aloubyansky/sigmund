@@ -11,8 +11,8 @@ package dev.cyberstamp.sigmund.core;
  * @param sourceType broad category of the source ({@code "local"}, {@code "hkp"},
  *        {@code "wkd"}, {@code "rekor"}, {@code "fulcio"})
  * @param sourceLabel human-readable label identifying the specific source
- *        (e.g. {@code "hkps://keys.openpgp.org"}, {@code "GnuPG pubring"},
- *        {@code "ephemeral cache"})
+ *        (e.g. {@code "hkps://keys.openpgp.org"}, or a trust root's display name such as
+ *        {@code "gnupg-keyring /home/alice/.gnupg"})
  * @param found {@code true} if the source contained a key matching the query
  * @param info key metadata extracted from the source, or {@code null} if
  *        the key was not found

@@ -432,18 +432,48 @@ class SigmundTest {
     class VerifierCreation {
 
         @Test
+        void closingSigmundClosesTheDirectory() {
+            var format = mockFormat("openpgp", ".asc", true, List.of());
+            var tool = mockVerifyingTool("gpg", format, true,
+                    OpenPgpVerifyResult.indeterminate(IndeterminateReason.KEY_UNAVAILABLE));
+            boolean[] closed = { false };
+            OpenPgpDirectory directory = new OpenPgpDirectory() {
+                @Override
+                public String name() {
+                    return IssuerKind.KEYS_OPENPGP_ORG;
+                }
+
+                @Override
+                public List<String> verifiedAddresses(String fingerprint) {
+                    return List.of();
+                }
+
+                @Override
+                public void close() {
+                    closed[0] = true;
+                }
+            };
+
+            Sigmund.builder().addTool(tool).openPgpDirectory(directory).build().close();
+
+            assertThat(closed[0]).isTrue();
+        }
+
+        @Test
         void verifierAssessTrusted() throws IOException {
             var claim = new OpenPgpClaim("armored", 4, null, 1, null);
             var result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice <alice@example.com>", "RSA",
-                    4, "4AEE18F83AFDEB23", "4AEE18F83AFDEB23");
+                    4, "4AEE18F83AFDEB23", "4AEE18F83AFDEB23000000000000000000000000");
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true, result);
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
                 var policy = new DefaultTrustPolicy(
-                        Map.of("org.example:*", List.of(new SignerIdentity("alice", "Alice",
-                                List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23"))))),
-                        List.of(), ListedEvidencePolicy.ANY, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
+                        Map.of("org.example:*",
+                                List.of(new SignerIdentity("alice",
+                                        List.of(new KeyCredential("openpgp4", "4AEE18F83AFDEB23000000000000000000000000"))))),
+                        List.of(), ListedEvidencePolicy.ANY, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
+                        List.of());
                 TrustVerifier verifier = sigmund.verifier(policy);
 
                 Path artifact = createTempFile("test.jar");
@@ -460,15 +490,17 @@ class SigmundTest {
         void verifierAssessUntrusted() throws IOException {
             var claim = new OpenPgpClaim("armored", 4, null, 1, null);
             var result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Bob <bob@example.com>", "RSA",
-                    4, "DIFFERENT18F83AFD", "DIFFERENT18F83AFD");
+                    4, "0000000018F83AFD", "0000000018F83AFD000000000000000000000000");
             var format = mockFormat("openpgp", ".asc", true, List.of(claim));
             var tool = mockVerifyingTool("gpg", format, true, result);
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
                 var policy = new DefaultTrustPolicy(
-                        Map.of("org.example:*", List.of(new SignerIdentity("alice", "Alice",
-                                List.of(new FingerprintCredential("openpgp4", "4AEE18F83AFDEB23"))))),
-                        List.of(), ListedEvidencePolicy.ANY, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL);
+                        Map.of("org.example:*",
+                                List.of(new SignerIdentity("alice",
+                                        List.of(new KeyCredential("openpgp4", "4AEE18F83AFDEB23000000000000000000000000"))))),
+                        List.of(), ListedEvidencePolicy.ANY, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
+                        List.of());
                 TrustVerifier verifier = sigmund.verifier(policy);
 
                 Path artifact = createTempFile("test2.jar");
@@ -789,7 +821,7 @@ class SigmundTest {
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
                 var report = sigmund.inspectSigner(
-                        new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                        new KeyCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
                         null);
 
                 assertThat(report).isNotNull();
@@ -805,7 +837,7 @@ class SigmundTest {
             try (var sigmund = Sigmund.builder().addTool(bc).addTool(gpg).build()) {
 
                 var report = sigmund.inspectSigner(
-                        new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                        new KeyCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
                         "gpg");
 
                 assertThat(report).isNotNull();
@@ -819,7 +851,7 @@ class SigmundTest {
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
                 var report = sigmund.inspectSigner(
-                        new FingerprintCredential("openpgp4", "AABB"), null);
+                        new KeyCredential("openpgp4", "AABB000000000000000000000000000000000000"), null);
 
                 assertThat(report).isNotNull();
                 assertThat(report.results().isEmpty()).isTrue();
@@ -833,7 +865,7 @@ class SigmundTest {
             try (var sigmund = Sigmund.builder().addTool(bc).addTool(sq).build()) {
 
                 var report = sigmund.inspectSigner(
-                        new FingerprintCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                        new KeyCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
                         null);
 
                 assertThat(report.results().size()).isEqualTo(2);
@@ -1015,7 +1047,7 @@ class SigmundTest {
             @Override
             public List<Credential> extractCredentials(VerifyResult r) {
                 if (r instanceof OpenPgpVerifyResult opvr && opvr.fingerprint() != null) {
-                    return List.of(new FingerprintCredential(Credential.TYPE_OPENPGP_V4, opvr.fingerprint()));
+                    return List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, opvr.fingerprint()));
                 }
                 return List.of();
             }
@@ -1107,7 +1139,7 @@ class SigmundTest {
 
         @Override
         public boolean canInspect(Credential credential) {
-            return credential instanceof FingerprintCredential;
+            return credential instanceof KeyCredential;
         }
 
         @Override

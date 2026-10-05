@@ -69,6 +69,19 @@ public interface TrustPolicy {
     UntrustedPolicy onUntrusted();
 
     /**
+     * Returns the issuers trusted for identity entries that do not name their own.
+     *
+     * <p>
+     * This is the default grant for identities; an entry that names an issuer is trusted from
+     * that issuer only, whether or not it is listed here.
+     *
+     * @return canonical issuer names, empty when no default issuer is trusted
+     */
+    default List<String> issuers() {
+        return List.of();
+    }
+
+    /**
      * Returns the requirements this policy places on an artifact's verified claims.
      *
      * <p>
@@ -86,10 +99,10 @@ public interface TrustPolicy {
                 return null;
             }
             List<ClaimResult> accepted = verifiedClaims.stream()
-                    .filter(claim -> matchesAny(expected, claim))
+                    .filter(claim -> matchesAny(expected, claim, issuers()))
                     .toList();
             List<ClaimResult> unaccepted = verifiedClaims.stream()
-                    .filter(claim -> !matchesAny(expected, claim))
+                    .filter(claim -> !matchesAny(expected, claim, issuers()))
                     .toList();
             return new RequirementEvaluator.Evaluation(!accepted.isEmpty(), accepted, unaccepted);
         };
@@ -106,16 +119,24 @@ public interface TrustPolicy {
                 : ClaimSetMode.ALL_CLAIMS;
     }
 
-    private static boolean matchesAny(List<SignerIdentity> signers, ClaimResult claim) {
+    private static boolean matchesAny(List<SignerIdentity> signers, ClaimResult claim,
+            List<String> defaultIssuers) {
         for (SignerIdentity signer : signers) {
             for (Credential expected : signer.credentials()) {
                 for (Credential proven : claim.attesterCredentials()) {
-                    if (expected.matches(proven)) {
+                    if (matches(expected, proven, defaultIssuers)) {
                         return true;
                     }
                 }
             }
         }
         return false;
+    }
+
+    private static boolean matches(Credential expected, Credential proven,
+            List<String> defaultIssuers) {
+        return expected instanceof IdentityCredential identity
+                ? identity.matches(proven, defaultIssuers)
+                : expected.matches(proven);
     }
 }

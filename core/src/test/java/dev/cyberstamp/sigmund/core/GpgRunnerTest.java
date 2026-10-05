@@ -12,6 +12,38 @@ import org.junit.jupiter.api.io.TempDir;
 class GpgRunnerTest {
 
     @Test
+    void validSigCarriesSigningAndPrimaryFingerprints() {
+        String status = """
+                [GNUPG:] NEWSIG
+                [GNUPG:] GOODSIG 1111111111111111 Alice <alice@example.org>
+                [GNUPG:] VALIDSIG 1111111111111111111111111111111111111111 2026-09-30 1790000000 0 4 0 22 10 00 4aee18f83afdeb23468b2e5a2d7baf3c1e9f5a12
+                """;
+
+        String[] validSig = GpgRunner.validSigFields(status);
+
+        assertThat(GpgRunner.fingerprintField(validSig, GpgRunner.VALIDSIG_SIGNING_FINGERPRINT))
+                .isEqualTo("1111111111111111111111111111111111111111");
+        assertThat(GpgRunner.fingerprintField(validSig, GpgRunner.VALIDSIG_PRIMARY_FINGERPRINT))
+                .isEqualTo("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12");
+    }
+
+    @Test
+    void validSigWithoutAPrimaryFingerprintHasNone() {
+        String[] validSig = GpgRunner.validSigFields(
+                "[GNUPG:] VALIDSIG 1111111111111111111111111111111111111111 2026-09-30 1790000000 0 4 0 22 10 00");
+
+        assertThat(GpgRunner.fingerprintField(validSig, GpgRunner.VALIDSIG_PRIMARY_FINGERPRINT)).isNull();
+    }
+
+    @Test
+    void noValidSigWhenTheSignatureIsBad() {
+        String[] validSig = GpgRunner.validSigFields("[GNUPG:] BADSIG 1111111111111111 Alice");
+
+        assertThat(validSig).isNull();
+        assertThat(GpgRunner.fingerprintField(validSig, GpgRunner.VALIDSIG_SIGNING_FINGERPRINT)).isNull();
+    }
+
+    @Test
     void extractGpgKeyIdFromStderr() {
         String stderr = """
                 gpg: Signature made Mon 12 May 2025 10:00:00 AM EDT

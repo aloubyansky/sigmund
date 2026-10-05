@@ -1,0 +1,195 @@
+package dev.cyberstamp.sigmund.core;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import org.bouncycastle.openpgp.PGPPublicKey;
+import org.bouncycastle.openpgp.PGPPublicKeyRing;
+import org.bouncycastle.openpgp.PGPUtil;
+import org.bouncycastle.openpgp.operator.bc.BcKeyFingerprintCalculator;
+
+/**
+ * The keys.openpgp.org directory, asked through its VKS interface.
+ *
+ * <p>
+ * keys.openpgp.org publishes a user ID only after the address owner confirms it by email, and
+ * serves a key's other data without unverified user IDs, so every address on a key it returns
+ * is one it vouches for. Keys are looked up with {@code GET /vks/v1/by-fingerprint/<FPR>}, which
+ * accepts the fingerprint of a primary key or any subkey in upper-case hex; the returned key is
+ * checked to hold that fingerprint before any address on it is believed.
+ *
+ * <p>
+ * Lookups, including failed ones, are cached for the life of the instance: the directory
+ * rate-limits fingerprint lookups, and a build asks about the same keys many times.
+ */
+final class KeysOpenPgpOrgDirectory implements OpenPgpDirectory {
+
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
+    private static final int NOT_FOUND = 404;
+    private static final int OK = 200;
+
+    private final String endpoint;
+    private HttpClient httpClient;
+    private final Map<String, Lookup> lookups = new ConcurrentHashMap<>();
+
+    /**
+     * Creates a client for a directory endpoint.
+     *
+     * @param endpoint the base URL, such as {@code https://keys.openpgp.org}
+     */
+    KeysOpenPgpOrgDirectory(String endpoint) {
+        this.endpoint = endpoint.replaceFirst("/+$", "");
+    }
+
+    /**
+     * Creates a client for the public keys.openpgp.org service.
+     *
+     * @return the client
+     */
+    static KeysOpenPgpOrgDirectory standard() {
+        return new KeysOpenPgpOrgDirectory(IssuerKind.KEYS_OPENPGP_ORG);
+    }
+
+    @Override
+    public String name() {
+        return IssuerKind.KEYS_OPENPGP_ORG;
+    }
+
+    @Override
+    public List<String> verifiedAddresses(String fingerprint) throws IOException {
+        String key = fingerprint.toUpperCase(Locale.ROOT);
+        Lookup lookup = lookups.computeIfAbsent(key, this::lookUp);
+        if (lookup.failure() != null) {
+            throw new IOException("keys.openpgp.org could not be asked about " + key + ": "
+                    + lookup.failure());
+        }
+        return lookup.addresses();
+    }
+
+    private Lookup lookUp(String fingerprint) {
+        try {
+            HttpResponse<byte[]> response = client().send(request(fingerprint),
+                    HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() == NOT_FOUND) {
+                return Lookup.found(List.of());
+            }
+            if (response.statusCode() != OK) {
+                return Lookup.failed("HTTP " + response.statusCode());
+            }
+            return Lookup.found(addressesFor(parse(response.body()), fingerprint));
+        } catch (IOException e) {
+            return Lookup.failed(e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Lookup.failed("interrupted");
+        }
+    }
+
+    /**
+     * Creates the HTTP client on first use, so a build that never needs a directory lookup
+     * never starts one.
+     */
+    private synchronized HttpClient client() {
+        if (httpClient == null) {
+            httpClient = HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
+        }
+        return httpClient;
+    }
+
+    /**
+     * Releases the HTTP client, if one was started.
+     *
+     * <p>
+     * {@link HttpClient} can be closed from Java 21 on; on Java 17 it has no close method,
+     * and its resources are released once the client is no longer reachable.
+     */
+    @Override
+    public synchronized void close() {
+        if (httpClient instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception ignored) {
+                // nothing left to release
+            }
+        }
+        httpClient = null;
+    }
+
+    private HttpRequest request(String fingerprint) {
+        return HttpRequest.newBuilder()
+                .uri(URI.create(endpoint + "/vks/v1/by-fingerprint/" + fingerprint))
+                .timeout(REQUEST_TIMEOUT)
+                .GET()
+                .build();
+    }
+
+    private static PGPPublicKeyRing parse(byte[] body) throws IOException {
+        try (InputStream in = PGPUtil.getDecoderStream(new ByteArrayInputStream(body))) {
+            return new PGPPublicKeyRing(in, new BcKeyFingerprintCalculator());
+        }
+    }
+
+    /**
+     * Returns the addresses on a returned key, or none when the key does not hold the
+     * fingerprint that was looked up: a key that does not hold it vouches for nothing about it.
+     */
+    static List<String> addressesFor(PGPPublicKeyRing ring, String fingerprint) {
+        if (!holds(ring, fingerprint)) {
+            return List.of();
+        }
+        List<String> addresses = new ArrayList<>();
+        Iterator<String> userIds = ring.getPublicKey().getUserIDs();
+        while (userIds.hasNext()) {
+            String address = OpenPgpCredentials.email(userIds.next());
+            if (address != null) {
+                String normalized = address.toLowerCase(Locale.ROOT);
+                if (!addresses.contains(normalized)) {
+                    addresses.add(normalized);
+                }
+            }
+        }
+        return List.copyOf(addresses);
+    }
+
+    private static boolean holds(PGPPublicKeyRing ring, String fingerprint) {
+        Iterator<PGPPublicKey> keys = ring.getPublicKeys();
+        while (keys.hasNext()) {
+            String hex = HexFormat.of().withUpperCase().formatHex(keys.next().getFingerprint());
+            if (hex.equals(fingerprint)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The result of looking one fingerprint up in the directory: the verified addresses it
+     * serves for the key, or why the directory could not be asked.
+     *
+     * @param addresses the verified addresses, empty when the directory has none or failed
+     * @param failure why the lookup failed, or {@code null} when it succeeded
+     */
+    private record Lookup(List<String> addresses, String failure) {
+
+        static Lookup found(List<String> addresses) {
+            return new Lookup(addresses, null);
+        }
+
+        static Lookup failed(String failure) {
+            return new Lookup(List.of(), failure);
+        }
+    }
+}

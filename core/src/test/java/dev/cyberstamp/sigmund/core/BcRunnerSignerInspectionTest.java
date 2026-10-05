@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,31 +24,30 @@ class BcRunnerSignerInspectionTest {
         }
         BcKeyStore store = new BcKeyStore(null, certD,
                 tempDir.resolve("bc-private"));
-        return new BcRunner(store, null, null, null, null,
-                resolveSigners, false, keyservers);
+        KeyserverFetcher fetcher = resolveSigners && !keyservers.isEmpty()
+                ? new KeyserverFetcher(store, keyservers)
+                : null;
+        return new BcRunner(store, null, null, null, null, fetcher);
     }
 
     @Test
-    void canInspectFingerprintCredential() {
+    void canInspectKeyCredential() {
         BcRunner runner = createRunner(false, List.of());
         assertThat(runner.canInspect(
-                new FingerprintCredential("openpgp4", "AABB"))).isTrue();
+                new KeyCredential("openpgp4", "AABB000000000000000000000000000000000000"))).isTrue();
     }
 
     @Test
-    void canInspectEmailCredential() {
+    void canInspectAnEmailIdentity() {
         BcRunner runner = createRunner(false, List.of());
-        assertThat(runner.canInspect(new EmailCredential("a@b.com"))).isTrue();
+        assertThat(runner.canInspect(IdentityCredential.email(null, "a@b.com"))).isTrue();
     }
 
     @Test
-    void cannotInspectSigstoreCredential() {
+    void cannotInspectAWorkflowIdentity() {
         BcRunner runner = createRunner(false, List.of());
         assertThat(runner.canInspect(
-                new SigstoreCredential.Builder()
-                        .issuer("https://issuer")
-                        .subject("subject")
-                        .build()))
+                new IdentityCredential("https://issuer", Map.of(IdentityCredential.SUBJECT, "subject"))))
                 .isFalse();
     }
 
@@ -55,10 +55,11 @@ class BcRunnerSignerInspectionTest {
     void inspectLocalStoreNotFoundReturnsPerSourceResults() {
         BcRunner runner = createRunner(false, List.of());
         var results = runner.inspect(
-                new FingerprintCredential("openpgp4",
+                new KeyCredential("openpgp4",
                         "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"));
         assertThat(results.isEmpty()).isFalse();
         assertThat(results.stream().allMatch(r -> !r.found())).isTrue();
-        assertThat(results.stream().anyMatch(r -> "cert-d store".equals(r.sourceLabel()))).isTrue();
+        assertThat(results.stream().anyMatch(
+                r -> r.sourceLabel().startsWith(TrustRootRef.KIND_OPENPGP_CERT_D + " "))).isTrue();
     }
 }

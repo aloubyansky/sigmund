@@ -119,9 +119,53 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
      * @param keyId the signing key ID extracted from GPG output, or null if not found
      * @param algorithm the key algorithm (e.g., "RSA", "EDDSA"), or null if not found
      * @param signerUserId the signer's user ID (e.g., "Name &lt;email&gt;"), or null if the key is not in the keyring
+     * @param signingFingerprint the full fingerprint of the signing key, from the
+     *        {@code VALIDSIG} status line, or {@code null} when the signature was not good
+     * @param primaryFingerprint the full fingerprint of its primary key, from the same line,
+     *        or {@code null} when GnuPG did not report one
      */
     private record GpgVerifyResult(ClaimOutcome outcome, IndeterminateReason reason, String keyId,
-            String algorithm, String signerUserId) {
+            String algorithm, String signerUserId, String signingFingerprint,
+            String primaryFingerprint) {
+    }
+
+    static final int VALIDSIG_SIGNING_FINGERPRINT = 2;
+    static final int VALIDSIG_PRIMARY_FINGERPRINT = 11;
+
+    /**
+     * Finds the {@code [GNUPG:] VALIDSIG} status line, as written with {@code --status-fd},
+     * and splits it into its fields.
+     *
+     * <p>
+     * GnuPG writes the line only for a good signature. Field {@value #VALIDSIG_SIGNING_FINGERPRINT}
+     * is the full fingerprint of the signing key and field
+     * {@value #VALIDSIG_PRIMARY_FINGERPRINT}, when present, that of its primary key.
+     *
+     * @param statusOutput the status output
+     * @return the fields of the line, or {@code null} when there is none
+     */
+    static String[] validSigFields(String statusOutput) {
+        if (statusOutput == null) {
+            return null;
+        }
+        for (String line : statusOutput.split("\\R")) {
+            String[] fields = line.trim().split("\\s+");
+            if (fields.length > 1 && "[GNUPG:]".equals(fields[0]) && "VALIDSIG".equals(fields[1])) {
+                return fields;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns a fingerprint field of a {@code VALIDSIG} line in upper case.
+     *
+     * @param validSig the fields of the line, or {@code null} when there was none
+     * @param index the field to return
+     * @return the fingerprint, or {@code null} when there is no line or no such field
+     */
+    static String fingerprintField(String[] validSig, int index) {
+        return validSig != null && validSig.length > index ? validSig[index].toUpperCase() : null;
     }
 
     private final String gpgExecutable;
@@ -264,8 +308,11 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
     /**
      * Verifies a detached signature file for the specified artifact.
      * <p>
-     * This method runs {@code gpg --verify <signatureFile> <artifactFile>}
-     * and interprets the result.
+     * This method runs {@code gpg --status-fd 1 --verify <signatureFile> <artifactFile>}
+     * and interprets the result. The human-readable report on stderr gives the outcome, key
+     * ID, algorithm and user ID; the machine-readable status lines on stdout give, through
+     * {@code VALIDSIG}, the full fingerprints of the signing key and its primary key, which a
+     * signature carrying only a 64-bit key ID does not.
      * <p>
      * Exit code 2 means GPG emitted warnings — a hybrid {@code .asc} carrying a v6 packet
      * GnuPG does not understand produces one — so the signature counts as verified only when
@@ -275,8 +322,8 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
      *
      * @param artifactFile the file that was signed
      * @param signatureFile the detached signature file to verify
-     * @return a {@link GpgVerifyResult} carrying the outcome, any indeterminate reason and
-     *         the extracted key ID
+     * @return a {@link GpgVerifyResult} carrying the outcome, any indeterminate reason, the
+     *         extracted key ID and, for a good signature, the full fingerprints
      * @throws IllegalArgumentException if artifactFile or signatureFile is null
      */
     private GpgVerifyResult verifyFile(Path artifactFile, Path signatureFile) {
@@ -289,6 +336,7 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
 
         CliTool.Result result = CliTool.run(env,
                 gpgExecutable,
+                "--status-fd", "1",
                 "--verify",
                 signatureFile.toString(),
                 artifactFile.toString());
@@ -310,7 +358,10 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
         } else {
             outcome = ClaimOutcome.FAILED;
         }
-        return new GpgVerifyResult(outcome, reason, keyId, algorithm, signerUserId);
+        String[] validSig = validSigFields(result.stdout());
+        return new GpgVerifyResult(outcome, reason, keyId, algorithm, signerUserId,
+                fingerprintField(validSig, VALIDSIG_SIGNING_FINGERPRINT),
+                fingerprintField(validSig, VALIDSIG_PRIMARY_FINGERPRINT));
     }
 
     /**
@@ -554,7 +605,7 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
      */
     @Override
     public TrustRootRef trustRoot() {
-        return TrustRootRef.keyring(gpgHome);
+        return TrustRootRef.gnupgKeyring(gpgHome);
     }
 
     /**
@@ -670,12 +721,8 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
     }
 
     private OpenPgpVerifyResult toOpenPgpVerifyResult(GpgVerifyResult gpgResult, OpenPgpClaim opgu) {
-        // Prefer the full fingerprint from the signature packet's issuer fingerprint subpacket.
-        // Fall back to GPG's short key ID when the subpacket is absent (older v4 signatures).
-        // FingerprintCredential.matches() uses suffix matching, so the short key ID still
-        // matches against a full fingerprint in the trust configuration.
         String fingerprint = opgu.issuerFingerprint() != null ? opgu.issuerFingerprint() : gpgResult.keyId();
-        return new OpenPgpVerifyResult(
+        OpenPgpVerifyResult result = new OpenPgpVerifyResult(
                 gpgResult.outcome(),
                 gpgResult.reason(),
                 gpgResult.signerUserId(),
@@ -683,6 +730,14 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
                 opgu.packetVersion(),
                 gpgResult.keyId(),
                 fingerprint);
+        String signing = gpgResult.signingFingerprint();
+        if (signing == null) {
+            return result;
+        }
+        String primary = signing.equals(gpgResult.primaryFingerprint())
+                ? null
+                : gpgResult.primaryFingerprint();
+        return result.withKeyFingerprints(signing, primary);
     }
 
     private static void deleteSilently(Path file) {

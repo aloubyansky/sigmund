@@ -4,11 +4,13 @@ import dev.cyberstamp.sigmund.core.Algorithms;
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ArtifactPattern;
 import dev.cyberstamp.sigmund.core.DiscoveryConfig;
+import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
-import dev.cyberstamp.sigmund.core.OpenPgpCredentials;
+import dev.cyberstamp.sigmund.core.KeyCredential;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
 import dev.cyberstamp.sigmund.core.PolicyConfigException;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
+import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
 import dev.cyberstamp.sigmund.core.VerifyResult;
 import dev.cyberstamp.sigmund.plugin.SignatureInspector.SignedArtifact;
@@ -430,6 +432,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             }
         }
 
+        dropSignersWithoutCredentials(artifactSigners, signersByKey);
         Map<String, List<String>> trustPatterns = TrustPatternCollapse.collapse(artifactSigners);
 
         try (PrintWriter w = new PrintWriter(Files.newBufferedWriter(configFile.toPath()))) {
@@ -482,9 +485,8 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             ArtifactCoords coords = entry.getKey();
             List<SignedArtifact> sigEntries = entry.getValue();
 
-            ArtifactCoords identity = coords;
-            if (trustPolicy.isUnsignedAllowed(identity)
-                    || !trustPolicy.expectedSigners(identity).isEmpty()) {
+            if (trustPolicy.isUnsignedAllowed(coords)
+                    || !trustPolicy.expectedSigners(coords).isEmpty()) {
                 continue;
             }
 
@@ -687,25 +689,51 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         w.println();
     }
 
+    /**
+     * Removes signers that proved no usable credential — only a key ID, or only a user ID —
+     * from the trust mappings, so the generated config never names a signer it does not
+     * define. Their artifacts are left without a mapping and are reported as not configured.
+     */
+    private void dropSignersWithoutCredentials(Map<String, Set<String>> artifactSigners,
+            Map<String, SignerInfo> signersByKey) {
+        Set<String> usable = new HashSet<>();
+        for (SignerInfo info : signersByKey.values()) {
+            if (info.hasCredentials()) {
+                usable.add(info.id);
+            } else {
+                getLog().warn("Signer " + info.id + " proved no full fingerprint or verified "
+                        + "identity and is left out of the generated config");
+            }
+        }
+        artifactSigners.values().forEach(ids -> ids.retainAll(usable));
+        artifactSigners.values().removeIf(Set::isEmpty);
+    }
+
     private static void appendSignerYaml(SignerInfo info, String indent, Consumer<String> out) {
-        boolean hasFingerprint = info.pgp4Key != null || info.pgp6Key != null;
-        if (!hasFingerprint && info.email == null) {
+        if (!info.hasCredentials()) {
             return;
         }
-        if (info.email != null && !hasFingerprint) {
-            out.accept(indent + info.id + ": \"" + info.email + "\"");
-            return;
-        }
-        out.accept(indent + info.id + ":");
+        out.accept(indent + info.id + ":" + userIdComment(info.userId));
         if (info.pgp4Key != null) {
             out.accept(indent + "  pgp4: \"" + info.pgp4Key + "\"");
         }
         if (info.pgp6Key != null) {
             out.accept(indent + "  pgp6: \"" + info.pgp6Key + "\"");
         }
-        if (info.email != null) {
-            out.accept(indent + "  email: \"" + info.email + "\"");
+        if (info.emailIdentity != null) {
+            out.accept(indent + "  identities:");
+            out.accept(indent + "    - issuer: \"" + info.emailIdentity.issuer() + "\"");
+            out.accept(indent + "      email: \""
+                    + info.emailIdentity.attribute(IdentityCredential.EMAIL) + "\"");
         }
+    }
+
+    /**
+     * Shows the user ID a key carries as a comment, never as config: it is self-certified,
+     * so it helps a reviewer recognize the signer but proves nothing.
+     */
+    private static String userIdComment(String userId) {
+        return userId == null ? "" : "  # user ID on the key, unverified: " + userId.replaceAll("\\R", " ");
     }
 
     private void writeUnsignedSection(PrintWriter w, List<String> unsignedCoords) {
@@ -743,39 +771,67 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         return candidate;
     }
 
+    /**
+     * What bootstrap records about one signer.
+     *
+     * <p>
+     * Only what a verified signature proves becomes a credential: full key fingerprints —
+     * the primary key's where known, since that is what stays stable across signing subkeys —
+     * and an email identity together with the issuer that vouched for it, which today comes
+     * from a Sigstore certificate. A user ID on an OpenPGP key is self-certified, so it is
+     * written as a comment for the reviewer and nothing more.
+     */
     static class SignerInfo {
         final String id;
         String pgp4Key;
         String pgp6Key;
-        String email;
+        String userId;
+        IdentityCredential emailIdentity;
 
         SignerInfo(String id, VerifyResult vr) {
             this.id = id;
-            if (vr instanceof OpenPgpVerifyResult opvr) {
-                classifyKey(opvr);
-            }
-            this.email = OpenPgpCredentials.email(vr.signerDisplayName());
+            merge(vr);
         }
 
         void merge(VerifyResult vr) {
-            if (email == null && vr.signerDisplayName() != null) {
-                email = OpenPgpCredentials.email(vr.signerDisplayName());
+            if (userId == null && vr instanceof OpenPgpVerifyResult) {
+                userId = vr.signerDisplayName();
             }
             if (vr instanceof OpenPgpVerifyResult opvr) {
                 classifyKey(opvr);
+            } else if (vr instanceof SigstoreVerifyResult svr && emailIdentity == null) {
+                emailIdentity = emailOf(svr.identity());
             }
         }
 
+        boolean hasCredentials() {
+            return pgp4Key != null || pgp6Key != null || emailIdentity != null;
+        }
+
+        private static IdentityCredential emailOf(IdentityCredential identity) {
+            return identity != null && identity.attribute(IdentityCredential.EMAIL) != null
+                    ? IdentityCredential.email(identity.issuer(),
+                            identity.attribute(IdentityCredential.EMAIL))
+                    : null;
+        }
+
         private void classifyKey(OpenPgpVerifyResult opvr) {
-            String keyId = opvr.preferredKeyId();
-            if (keyId == null) {
+            String fingerprint = fullFingerprint(opvr);
+            if (fingerprint == null) {
                 return;
             }
             if (opvr.version() >= 6 && pgp6Key == null) {
-                pgp6Key = keyId;
+                pgp6Key = fingerprint;
             } else if (opvr.version() < 6 && pgp4Key == null) {
-                pgp4Key = keyId;
+                pgp4Key = fingerprint;
             }
+        }
+
+        private static String fullFingerprint(OpenPgpVerifyResult opvr) {
+            if (KeyCredential.isOpenPgpFingerprint(opvr.primaryFingerprint())) {
+                return opvr.primaryFingerprint();
+            }
+            return KeyCredential.isOpenPgpFingerprint(opvr.fingerprint()) ? opvr.fingerprint() : null;
         }
     }
 }

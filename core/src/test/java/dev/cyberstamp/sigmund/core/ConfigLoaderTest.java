@@ -13,6 +13,7 @@ class ConfigLoaderTest {
 
     private static final String MINIMAL_CONFIG = """
             version: 1
+            issuers: [keys.openpgp.org]
             signers:
               alice:
                 email: alice@example.com

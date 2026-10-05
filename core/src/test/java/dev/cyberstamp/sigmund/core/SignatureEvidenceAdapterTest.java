@@ -55,7 +55,7 @@ class SignatureEvidenceAdapterTest {
         @Test
         void recordsTheTrustRootTheToolVerifiedAgainst(@TempDir Path dir) throws Exception {
             Path evidence = Files.writeString(dir.resolve("lib.jar.asc"), "abc");
-            TrustRootRef root = TrustRootRef.keyring(dir.resolve("cert-d"));
+            TrustRootRef root = TrustRootRef.certD(dir.resolve("cert-d"));
             var adapter = adapterWith(singleClaimFormat(),
                     List.of(mockTool("bc", true, true, passVerifyResult(), List.of(), root)));
 
@@ -72,7 +72,7 @@ class SignatureEvidenceAdapterTest {
         @Test
         void singleClaimVerifiedAndCredentialsExtracted() {
             var tool = mockTool("gpg", true, true, passVerifyResult(),
-                    List.of(new FingerprintCredential("openpgp4", FP)));
+                    List.of(new KeyCredential("openpgp4", FP)));
             var adapter = adapterWith(singleClaimFormat(), List.of(tool));
 
             List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
@@ -103,7 +103,7 @@ class SignatureEvidenceAdapterTest {
                             4, null, null),
                     List.of());
             var passing = mockTool("gpg", true, true, passVerifyResult(),
-                    List.of(new FingerprintCredential("openpgp4", FP)));
+                    List.of(new KeyCredential("openpgp4", FP)));
             var adapter = adapterWith(singleClaimFormat(), List.of(skipping, passing));
 
             List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
@@ -134,11 +134,12 @@ class SignatureEvidenceAdapterTest {
         @Test
         void multipleClaimsRoutedIndependently() {
             var format = mockFormat("openpgp", ".asc", true,
-                    List.of(V4_CLAIM, new OpenPgpClaim("armored2", 6, "FP2", 1, null)));
+                    List.of(V4_CLAIM, new OpenPgpClaim("armored2", 6,
+                            "CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9", 1, null)));
             var v4Tool = mockToolForVersion("gpg", 4, passVerifyResult(),
-                    List.of(new FingerprintCredential("openpgp4", FP)));
+                    List.of(new KeyCredential("openpgp4", FP)));
             var v6Tool = mockToolForVersion("sq", 6, passVerifyResult(),
-                    List.of(new FingerprintCredential("openpgp6", "FP2")));
+                    List.of(new KeyCredential("openpgp6", "CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9")));
             var adapter = adapterWith(format, List.of(v4Tool, v6Tool));
 
             List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
@@ -238,7 +239,7 @@ class SignatureEvidenceAdapterTest {
         void failContinuesToNextTool() {
             var failTool = mockTool("bc", true, true, failVerifyResult(), List.of());
             var passingTool = mockTool("gpg", true, true, passVerifyResult(),
-                    List.of(new FingerprintCredential("openpgp4", FP)));
+                    List.of(new KeyCredential("openpgp4", FP)));
             var adapter = adapterWith(singleClaimFormat(), List.of(failTool, passingTool));
 
             List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
@@ -585,7 +586,7 @@ class SignatureEvidenceAdapterTest {
         @Override
         public List<Credential> extractCredentials(VerifyResult r) {
             if (r.isVerified()) {
-                return List.of(new FingerprintCredential("openpgp4", FP));
+                return List.of(new KeyCredential("openpgp4", FP));
             }
             return List.of();
         }

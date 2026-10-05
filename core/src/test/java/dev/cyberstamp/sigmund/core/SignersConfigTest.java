@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class SignersConfigTest {
 
     private static SignerIdentity signer(String id) {
-        return new SignerIdentity(id, id, List.of(new EmailCredential(id + "@example.com")));
+        return new SignerIdentity(id, List.of(IdentityCredential.email(null, id + "@example.com")));
     }
 
     @Nested

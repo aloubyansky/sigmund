@@ -1,9 +1,9 @@
 package dev.cyberstamp.sigmund.sigstore;
 
 import dev.cyberstamp.sigmund.core.Credential;
+import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.SignatureTool;
 import dev.cyberstamp.sigmund.core.SignatureToolFactory;
-import dev.cyberstamp.sigmund.core.SigstoreCredential;
 import dev.cyberstamp.sigmund.core.ToolExecutionException;
 import dev.cyberstamp.sigmund.core.TrustRootRef;
 import dev.sigstore.KeylessSigner;
@@ -55,8 +55,8 @@ public class SigstoreToolFactory implements SignatureToolFactory {
     /**
      * Creates a signing-capable {@link SigstoreTool}.
      * <p>
-     * When {@code credential} is a {@link SigstoreCredential}, configures
-     * {@code allowedOidcIdentities} to validate the OIDC token at signing time.
+     * When {@code credential} is an {@link IdentityCredential} naming an issuer and a subject,
+     * configures {@code allowedOidcIdentities} to validate the OIDC token at signing time.
      * When {@code credential} is {@code null}, accepts any ambient OIDC identity.
      * <p>
      * When {@code interactive} is {@code true}, the browser-based OIDC flow
@@ -83,16 +83,16 @@ public class SigstoreToolFactory implements SignatureToolFactory {
             }
 
             String sigstoreSubject = null;
-            if (credential instanceof SigstoreCredential sc) {
-                String subject = sc.subject();
-                String issuer = sc.issuer();
+            if (credential instanceof IdentityCredential identity) {
+                String subject = identity.attribute(IdentityCredential.SUBJECT);
+                String issuer = identity.issuer();
                 if (subject != null && issuer != null) {
                     signerBuilder.allowedOidcIdentities(List.of(
                             OidcTokenMatcher.of(
                                     StringMatcher.string(subject),
                                     StringMatcher.string(issuer))));
                 }
-                sigstoreSubject = sc.subject();
+                sigstoreSubject = subject;
             }
 
             KeylessSigner signer = signerBuilder.build();

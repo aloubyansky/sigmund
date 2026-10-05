@@ -111,11 +111,18 @@ BC manages keys across three sources, searched in order:
 
 4. **Ephemeral cache** — in-memory cache for keys fetched from keyservers when `import-to-keyring` is false. Keys are available for verification during the session but are not persisted to disk.
 
-The key lookup algorithm in `BcKeyStore.findPublicKey()`:
-1. Check GnuPG pubring for matching fingerprint
-2. Check cert-d for matching fingerprint (primary key or subkey)
-3. Extract public keys from BC private store if a matching secret key exists
-4. Check ephemeral in-memory cache
+The key lookup algorithm in `BcKeyStore.findPublicKey()` returns the key together with its source:
+1. Check the ephemeral in-memory cache
+2. Check GnuPG pubring for matching fingerprint
+3. Check cert-d for matching fingerprint (primary key or subkey)
+4. Extract public keys from BC private store if a matching secret key exists
+
+A key fetched this session reports the keyserver that served it, wherever it was stored; otherwise the store it was found in is reported. Claims carry that source in their trust root.
+
+Responsibilities are split three ways:
+- **`BcKeyStore`** — where keys live: lookup in order, per-store answers for `inspect-signer`, storing generated keys, and storing fetched keys (`addFetched`), which keeps them in memory or writes them to cert-d according to `import-to-keyring` and records the keyserver in the same step.
+- **`KeyserverFetcher`** — talking to HKP keyservers: the HTTP client, the per-build `KeyFetchCache` with its per-server circuit breaker, and the preference for a copy carrying user IDs, which are display text only. It hands what it fetches to the store. The factory creates one when `resolve-signers` is on and keyservers are configured.
+- **`BcRunner`** — signing, verification, key generation and signer inspection, using the store and, when keys may be fetched, the fetcher.
 
 ### Sequoia Keystore
 
@@ -269,8 +276,11 @@ Layer 2 is the `SignatureTool` SPI, implemented by `BcRunner`, `SqRunner`, and `
 4. Extracts proven credentials via `extractCredentials(VerifyResult)` → `List<Credential>`
 
 The credential type is determined by the packet version that was cryptographically verified:
-- `version < 6` → `FingerprintCredential("openpgp4", fingerprint)`
-- `version >= 6` → `FingerprintCredential("openpgp6", fingerprint)`
+- `version < 6` → `KeyCredential("openpgp4", fingerprint)`
+- `version >= 6` → `KeyCredential("openpgp6", fingerprint)`
+
+Only full fingerprints are proven — the verifying key's and, when it is a subkey, its primary
+key's — and every OpenPGP backend proves the same ones.
 
 ### Layer 1: Identity Verification
 
@@ -300,18 +310,29 @@ extension cannot reach different outcomes from the same policy and the same evid
 
 ### Credential Types and Matching
 
-Sigmund supports multiple credential types:
+`Credential` is sealed over two kinds, classified by who vouches for the fact
+([ADR-006](../adr/006-identity-and-credential-model.md)):
 
-- `FingerprintCredential(type, fingerprint)` — OpenPGP fingerprint with credential type
-  - Type: `"openpgp4"` or `"openpgp6"`
-  - Matches: exact fingerprint match, same credential type
-- `EmailCredential(email)` — email address extracted from user ID
-  - Matches: case-insensitive email match
-- `SigstoreCredential` — Sigstore certificate extension fields (issuer, subject, source-repository-uri, etc.)
-  - Type: `"sigstore"`
-  - Built via `SigstoreCredential.Builder` with nullable fields
-  - Matches: every non-null field in the configured credential must equal the corresponding field in the extracted credential. Null fields are wildcards. This enables flexible trust policies — matching on `issuer` + `source-repository-uri` trusts all releases from a repository without pinning to a specific workflow ref.
-  - Extracted from Fulcio certificates during Sigstore verification. When the certificate subject is an email (SAN type `rfc822Name`), an `EmailCredential` is also extracted, enabling cross-backend matching.
+- `KeyCredential(type, fingerprint)` — key material, proven by the signature itself
+  - Type: `"openpgp4"` or `"openpgp6"`, by key version
+  - Full fingerprints only, matched exactly; a 64-bit key ID is rejected
+  - OpenPGP backends prove the verifying key and, when it is a subkey, its primary key
+- `IdentityCredential(issuer, attributes)` — an identity asserted by an issuer
+  - Proven by a Fulcio certificate (issuer = OIDC issuer; attributes = `subject`, `email`
+    for an address SAN, and the Fulcio extensions) or by a directory that verifies addresses
+    (issuer = `keys.openpgp.org`; attribute = `email`)
+  - In policy the issuer is optional: an entry without one accepts the top-level `issuers`
+  - Matches: the issuer is accepted, and every attribute the entry names is present with an
+    equal value (`email` ignoring case)
+
+`IssuerKind` classifies an issuer by name and holds the attributes each kind can assert;
+`IdentityEntryValidator` rejects entries at load that none of their issuers can assert,
+suggesting the nearest name for a misspelled attribute.
+
+An OpenPGP user ID never becomes a credential. `ClaimIdentityResolver` asks a directory for
+the verified addresses of a signing key only when an expected signer has an email entry a
+named directory can vouch for and none of its fingerprints already matched; a failed lookup
+leaves the claim `INDETERMINATE` with `key-unavailable`.
 
 Identity matching works via credential overlap: a claim satisfies a signer when one of the
 credentials it proved matches one the signer is configured with.

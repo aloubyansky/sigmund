@@ -197,7 +197,7 @@ public final class VerificationReport {
             }
             TrustRootRef trustRoot = claim.trustRoot();
             if (trustRoot != null && trustRoot.identifier() != null) {
-                detail.add("  trust root " + trustRoot.kind() + " " + trustRoot.identifier());
+                detail.add("  trust root " + trustRoot.displayName());
             }
         }
         return List.copyOf(detail);

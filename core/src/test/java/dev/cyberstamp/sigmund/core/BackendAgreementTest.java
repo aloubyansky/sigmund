@@ -39,7 +39,8 @@ class BackendAgreementTest {
     }
 
     /** What one backend concluded, named so a disagreement report is readable. */
-    private record Answer(String backend, ClaimOutcome outcome, IndeterminateReason reason) {
+    private record Answer(String backend, ClaimOutcome outcome, IndeterminateReason reason,
+            List<Credential> credentials) {
     }
 
     @Nested
@@ -53,6 +54,17 @@ class BackendAgreementTest {
                     .allSatisfy(answer -> assertThat(answer.outcome())
                             .as(answer.backend() + " disagreed")
                             .isEqualTo(ClaimOutcome.VERIFIED));
+        }
+
+        @Test
+        void aValidSignatureProvesTheSameKeyEverywhere(@TempDir Path dir) throws Exception {
+            Fixture fixture = Fixture.signed(dir, "agreed content");
+            List<Answer> answers = fixture.answers();
+
+            assertThat(answers.get(0).credentials()).isNotEmpty();
+            assertThat(answers).allSatisfy(answer -> assertThat(answer.credentials())
+                    .as(answer.backend() + " proved different key material")
+                    .containsExactlyInAnyOrderElementsOf(answers.get(0).credentials()));
         }
 
         @Test
@@ -178,7 +190,8 @@ class BackendAgreementTest {
         }
 
         private static Answer answer(String backend, VerifyResult result) {
-            return new Answer(backend, result.outcome(), result.reason());
+            return new Answer(backend, result.outcome(), result.reason(),
+                    OpenPgpCredentials.from(result));
         }
     }
 }

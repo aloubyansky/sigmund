@@ -46,8 +46,8 @@ overclaiming here is easy.
 - Publisher account takeover producing releases under a different key — for
   policies that name key material. A policy naming an attested identity
   (subject plus issuer) inherits the issuer's account security instead: whoever
-  controls the OIDC account, or the email address at the directory, can bind a
-  new key to that identity. Sigstore keyless has this property by construction;
+  controls the OIDC account can obtain a certificate for that identity, and
+  whoever controls the email account can verify a new key at the directory. Sigstore keyless has this property by construction;
   the guarantee therefore depends on the credential kind in use.
 - Typosquat and dependency-confusion packages, to the extent policy is
   coordinate-scoped.
@@ -76,8 +76,8 @@ revocation, and trust-root rotation after signing do not change an outcome. A
 previously `SATISFIED` result legitimately changes only on hard revocation
 (compromise or unspecified reason, §3.8), a policy change, or a verifier change
 such as retiring an algorithm — and the result must record which.
-Infrastructure unavailability yields `INDETERMINATE`, served from cache where
-possible (§3.7), never a different verdict. Any other change between runs is a
+Infrastructure unavailability yields `INDETERMINATE`, avoided where the key store
+already holds what is needed (§3.7), never a different verdict. Any other change between runs is a
 defect; identity matching that depends on mutable keyserver data is the main
 example. For OpenPGP, the evaluation basis is publisher-asserted, so a leaked
 but unrevoked key can backdate signatures — a residual risk stated here rather
@@ -171,9 +171,17 @@ coverage:
   scopes-covered: [compile, runtime, test]
   build-tooling-covered: false
   enforcement-mode: enforcing | observe
+  session: { goals: [clean, verify], modules: 14 }
   artifacts-verified: 412
   artifacts-no-claim: 387
 ```
+
+`session` anchors the counts. `mvn test` and `mvn verify` resolve different
+sets and `-pl` narrower still, so "412 verified" means nothing without knowing
+what the build did — and a consumer checking minimum coverage cannot otherwise
+tell a full release build from a partial one. If a result cache is ever added
+(§3.7), the count of results served from it belongs here too, so a run that
+verified nothing fresh cannot read as one that verified everything.
 
 Counts matter. "Verified" against a policy where 387 of 412 dependencies
 produced `NO_CLAIM` is a very different assurance from full coverage, and
@@ -212,10 +220,9 @@ structure rather than adding any: evidence is parsed into claims, each claim is
 routed and verified independently.
 
 The API should use both terms as defined. `EvidenceProvider` locates and parses
-evidence. The unit of verification is a claim — the type currently named
-`VerificationUnit` should be renamed accordingly, before the SPI is public.
-(Check for collision with OIDC/JWT "claims" in the Sigstore dependency chain;
-`VerifiableClaim` is the fallback name if `Claim` is ambiguous in context.)
+evidence. The unit of verification is a `Claim`; no type on the classpath,
+including the OIDC/JWT libraries in the Sigstore dependency chain, collides
+with the name ([ADR-005](../adr/005-verification-result-model.md)).
 
 ### 3.2 Contents of a result
 
@@ -227,7 +234,7 @@ and a verification run.
 
 - **Claim kind** — detached OpenPGP signature, Sigstore bundle, DSSE
   attestation.
-- **Attester identity and role** — who, and in what capacity (§3.3).
+- **Attester identity** — the credentials the claim proved (§3.3).
 - **Trust root used** — keyring, Fulcio/TUF, or delegated-verifier root.
 - **Evidence reference** — the file the claim came from, by digest, and which
   source supplied it (§4).
@@ -241,8 +248,7 @@ and a verification run.
 - **Matched policy rule** — which rule applied, and its location in the policy.
 - **Claim results** — all of them, including claims that did not contribute to
   the outcome.
-- **Verification time** (§3.4) and, where the outcome came from the cache, cache
-  age (§3.7).
+- **Verification time** (§3.4).
 - **Outcome** — §3.5, derived from the claim results as described in §3.2.1.
   `NO_CLAIM` is an artifact outcome, not a claim kind.
 
@@ -310,37 +316,30 @@ Setting aside unsupported claims cannot make an untrusted artifact pass:
 requirements are still evaluated only over claims that verified. An attacker who
 appends an unverifiable block gains nothing.
 
-### 3.3 Attester role
+### 3.3 Attester identity and role
 
-Role is not derivable from identity, but the slot has to be filled from
-somewhere. Three sources:
+A claim proves credentials: key material, or an identity asserted by an issuer
+— an OIDC provider, or a directory that verifies addresses before publishing
+them ([ADR-006](../adr/006-identity-and-credential-model.md)).
+Policy names signers by those credentials, and a requirement is a conjunction of
+clauses, each satisfied by any of a set of signers — "the publisher's key AND
+our CI's workflow identity" is two clauses
+([ADR-007](../adr/007-policy-schema-and-enforcement.md)).
 
-- **Structurally implied by claim kind.** A Fulcio cert with a GitHub Actions
-  workflow identity is structurally a builder claim; the OIDC issuer and SAN
-  shape say so. A SLSA provenance predicate names its builder explicitly. In
-  practice the issuer carries this: a trusted issuer declares the default role
-  for identities it asserts, so derivation is configured rather than hardcoded
-  per backend.
-- **Asserted by policy.** Necessary where structure cannot distinguish — an
-  OpenPGP key could belong to a publisher, a distro, or an internal reviewer,
-  and nothing in the signature says which.
-- **Carried in the evidence.** A VSA's `verifier.id` identifies a third-party
-  verifier by construction.
+The capacity an attester acted in — publisher, builder, registry, third-party
+verifier — is real and matters across ecosystems (§8), where flattening it into
+`trusted-signer: X` gives identical green checks for different assurance. But
+inside a policy the signer already carries it: a clause naming the CI workflow
+identity is a builder requirement without saying so. A separate role field
+would be a second, unchecked statement of the same fact.
 
-The rule: **structure proposes, policy disposes.** A role is derived where the
-claim shape permits, policy may assert one, and a mismatch is a config error
-rather than a silent override — silently accepting a builder claim where a
-publisher was required is exactly the false-green this dimension exists to
-prevent.
-
-Roles: `publisher`, `builder`, `registry`, `third-party-verifier`, and
-`unknown` for a bare OpenPGP signature with no policy assertion. `unknown` is
-common today and must be visible in the result rather than defaulted to
-`publisher`.
-
-Requirements can then be role-scoped — "a publisher claim AND a builder claim,"
-or "a publisher claim is sufficient." Without role-scoped requirements the
-dimension is decorative.
+So role is not a policy dimension for now. It becomes one when an attestation
+consumer needs the capacity spelled out (§6), or when a single credential can
+act in more than one capacity — a publisher signing from GitHub Actions is the
+likeliest case. Its sources are sketched for then: structurally implied by the
+claim kind (a SLSA predicate names its builder), asserted by policy, or carried
+in the evidence (a VSA's `verifier.id`); where structure and policy disagree, a
+config error rather than a silent override.
 
 ### 3.4 Time
 
@@ -348,7 +347,7 @@ Three clocks, all needed in the result:
 
 - **Claim time** — when the signature or attestation was made.
 - **Verification time** — when Sigmund evaluated it. Becomes `timeVerified` in
-  a VSA and drives cache freshness.
+  a VSA.
 - **Evaluation basis** — the instant against which validity was judged.
 
 The basis is **per claim kind**, not global:
@@ -418,43 +417,39 @@ Scope granularity depends on the insertion point (§2): the goal knows `compile`
 `runtime` and `test`; the extension reliably knows only build tooling versus
 project.
 
-Default posture for `INDETERMINATE` with no cache entry: fail for
-plugin/extension scope, warn elsewhere, with the bootstrap command populating
-the cache so a normal first run does not hit it. This is a product judgment
+Default posture for `INDETERMINATE`: fail for plugin/extension scope, warn
+elsewhere, with the bootstrap command populating the key store so a normal
+first run does not hit it. This is a product judgment
 about adoption, not a security one, and is worth revisiting with maintainer
 input.
 
-### 3.7 Caching
+### 3.7 Offline verification and caching
 
-A cached prior result **downgrades `INDETERMINATE` to its cached outcome**,
-with cache age recorded in the result. Offline builds then work if verification
-has happened before, and fail informatively if it has not — instead of the tool
-silently deciding that unreachable means fine.
+Offline determinism comes from the **key store**, not from caching results.
+Sigstore bundles verify locally (§3.5), so the only transient `INDETERMINATE`
+for delivered evidence is an OpenPGP key that is not held locally. A persistent
+key store, populated by bootstrap and by every online run, makes offline builds
+verify from scratch with the same answer an online build gives; with no stored
+key the outcome is `INDETERMINATE(key-unavailable)`, never a pass. `-o` is
+key-store-only, never fail-open.
 
-That makes the cache part of the trust model rather than an optimization:
+Key freshness has its own TTL, because key state is what actually goes stale:
+revocation arrives only by refreshing (§3.8).
 
-- Keyed by artifact digest **and** policy digest, so a policy change
-  invalidates. The policy digest is the SHA-256 of the policy file's raw
-  content, computed before parsing — not of the parsed model in memory. When
-  policy is resolved by GAV (§5.2) that file is the resolved artifact, so the
-  policy digest equals the artifact's own digest. Raw content rather than a
-  canonical form, because a consumer checking a VSA's policy digest (§6) must be
-  able to recompute it with `sha256sum` rather than by reimplementing Sigmund's
-  parser and normalization. The cost is that a formatting-only edit changes the
-  digest and triggers one re-verification. The policy must therefore be
-  self-contained: anything that affects the verdict lives in the file, never in
-  a file it references. With no policy file (zero-config), the digest is absent
-  and the result says so, rather than digesting built-in defaults.
-- Sigmund's own base configuration — the shipped defaults the project policy is
-  layered over — is digested separately and recorded alongside. Two digests
-  rather than one over the merged result, so each stays recomputable from a file
-  and a changed default is visible instead of hidden inside the policy digest.
-- Stores the full result, not a boolean.
-- TTL is a policy setting.
-- `-o` is cache-only, never fail-open.
+A **result cache** is then a performance optimization rather than part of the
+trust model, and is deferred until verification time is measured to matter. If
+built, it is keyed by artifact digest and policy digest, stores full results
+rather than booleans, and records cache age in each result it serves.
 
-Key freshness is a separate TTL from result freshness, because key state is
-what actually goes stale (§3.8).
+**Policy digest.** Needed for the run record and attestations (§6) whether or
+not a cache exists: the SHA-256 of the policy file's raw content, computed
+before parsing, so a consumer can recompute it with `sha256sum` rather than by
+reimplementing Sigmund's parser. When policy is resolved by GAV (§5.2) it is
+the artifact's own digest. The policy is therefore self-contained — anything
+that affects the verdict lives in the file — and a formatting-only edit changes
+the digest. With no policy file (zero-config), the digest is absent and the
+result says so. Defaults that live in code are pinned by recording the Sigmund
+version alongside.
 
 ### 3.8 Revocation
 
@@ -485,19 +480,22 @@ after expiry is `FAILED`.
 Identity matching must not depend on unattested key data. A user ID is
 self-certified — anyone can put any address on a key — so a UID proves an
 identity only when the source that served it vouched for the binding.
-keys.openpgp.org publishes a UID only after the address owner confirms it, and
-is Sigmund's default keyserver, so the default fetch path does obtain verified
-bindings; what matters is recording *which* source supplied the key and
-accepting identity assertions only from issuers the policy trusts.
+keys.openpgp.org publishes a UID only after the address owner confirms it, so a
+policy that names that directory as an issuer may name a signer by address, and
+a UID from anywhere else stays display text
+([ADR-006](../adr/006-identity-and-credential-model.md)).
 
-Directory bindings are current state, not history. keys.openpgp.org associates
-an address with a single key, and verifying it for a new key removes it from the
-previous one, which is still served without the identity. So rotation unbinds
-the signatures the old key made: a verifier that cached the binding keeps it,
-a first-time verifier does not. Key material stays the backbone for third-party
-dependency verification — stable, offline, historically complete — and attested
-identities are opt-in. Whole-key revocations are distributed for keys with no
-verified user ID, so revocation checking is unaffected.
+That identity is what lets a policy trust keys the publisher has not generated
+yet — the point of trusting a signer rather than a key. Its limit is that
+directory bindings are current state, not history: the directory associates an
+address with a single key, and verifying it for a new key removes it from the
+previous one. Rotation therefore unbinds the old key's signatures for a
+verifier that never saw the binding. So a signer carries both: fingerprints for
+keys already seen, stable, offline and historically complete, and the identity
+for keys to come. A stored binding proves the identity for signatures made
+before it was last observed, so rotation does not change a verifier's view of
+old signatures and a withdrawn address stops covering new ones. Whole-key revocations are distributed for keys with no verified user
+ID, so revocation checking is unaffected.
 
 Sigstore inverts this. Short-lived certs mean there is nothing to revoke; the
 question is whether the bundle verifies and whether policy still trusts the
@@ -595,15 +593,16 @@ configure what is required.**
 Configurable by argument: keyservers to fetch key material from, active
 discovery sources, timeouts, offline behaviour, config location.
 
-Policy-file only: trust requirements, accepted identities, trusted issuers,
-roles, enforcement settings.
+Policy-file only: trust requirements, accepted credentials, trusted issuers
+and enforcement settings.
 
 **Fetching a key and trusting a source to say who someone is are different
-grants**, and they split on this line. Fetching by fingerprint cannot change
-acceptance, so keyservers stay arguments. Deciding that a server's word binds an
-address to a key does change acceptance — adding a non-verifying keyserver would
-otherwise turn unverified user IDs into matches — so the issuer list is
-policy-only.
+grants.** Keyservers fetch by fingerprint, and the signature proves the
+fingerprint whoever served the key, so a keyserver cannot change acceptance.
+UIDs they serve never become identities. Identities are accepted only from
+issuers the policy names — a default list, or inline on one entry — so issuers
+are policy-only; a named directory is queried in its own right, whatever the
+keyserver arguments say.
 
 The line holds because widening discovery can never make an untrusted artifact
 pass. Consulting an extra keyserver can only resolve a `NO_CLAIM` or
@@ -674,8 +673,44 @@ vouch for third-party artifacts. Inside one organization this is easy (Sigstore
 keyless with CI's OIDC identity). Across organizations it is chicken-and-egg.
 Plan VSA as an intra-org format.
 
+**Unit and emission point** — parked
+([ADR-008](../adr/008-attestation-unit-and-emission-point.md)) until the
+extension spike (§2, §9) answers whether a resolution can be attributed to its
+project, and until a consumer is named. The working assumption is that the two
+attestations differ in unit because their consumers do.
+
+The outbound one is found by coordinate, so it is **per module**: its subjects
+are every file that module publishes, and it is attached the way `.asc` already
+is, uploading in the same batch. It is written late in the module's lifecycle,
+after shade, proguard, signing and any other mutating plugin, so its subject
+digests are the bytes that are actually published rather than the ones that
+existed at `package`. Being assembled into the upload, it cannot describe that
+upload: it names the deploy tooling configured, never where the files landed.
+Per-module granularity also means a module's attestation is ready before its
+own `deploy` runs, so nothing has to be staged to the end of the reactor.
+
+The inbound one is about the run, so it is **per session**, written at session
+end — the only point at which an extension-driven build knows what it resolved.
+It is also where what a module attestation structurally cannot say belongs:
+which mojo performed each upload, and to which repository. It stays an
+unsigned run record until a consumer that crosses a trust boundary is named;
+inside one pipeline a file on disk is as trustworthy as a signed one, and
+signing costs the verifier trust root described above. The observe-mode
+promotion gate (§5.4) is the consumer that would justify signing it.
+
+Maven has **no release unit** to attest: modules are independently consumable,
+the aggregator POM is not resolved by consumers, and staging bundles are
+publishing infrastructure that disappears on publish. A release manifest could
+be introduced later at the aggregator coordinate without disturbing per-module
+attestations, and is not worth inventing before a consumer asks for one
+signature over a set.
+
 **Loop guard:** a VSA is terminal evidence and is never itself resolved via
-another VSA. Cap delegation depth at one hop.
+another VSA. Cap delegation depth at one hop. Tampering with an attestation
+after upload is caught by its own DSSE signature, so the chain terminates
+there; deletion is a consumer-side policy question ("require an attestation for
+`com.corp:*`") and rollback is defeated by digest binding, since an older
+statement names digests the consumed artifact does not have.
 
 **Staleness:** record the policy digest in the VSA and reject receipts whose
 digest does not match the current policy, unless foreign policy is explicitly
@@ -772,9 +807,8 @@ exactly what purl is, and why purl belongs on output rather than in matching
 So the internal coordinate is Maven's, named in purl's vocabulary (`namespace`,
 `name`, `version`) so the projection is a mapping rather than a translation.
 What carries across ecosystems is the purl emitted in results, VSAs and
-SBOM-facing output, plus a first-class attester role (§3.3), which is the
-dimension that would otherwise be flattened into a misleading
-`trusted-signer: X` (§8). Another ecosystem would bring its own coordinate type
+SBOM-facing output, plus the attester's credentials — a key or an issuer-asserted identity, never
+flattened into a misleading `trusted-signer: X` (§3.3, §8). Another ecosystem would bring its own coordinate type
 and its own purl projection, rather than contorting this one. Costs nothing now,
 forecloses nothing later. No adapters shipped.
 
@@ -838,7 +872,8 @@ forecloses nothing later. No adapters shipped.
   publisher's behalf (npm), CI workflow identity (PyPI trusted publishing, npm
   provenance), distro vendor (RPM). Rendering all of these as
   `trusted-signer: X` yields identical green checks for very different
-  assurance. Attester role must be a first-class policy dimension (§3.3).
+  assurance. The credential kind and issuer stay visible in results, and role
+  becomes explicit once attestations carry it (§3.3).
 - **OCI-style attestation storage for JARs** — cosign and policy-controller
   work because images have an attachment convention and admission controllers
   read it. There is no equivalent for a JAR on Central, and sidecars cannot be
@@ -868,6 +903,12 @@ forecloses nothing later. No adapters shipped.
 - **Whether `verifiedLevels` should carry non-SLSA properties** (the source
   track permits additional asserted properties) or stay empty as Macaron does.
 - **Trust root distribution for verifier identity** in the delegated case.
+- **Whether a resolution can be attributed to the project that requested it.**
+  Per-module outbound attestations depend on it: without attribution a module's
+  statement would have to claim everything the session resolved.
+  `RepositoryEvent.getTrace()` is the lead worth checking first, alongside what
+  `EventSpy` is actually forwarded (§6,
+  [ADR-008](../adr/008-attestation-unit-and-emission-point.md)).
 - **Whether `ArtifactResolverPostProcessor` is a sufficient extension hook** —
   whether plugin and extension resolution pass through it, and whether an
   extension can contribute one (§2). A concrete question for the Maven
@@ -883,6 +924,10 @@ in the [verification roadmap](sigmund-verification-roadmap.md).
 
 0. **Design records** — result model levels and roll-up (§3.2, §3.2.1); policy
    schema (§3.2, §3.3, §3.6).
+   Then, before building further on the goal: **the extension hook spike** (§2,
+   §9). The argument for resolution-time verification rests on an extension
+   being able to intercept plugin and extension resolution; that is confirmed
+   first, not in phase 5.
 1. **Vocabulary and result model** — evidence versus claim; subject with digest;
    the outcome vocabulary with reason codes, including correcting tools that
    report format or infrastructure problems as `FAILED`; verification and
@@ -890,12 +935,12 @@ in the [verification roadmap](sigmund-verification-roadmap.md).
    resolution requests rather than projects. Validated against the two shapes
    already shipping — detached `.asc` and Sigstore bundles — so DSSE lands later
    as a third fitting case rather than as scaffolding for a hypothetical.
-2. **Policy as requirements** — role derivation and assertion; role-scoped
-   requirements; bootstrap emitting the new schema.
+2. **Policy as requirements** — key and issuer-bound identity credentials;
+   conjunctive clauses of signers; bootstrap emitting the new schema.
 3. **Enforcement and run modes** — per-outcome, per-scope settings; observe
    mode; argument surface split per §5.3; one policy at the reactor root.
-4. **Cache, keys, revocation** — result cache per §3.7; key freshness;
-   revocation reason codes per §3.8; bootstrap populating the cache.
+4. **Keys and revocation** — persistent key store with its own freshness TTL
+   (§3.7); revocation reason codes per §3.8; bootstrap populating the key store.
 5. **Maven core extension** — hook choice (§2); verification at resolution;
    coverage from the insertion point; identical results to the goal from the
    same policy. The first real coverage increase, and the demo for the upstream
@@ -912,8 +957,13 @@ in the [verification roadmap](sigmund-verification-roadmap.md).
    `verification-metadata.xml` interop as the fallback that needs no upstream
    change.
 
-Deferred: staleness detection for generated config; policy composition;
-claims-aware provenance matching; classifier-scoped policy rules;
+Phases 6–9 are parked until the spike has answered and a user or consumer asks
+for them: each depends on the extension existing, and on adoption that does
+not exist yet.
+
+Deferred: result cache; attester role as a policy dimension; issuer profiles
+and a base configuration; staleness detection for generated config; policy
+composition; claims-aware provenance matching; classifier-scoped policy rules;
 cross-ecosystem adapters.
 
 ---
@@ -925,16 +975,16 @@ cross-ecosystem adapters.
 | Result levels | Claim, artifact and run results; artifact outcome derived in a fixed order; any `FAILED` claim dominates; claims no verifier supports are set aside unless explicitly required |
 | Outcomes | Six-state vocabulary; `NO_CLAIM` replaces `UNSIGNED`; `INDETERMINATE` with transient/permanent reason codes |
 | Enforcement | Per-outcome and per-scope; `FAILED` non-overridable; strictest for plugin/extension scope |
-| Caching | Part of the trust model; digest + policy digest key, policy digest over the raw policy file content, not the parsed model; base-config digest recorded separately; policy self-contained; downgrades `INDETERMINATE`; `-o` never fail-open |
+| Offline and caching | Persistent key store gives offline determinism; `-o` key-store-only, never fail-open; result cache deferred as a performance optimization; policy digest over the raw policy file content, policy self-contained, Sigmund version recorded |
 | Threat model | Stated explicitly; TOFU named as a limitation; outcomes stable except hard revocation, policy change or verifier change; OpenPGP backdating named as residual risk |
 | Time | Three clocks; evaluation basis per claim kind; Sigstore basis inherited from `sigstore-java` |
 | Revocation | Honour reason codes — compromise and unspecified retroactive, rotation forward-only; expiry judged at signature time; identity matching independent of keyserver-served user IDs; separate key TTL |
 | Scope | Artifacts in Maven repositories, whatever the language; the repository format defines what is verified, each build tool where; core uses repository concepts, never build-tool types |
 | Cross-ecosystem | purl on output is the portable identity; the internal coordinate stays the repository's own, named in purl's vocabulary |
 | Insertion points | Three, not two; keep plugin and extension both; coverage recorded in the result and the VSA; `ArtifactResolverPostProcessor` a candidate extension hook; evidence and policy resolution bypass verification; extension scope limited to build tooling versus project |
-| Vocabulary | Evidence = file, claim = assertion; rename `VerificationUnit` → `Claim` |
-| Credentials | Two kinds — key material, and an attested identity of subject plus issuer; a bare email is not an identity; identity assertions only from policy-named issuers; key source recorded always |
-| Attester role | Structure proposes, policy disposes; issuer carries the default role; `unknown` added; requirements are role-scoped |
+| Vocabulary | Evidence = file, claim = assertion; the unit of verification is `Claim` |
+| Credentials | Two kinds — key material, and an identity asserted by an issuer the policy names — a top-level default list, or inline for one entry — (OIDC, or a verifying directory), kind known from the name; fingerprints for history, identity for future keys; a UID is an identity only when a named directory served it; key source recorded always |
+| Attester role | Not a policy dimension yet: requirements are conjunctive clauses of signers, and a signer's credentials say what it is; role returns with attestations |
 | Digests | Algorithm-tagged `DigestSet` maps; SHA-256 required; further algorithms additive |
 | Policy granularity | Rules match GAV prefixes; results stay per file; classifier and extension are not policy dimensions |
 | purl | One-way projection only; digest-first matching on VSA consumption |

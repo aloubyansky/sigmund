@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed
+Accepted — implemented by roadmap phase P1. Run-level types are deferred to the
+phases that populate them (see *Run result*).
 
 ## Context
 
@@ -77,16 +78,24 @@ comparison is not a match.
 
 ### Subject
 
-`ArtifactIdentity` is replaced by a record. Verification addresses a file, so
-the subject carries classifier, extension and digest:
+`ArtifactIdentity` is replaced by two records. Verification addresses a file, so
+the coordinate carries classifier and extension, and the subject pairs it with
+the digest of the bytes verified:
 
 ```java
-public record ArtifactSubject(
-        String namespace, String name, String version,
-        String classifier, String extension, DigestSet digests) {
+public record ArtifactCoords(
+        String namespace, String name, String classifier,
+        String extension, String version) {
     public String purl();     // one-way projection, never parsed back (§8)
 }
+
+public record ArtifactSubject(ArtifactCoords coords, DigestSet digests) {
+    public String purl();
+}
 ```
+
+The split keeps rule matching, which needs only the coordinate, apart from the
+digest, which exists only once a file has been read.
 
 A record rather than an interface: subjects are cache keys and serialized
 values, so value semantics matter more than letting each build tool supply its
@@ -100,7 +109,7 @@ One per claim extracted from evidence.
 
 ```java
 public record ClaimResult(
-        ClaimKind kind,
+        String kind,                       // format name: "openpgp", "sigstore"
         ClaimOutcome outcome,
         IndeterminateReason reason,        // null unless outcome is INDETERMINATE
         List<Credential> attesterCredentials,
@@ -110,14 +119,12 @@ public record ClaimResult(
         EvidenceRef evidence,
         Instant claimTime,                 // null when the claim carries none
         ClaimTimeSource claimTimeSource,
-        Instant verificationTime,
+        Instant verifiedAt,
         String algorithm,
         String verifiedBy) { }             // tool that produced the outcome
 ```
 
 ```java
-public enum ClaimKind { OPENPGP_SIGNATURE, SIGSTORE_BUNDLE, DSSE_ATTESTATION }
-
 public enum ClaimOutcome { VERIFIED, FAILED, INDETERMINATE }
 
 public enum IndeterminateReason {
@@ -140,18 +147,27 @@ public record EvidenceRef(Path file, DigestSet digest, String source) { }
 public record TrustRootRef(String kind, String identifier) { }
 ```
 
-`ClaimOutcome` is deliberately not the artifact-level `Outcome`: a claim is
+The claim kind is the format name rather than an enum: it is the name formats
+and toolchains are already configured by, and a parallel enum would have to be
+kept in step with it.
+
+`role` is always `UNKNOWN` today: nothing derives or asserts one, and ADR-007
+removes the field until an attestation consumer needs it.
+
+`ClaimOutcome` is deliberately not the artifact-level `ArtifactOutcome`: a claim is
 never `NO_CLAIM`, never `NOT_CONFIGURED`, and cannot be `UNSATISFIED` on its
 own, because satisfaction is a property of requirements over a set of claims.
 
 `isTransient` is what lets operators triage (§3.5): transient reasons are
 retried and may be downgraded from cache, permanent ones are not.
 
-`ClaimTimeSource` records whether the time used came from a transparency log or
-from the signer (§3.4), which is what makes the OpenPGP backdating risk visible
-in the record rather than implied (§1.1). §3.4 calls the instant itself the
-evaluation basis; the type here names its source, which is the part a result has
-to carry.
+Claim time and its source are properties of the claim, so `Claim` exposes
+`claimTime()` and `claimTimeSource()` and the result copies them.
+`ClaimTimeSource` records whether the time came from a transparency log or from
+the signer (§3.4), which is what makes the OpenPGP backdating risk visible in
+the record rather than implied (§1.1). §3.4 calls the instant itself the
+evaluation basis; the type names its source, which is the part a result has to
+carry.
 
 ### Artifact result
 
@@ -160,29 +176,30 @@ One per resolved file.
 ```java
 public record ArtifactResult(
         ArtifactSubject subject,
-        Outcome outcome,
+        ArtifactOutcome outcome,
         IndeterminateReason reason,        // null unless outcome is INDETERMINATE
-        PolicyRuleRef matchedRule,         // null when NOT_CONFIGURED
         List<ClaimResult> claims,          // all of them, contributing or not
-        Instant verificationTime,
-        CacheInfo cache) { }               // null when computed fresh
+        Instant verifiedAt) { }
 
-public enum Outcome {
+public enum ArtifactOutcome {
     SATISFIED, UNSATISFIED, FAILED, NO_CLAIM, INDETERMINATE, NOT_CONFIGURED
 }
-
-public record PolicyRuleRef(String pattern, String location) { }
-
-public record CacheInfo(Instant storedAt, Duration age, Outcome cachedOutcome) { }
 ```
 
-`PolicyRuleRef.location` carries where the rule came from in the policy — file
-and node path — so a surprising verdict can be traced to the line that caused
-it.
+Two components are added by the phases that produce them, not before:
+
+- **Matched rule** — the rule's pattern and its location in the policy file, so
+  a surprising verdict traces to the line that caused it. Added with the policy
+  schema (P2.6), which is what records locations.
+- **Cache information** — when the result was stored and its age. Added with
+  the result cache (P4), if one is built.
 
 ### Run result
 
-One per verification run.
+One per verification run. **Not yet implemented:** the shape below records the
+intent, and each part lands with the phase that has something to put in it —
+coverage and enforcement mode with P3.6, policy reference with P4.2. Until then
+`VerificationReport` holds the artifact results and derives the counts.
 
 ```java
 public record VerificationRun(
@@ -190,7 +207,7 @@ public record VerificationRun(
         Coverage coverage,
         EnforcementMode enforcementMode,
         List<ArtifactResult> artifacts,
-        Map<Outcome, Integer> counts) { }
+        Map<ArtifactOutcome, Integer> counts) { }
 
 public record PolicyRef(String location, DigestSet digest) { }   // digest null in zero-config
 
@@ -215,18 +232,26 @@ The artifact outcome is derived from claim results in one place —
 diverge (§2). It implements §3.2.1:
 
 ```
-1. any claim FAILED                         -> FAILED
-2. no requirement applies                   -> NOT_CONFIGURED
-3. claims with UNSUPPORTED_ALGORITHM are set aside;
-   if a requirement demands that claim kind -> INDETERMINATE(UNSUPPORTED_ALGORITHM)
-4. requirements met, claim-set mode honoured -> SATISFIED
-5. otherwise, in order:
-   ALL_CLAIMS and a verified claim unaccepted -> UNSATISFIED
-   any remaining INDETERMINATE claim          -> INDETERMINATE(that reason)
-   any verified claim                         -> UNSATISFIED
-   claims set aside in step 3                 -> INDETERMINATE(UNSUPPORTED_ALGORITHM)
-   nothing found                              -> NO_CLAIM
+1. any claim FAILED                              -> FAILED
+2. claims with UNSUPPORTED_ALGORITHM are set aside; requirements are
+   evaluated over the claims that verified
+3. no requirement applies                        -> NOT_CONFIGURED
+4. requirements unmet, the rule demands a claim kind,
+   and a claim was set aside                     -> INDETERMINATE(UNSUPPORTED_ALGORITHM)
+5. requirements met:
+   ANY_CLAIM                                     -> SATISFIED
+   ALL_CLAIMS and a verified claim unaccepted    -> UNSATISFIED
+   ALL_CLAIMS and an INDETERMINATE claim remains -> INDETERMINATE(that reason)
+   otherwise                                     -> SATISFIED
+6. requirements unmet, in order:
+   any remaining INDETERMINATE claim             -> INDETERMINATE(that reason)
+   any verified claim                            -> UNSATISFIED
+   claims set aside in step 2                    -> INDETERMINATE(UNSUPPORTED_ALGORITHM)
+   nothing found                                 -> NO_CLAIM
 ```
+
+Setting aside before the `NOT_CONFIGURED` check is not observable — with no rule
+nothing can demand a claim kind — but it keeps the order the same as §3.2.1.
 
 ```java
 public enum ClaimSetMode { ALL_CLAIMS, ANY_CLAIM }
@@ -235,15 +260,21 @@ public enum ClaimSetMode { ALL_CLAIMS, ANY_CLAIM }
 `ClaimSetMode` replaces `ListedEvidencePolicy`; `ALL_CLAIMS` stays the default,
 matching RPMv6 (§7).
 
-Requirement evaluation itself — what a requirement is, how roles scope it — is
-ADR-006. `OutcomeRollup` depends only on a predicate interface, so the two can
+Requirement evaluation itself — what a requirement is, how it is scoped — is
+ADR-007. `OutcomeRollup` depends only on an evaluator interface, so the two can
 be built and tested independently:
 
 ```java
 public interface RequirementEvaluator {
-    EvaluationResult evaluate(ArtifactSubject subject, List<ClaimResult> verifiedClaims);
+    Evaluation evaluate(ArtifactCoords coords, List<ClaimResult> verifiedClaims);  // null: no rule applies
+
+    record Evaluation(boolean satisfied, List<ClaimResult> accepted,
+            List<ClaimResult> unaccepted) { }
 }
 ```
+
+It takes the coordinate rather than the subject, because rules match at GAV
+level and never need the digest.
 
 ### Tool-level results
 
@@ -275,25 +306,28 @@ rather than of the result shape.
 
 ### Serialization
 
-Results are serialized with Jackson to JSON for the cache (§3.7) and as the
-input to VSA emission (§6). Rules: field names are stable and explicit, enums
-serialize as their names, `Instant` as ISO-8601 UTC, `Path` as a string, and
-`DigestSet` as a plain object. Serialization is round-trip tested, because the
-cache reads back what it wrote.
+Results are serialized with Jackson to JSON as the input to the run record and
+attestations (§6), and to a result cache if one is built (§3.7). Rules: field
+names are stable and explicit, enums serialize as their names, `Instant` as
+ISO-8601 UTC, `Path` as a string, and `DigestSet` as a plain object.
+Serialization is round-trip tested, so a reader gets back what was written.
 
 ## Consequences
 
 **Removed:** `TrustVerdict`, `Verdict`, `TrustResult`, `EvidenceResult`,
 `MatchedEvidence`, `ArtifactIdentity` (interface), `MavenArtifactIdentity`
-(becomes a mapping function to `ArtifactSubject`), `ListedEvidencePolicy`.
+(becomes a mapping function to `ArtifactSubject`). `ListedEvidencePolicy` stays
+as the config-side setting until the policy schema is replaced (P2.6);
+`TrustPolicy.claimSetMode()` maps it to `ClaimSetMode`.
 
 **Renamed:** `VerificationUnit` → `Claim`, `OpenPgpVerificationUnit` →
 `OpenPgpClaim`, `SigstoreVerificationUnit` → `SigstoreClaim`.
 
-**Affected beyond the trust path:** `ReportVerdict`, `FileSignatureReport` and
+**Affected beyond the trust path:** `FileSignatureReport` and
 `SignatureVerificationReport` render CLI signature verification, which also
-uses `Verdict`. They move to `ClaimOutcome`, so `sigmund verify-signature`
-reports "indeterminate: key unavailable" where it said "no key".
+used `Verdict`. They move to `ClaimOutcome`, and `ReportVerdict` is removed in
+favour of counts by claim outcome, so `sigmund verify-signature` reports
+"indeterminate: key unavailable" where it said "no key".
 
 **Behaviour changes users would notice:**
 
@@ -304,11 +338,11 @@ reports "indeterminate: key unavailable" where it said "no key".
   `UNTRUSTED`, which is what makes the cache downgrade of §3.7 meaningful.
 - A corrupt Sigstore bundle no longer looks like a failed signature.
 
-**Ordering.** This ADR is implemented by roadmap phase P1 and blocks P2
-(requirements and roles), P4 (cache, which stores these types) and P8 (VSA,
-which serializes them).
+**Ordering.** This ADR was implemented by roadmap phase P1, and blocks P2
+(requirements), the persistent key store and revocation in P4, and attestation
+emission, which serializes these types.
 
-**Not decided here:** requirement and policy schema, attester-role assertion
-and mismatch handling, per-outcome enforcement, what replaces
-`signature-optional` — all ADR-006. Enforcement reads outcomes; it does not
-change how they are derived.
+**Not decided here:** credentials (ADR-006); requirement and policy
+schema, per-outcome enforcement and what replaces
+`signature-optional` (ADR-007). Enforcement reads outcomes; it does not change
+how they are derived.

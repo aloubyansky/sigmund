@@ -1186,29 +1186,24 @@
 
   <!-- Credential model -->
   <h3 style="margin-top:2.5rem">Credential Model</h3>
-  <p>Identity matching is type-agnostic. Each credential type handles its own matching semantics.</p>
+  <p>Credentials are classified by who vouches for them: the signature itself, or an issuer the policy names.</p>
 
   <div class="cred-grid">
     <div class="cred-card" style="border-color:rgba(108,138,255,.3)">
-      <h4 style="color:var(--accent)">FingerprintCredential</h4>
+      <h4 style="color:var(--accent)">KeyCredential</h4>
       <p><strong>Types:</strong> <code>openpgp4</code>, <code>openpgp6</code></p>
-      <p>Named by key version, not tool or algorithm. Exact fingerprint match.</p>
+      <p>Proven by the signature. Full fingerprint, exact match; key IDs rejected. Stable and offline, but covers only keys already seen.</p>
     </div>
     <div class="cred-card" style="border-color:rgba(52,211,153,.3)">
-      <h4 style="color:var(--green)">EmailCredential</h4>
-      <p><strong>Type:</strong> <code>email</code></p>
-      <p>Cross-backend fallback. Case-insensitive. Works across OpenPGP and Sigstore.</p>
-    </div>
-    <div class="cred-card" style="border-color:rgba(244,114,182,.3)">
-      <h4 style="color:var(--pink)">SigstoreCredential</h4>
-      <p><strong>Type:</strong> <code>sigstore</code></p>
-      <p>Rich matching on Fulcio cert extensions. Null fields act as wildcards.</p>
+      <h4 style="color:var(--green)">IdentityCredential</h4>
+      <p><strong>Issuer + attributes</strong></p>
+      <p>An email or CI workflow vouched for by a directory (<code>keys.openpgp.org</code>) or an OIDC provider. Accepts keys generated later; only as strong as the issuer.</p>
     </div>
   </div>
 
   <div class="approach-highlight" style="margin-top:1.5rem">
     <h3>Cross-Backend Identity Matching</h3>
-    <p>Sigstore verification extracts <strong>both</strong> a <code>SigstoreCredential</code> and an <code>EmailCredential</code>. A signer configured with only an email matches both OpenPGP and Sigstore signatures &mdash; no cross-type matching logic needed.</p>
+    <p>An <code>email</code> entry matches an address vouched for by any trusted issuer &mdash; the directory for OpenPGP keys, the OIDC provider for Sigstore certificates. A self-certified OpenPGP user ID never matches on its own.</p>
   </div>
 
   <!-- SPI extensibility -->
@@ -1249,33 +1244,33 @@
     </div>
   </div>
 
-  <h3 style="margin-top:2.5rem">SigstoreCredential: Rich Certificate Matching</h3>
-  <p>Sigstore verification extracts credentials from Fulcio certificate extensions. Each field is independently matchable &mdash; <strong>null fields act as wildcards</strong>.</p>
+  <h3 style="margin-top:2.5rem">Sigstore Identities: Rich Certificate Matching</h3>
+  <p>Sigstore verification proves an identity: the OIDC issuer, plus the subject and Fulcio certificate extensions. A policy entry names the attributes it cares about &mdash; <strong>attributes it leaves out are not checked</strong>, while the issuer always is.</p>
 
   <div class="compare-concepts" style="margin-top:1.5rem">
     <div class="concept-card" style="border-color:rgba(248,113,113,.3)">
       <h4><span style="color:var(--red)">&#9670;</span> Subject matching (fragile)</h4>
       <p style="font-size:1rem;color:var(--text-dim);margin-bottom:.75rem">The OIDC subject often includes version-specific refs that change with every release. Trust config requires updates on <strong>every dependency version bump</strong>.</p>
       <div class="code-example"><span style="color:var(--text-dim)"># Breaks on every new release tag</span>
-<span style="color:var(--pink)">sigstore:</span>
-  issuer: <span style="color:var(--green)">"https://token.actions.githubusercontent.com"</span>
-  subject: <span style="color:var(--red)">"https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.2.3"</span></div>
+<span style="color:var(--pink)">identities:</span>
+  - issuer: <span style="color:var(--green)">"https://token.actions.githubusercontent.com"</span>
+    subject: <span style="color:var(--red)">"https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.2.3"</span></div>
     </div>
     <div class="concept-card" style="border-color:rgba(52,211,153,.3)">
       <h4><span style="color:var(--green)">&#9670;</span> Source repo URI matching (stable)</h4>
       <p style="font-size:1rem;color:var(--text-dim);margin-bottom:.75rem">The <code>source-repository-uri</code> points to the repository itself &mdash; stable across versions. Trust config stays static: <strong>"trust anything signed from this repo."</strong></p>
       <div class="code-example"><span style="color:var(--text-dim)"># Stable across all versions</span>
-<span style="color:var(--pink)">sigstore:</span>
-  issuer: <span style="color:var(--green)">"https://token.actions.githubusercontent.com"</span>
-  source-repository-uri: <span style="color:var(--green)">"https://github.com/org/repo"</span></div>
+<span style="color:var(--pink)">identities:</span>
+  - issuer: <span style="color:var(--green)">"https://token.actions.githubusercontent.com"</span>
+    source-repository-uri: <span style="color:var(--green)">"https://github.com/org/repo"</span></div>
     </div>
   </div>
 
   <h3 style="margin-top:2.5rem">Cross-Backend Identity Matching</h3>
   <div class="approach-highlight" style="background:linear-gradient(135deg,rgba(244,114,182,.08),rgba(108,138,255,.06));border-color:rgba(244,114,182,.2)">
     <h3 style="color:var(--pink)">One signer, both worlds</h3>
-    <p>When a Sigstore signature is verified and the Fulcio certificate subject is an email, Sigmund extracts <strong>both</strong> a <code>SigstoreCredential</code> and an <code>EmailCredential</code>. A signer configured with just an <code>email</code> credential matches PGP and Sigstore signatures transparently &mdash; no cross-type matching logic needed.</p>
-    <p style="margin-top:.75rem">This means a project migrating from PGP to Sigstore can keep the same trust config &mdash; the email-based matching bridges both systems automatically.</p>
+    <p>An <code>email</code> entry matches an address vouched for by a trusted issuer: <code>keys.openpgp.org</code> for an OpenPGP key, the OIDC provider for a Sigstore certificate. A self-certified user ID never counts.</p>
+    <p style="margin-top:.75rem">A project migrating from PGP to Sigstore can keep the same address in its trust config &mdash; it only adds the OIDC issuer to the issuers it trusts.</p>
   </div>
 </section>
 
@@ -1545,12 +1540,11 @@
   <div class="code-block" style="line-height:1.5"><span class="cmt"># Define trusted signers</span>
 <span class="kw">signers:</span>
   <span class="str">apache:</span>
-    name: <span class="str">"Apache Software Foundation"</span>
     pgp4: <span class="str">"4AEE18F83AFDEB23468B2E5A..."</span>
   <span class="str">ci-pipeline:</span>
-    sigstore:
-      issuer: <span class="str">"https://token.actions.githubusercontent.com"</span>
-      source-repository-uri: <span class="str">"https://github.com/org/repo"</span>
+    identities:
+      - issuer: <span class="str">"https://token.actions.githubusercontent.com"</span>
+        source-repository-uri: <span class="str">"https://github.com/org/repo"</span>
 
 <span class="cmt"># Map artifacts to trusted signers</span>
 <span class="kw">trust:</span>

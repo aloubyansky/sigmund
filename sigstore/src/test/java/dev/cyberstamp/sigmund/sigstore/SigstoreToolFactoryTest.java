@@ -3,8 +3,8 @@ package dev.cyberstamp.sigmund.sigstore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.SignatureToolFactory;
-import dev.cyberstamp.sigmund.core.SigstoreCredential;
 import dev.cyberstamp.sigmund.core.ToolExecutionException;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -79,11 +79,9 @@ class SigstoreToolFactoryTest {
         }
 
         @Test
-        void acceptsSigstoreCredential() throws Exception {
-            var sc = new SigstoreCredential.Builder()
-                    .issuer("https://accounts.google.com")
-                    .subject("alice@example.com")
-                    .build();
+        void acceptsASigstoreIdentity() throws Exception {
+            var sc = new IdentityCredential("https://accounts.google.com",
+                    Map.of(IdentityCredential.SUBJECT, "alice@example.com"));
             try (var tool = (SigstoreTool) factory.createSigning(
                     sc, Map.of("staging", "true"))) {
                 assertThat(tool.canSign()).isTrue();

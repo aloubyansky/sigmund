@@ -5,17 +5,16 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.cyberstamp.sigmund.core.ClaimOutcome;
-import dev.cyberstamp.sigmund.core.Credential;
-import dev.cyberstamp.sigmund.core.EmailCredential;
+import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
 import dev.cyberstamp.sigmund.core.OpenPgpClaim;
 import dev.cyberstamp.sigmund.core.SigstoreClaim;
-import dev.cyberstamp.sigmund.core.SigstoreCredential;
 import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
 import dev.cyberstamp.sigmund.core.VerifyResult;
 import dev.sigstore.KeylessVerificationException;
 import java.io.IOException;
-import java.util.List;
+import java.security.cert.X509Certificate;
+import java.util.Map;
 import java.util.Set;
 import org.bouncycastle.asn1.x509.GeneralName;
 import org.junit.jupiter.api.Nested;
@@ -84,75 +83,82 @@ class SigstoreToolTest {
     @Nested
     class ExtractCredentials {
         @Test
-        void emailSubjectProducesBothCredentials() {
-            var sc = new SigstoreCredential.Builder()
-                    .issuer("https://accounts.google.com")
-                    .subject("alice@example.com")
-                    .build();
+        void aVerifiedResultProvesItsIdentity() {
+            var identity = new IdentityCredential("https://accounts.google.com", Map.of(
+                    IdentityCredential.SUBJECT, "alice@example.com",
+                    IdentityCredential.EMAIL, "alice@example.com"));
             var result = new SigstoreVerifyResult(ClaimOutcome.VERIFIED, null, "alice@example.com", "EC",
-                    sc, "12345", GeneralName.rfc822Name);
+                    identity, "12345", GeneralName.rfc822Name);
 
-            List<Credential> credentials = metadataOnlyTool().extractCredentials(result);
-
-            assertThat(credentials.size()).isEqualTo(2);
-            assertThat(credentials.get(0)).isInstanceOf(SigstoreCredential.class);
-            assertThat(credentials.get(1)).isInstanceOf(EmailCredential.class);
-
-            SigstoreCredential extracted = (SigstoreCredential) credentials.get(0);
-            assertThat(extracted.issuer()).isEqualTo("https://accounts.google.com");
-            assertThat(extracted.subject()).isEqualTo("alice@example.com");
-
-            EmailCredential email = (EmailCredential) credentials.get(1);
-            assertThat(email.email()).isEqualTo("alice@example.com");
-        }
-
-        @Test
-        void uriSubjectProducesOnlySigstoreCredential() {
-            var sc = new SigstoreCredential.Builder()
-                    .issuer("https://token.actions.githubusercontent.com")
-                    .subject("https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0")
-                    .sourceRepositoryUri("https://github.com/org/repo")
-                    .build();
-            var result = new SigstoreVerifyResult(ClaimOutcome.VERIFIED, null,
-                    "https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0",
-                    "EC", sc, "67890",
-                    GeneralName.uniformResourceIdentifier);
-
-            List<Credential> credentials = metadataOnlyTool().extractCredentials(result);
-
-            assertThat(credentials.size()).isEqualTo(1);
-            assertThat(credentials.get(0)).isInstanceOf(SigstoreCredential.class);
-            SigstoreCredential extracted = (SigstoreCredential) credentials.get(0);
-            assertThat(extracted.sourceRepositoryUri()).isEqualTo("https://github.com/org/repo");
+            assertThat(metadataOnlyTool().extractCredentials(result)).containsExactly(identity);
         }
 
         @Test
         void failedVerificationProducesNoCredentials() {
             var result = new SigstoreVerifyResult(ClaimOutcome.FAILED, null, null, null, null, null, -1);
-            assertThat(metadataOnlyTool().extractCredentials(result).isEmpty()).isTrue();
+            assertThat(metadataOnlyTool().extractCredentials(result)).isEmpty();
         }
 
         @Test
-        void missingIssuerProducesBothCredentials() {
-            var sc = new SigstoreCredential.Builder()
-                    .subject("alice@example.com")
-                    .build();
+        void aCertificateWithoutIssuerProducesNoCredentials() {
             var result = new SigstoreVerifyResult(ClaimOutcome.VERIFIED, null, "alice@example.com", "EC",
-                    sc, "12345", GeneralName.rfc822Name);
+                    null, "12345", GeneralName.rfc822Name);
 
-            List<Credential> credentials = metadataOnlyTool().extractCredentials(result);
+            assertThat(metadataOnlyTool().extractCredentials(result)).isEmpty();
+        }
+    }
 
-            assertThat(credentials.size()).isEqualTo(2);
-            assertThat(credentials.get(0)).isInstanceOf(SigstoreCredential.class);
-            assertThat(credentials.get(1)).isInstanceOf(EmailCredential.class);
+    @Nested
+    class CertificateIdentity {
+        static final String ACTIONS = "https://token.actions.githubusercontent.com";
+
+        @Test
+        void workflowCertificateCarriesIssuerSubjectAndExtensions() throws Exception {
+            String workflow = "https://github.com/org/repo/.github/workflows/release.yml@refs/tags/v1.0";
+            X509Certificate cert = FulcioCertificates.create(ACTIONS,
+                    new GeneralName(GeneralName.uniformResourceIdentifier, workflow),
+                    Map.of("12", "https://github.com/org/repo",
+                            "14", "refs/tags/v1.0",
+                            "23", "release"));
+
+            IdentityCredential identity = SigstoreTool.identityOf(cert);
+
+            assertThat(identity.issuer()).isEqualTo(ACTIONS);
+            assertThat(identity.attributes())
+                    .containsEntry(IdentityCredential.SUBJECT, workflow)
+                    .containsEntry("source-repository-uri", "https://github.com/org/repo")
+                    .containsEntry("source-repository-ref", "refs/tags/v1.0")
+                    .containsEntry("deployment-environment", "release")
+                    .doesNotContainKey(IdentityCredential.EMAIL);
         }
 
         @Test
-        void missingSubjectProducesNoCredentials() {
-            var result = new SigstoreVerifyResult(ClaimOutcome.VERIFIED, null, null, "EC",
-                    null, "12345", -1);
+        void emailSubjectIsAlsoAnEmailAttribute() throws Exception {
+            X509Certificate cert = FulcioCertificates.create("https://accounts.google.com",
+                    new GeneralName(GeneralName.rfc822Name, "Alice@Example.com"), Map.of());
 
-            assertThat(metadataOnlyTool().extractCredentials(result).isEmpty()).isTrue();
+            IdentityCredential identity = SigstoreTool.identityOf(cert);
+
+            assertThat(identity.attribute(IdentityCredential.SUBJECT)).isEqualTo("Alice@Example.com");
+            assertThat(identity.attribute(IdentityCredential.EMAIL)).isEqualTo("alice@example.com");
+        }
+
+        @Test
+        void deprecatedGithubExtensionsAreIgnored() throws Exception {
+            X509Certificate cert = FulcioCertificates.create(ACTIONS,
+                    new GeneralName(GeneralName.uniformResourceIdentifier, "https://github.com/org/repo"),
+                    Map.of("2", "push"));
+
+            assertThat(SigstoreTool.identityOf(cert).attributes())
+                    .containsOnlyKeys(IdentityCredential.SUBJECT);
+        }
+
+        @Test
+        void certificateWithoutIssuerProvesNothing() throws Exception {
+            X509Certificate cert = FulcioCertificates.create(null,
+                    new GeneralName(GeneralName.rfc822Name, "alice@example.com"), Map.of());
+
+            assertThat(SigstoreTool.identityOf(cert)).isNull();
         }
     }
 

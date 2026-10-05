@@ -1,73 +1,61 @@
 package dev.cyberstamp.sigmund.core;
 
 /**
- * A typed identity credential that can be used to verify a signer's identity.
- * <p>
- * Credentials form an extensible bag on {@link SignerIdentity} — adding support for a new
- * signing backend (X.509, AWS Signer, Notation) requires only a new credential type string
- * and a new {@code Credential} implementation, with no schema changes.
+ * A fact about who made a claim, classified by who vouches for it.
  *
- * <h2>Matching semantics</h2>
  * <p>
- * {@link #matches(Credential)} performs <strong>same-type matching only</strong>. A
- * {@link FingerprintCredential} never matches an {@link EmailCredential}, even if both
- * refer to the same person. Cross-backend matching works because
- * {@code SignatureTool.extractCredentials()} produces <em>all</em> applicable credential
- * types for a verified signature. For example, a Sigstore verification produces both a
- * {@link SigstoreCredential} and an {@link EmailCredential} (when the subject is an email),
- * so a signer configured with only an {@code email} credential matches via the
- * {@code EmailCredential} in the proven set — no cross-type matching is needed.
- *
- * <h2>Built-in credential types</h2>
+ * There are two kinds, and the difference between them is what trust rests on:
  * <ul>
- * <li>{@code "openpgp4"}, {@code "openpgp6"} — {@link FingerprintCredential},
- * named by key version (not tool or algorithm)</li>
- * <li>{@code "email"} — {@link EmailCredential}</li>
- * <li>{@code "sigstore"} — {@link SigstoreCredential} (certificate-based identity)</li>
+ * <li>{@link KeyCredential} — key material, proven by the signature itself. Nothing else has
+ * to be trusted and it works offline, but it covers only keys already seen.</li>
+ * <li>{@link IdentityCredential} — an identity asserted by an issuer such as an OIDC provider
+ * or a directory that verifies addresses. It survives key rotation, so it is what lets a
+ * policy accept keys a publisher has not generated yet, and it is only as strong as the
+ * issuer's account security.</li>
  * </ul>
  *
+ * <p>
+ * The same types serve policy and evidence: a signer in policy lists credentials, a verified
+ * claim proves credentials, and {@link #matches(Credential)} is called on the policy side with
+ * the proven one. A key never matches an identity, whatever either says.
+ *
+ * <p>
+ * The type constants double as the names of the signature types a signing tool produces, as
+ * used by {@code signing.credential-types}.
+ *
  * @see SignerIdentity
- * @see FingerprintCredential
- * @see EmailCredential
- * @see SigstoreCredential
  */
-public interface Credential {
+public sealed interface Credential permits KeyCredential, IdentityCredential {
 
-    /** OpenPGP v4 fingerprint credential type. */
+    /** OpenPGP v4 key material. */
     String TYPE_OPENPGP_V4 = "openpgp4";
-    /** OpenPGP v6 fingerprint credential type. */
+    /** OpenPGP v6 key material. */
     String TYPE_OPENPGP_V6 = "openpgp6";
-    /** Email address credential type. */
-    String TYPE_EMAIL = "email";
-    /** Sigstore certificate credential type. */
+    /** An issuer-asserted identity. */
+    String TYPE_IDENTITY = "identity";
+    /** Signature type produced by Sigstore keyless signing. */
     String TYPE_SIGSTORE = "sigstore";
 
     /**
-     * Returns the credential type identifier.
-     * <p>
-     * Built-in types include {@code "openpgp4"}, {@code "openpgp6"}, {@code "email"},
-     * and {@code "sigstore"}. Custom types can be introduced for new signing backends.
+     * Returns the credential type: the key type for key material, {@link #TYPE_IDENTITY} for
+     * an identity.
      *
      * @return the type string, never {@code null}
      */
     String type();
 
     /**
-     * Returns a human-readable representation of this credential for display purposes.
+     * Returns a human-readable representation for reports.
      *
      * @return the display name, never {@code null}
      */
     String displayName();
 
     /**
-     * Checks whether this credential matches another credential.
-     * <p>
-     * Matching is type-specific — credentials of different types always return {@code false}.
-     * Within the same type, matching may apply normalization (e.g., case-insensitive fingerprint
-     * suffix matching for {@link FingerprintCredential}).
+     * Checks whether this credential, as written in policy, is satisfied by a proven one.
      *
-     * @param other the credential to match against
-     * @return {@code true} if this credential matches the other
+     * @param proven the credential a verified claim proved
+     * @return {@code true} if the proven credential satisfies this one
      */
-    boolean matches(Credential other);
+    boolean matches(Credential proven);
 }

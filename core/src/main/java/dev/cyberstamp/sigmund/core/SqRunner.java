@@ -6,11 +6,13 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.bouncycastle.openpgp.PGPPublicKeyRing;
 
 /**
  * Wrapper for the Sequoia (sq) command-line tool for PQC key generation,
@@ -711,7 +713,7 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     @Override
     public TrustRootRef trustRoot() {
         String home = sqEnv.get(SEQUOIA_HOME);
-        return new TrustRootRef(TrustRootRef.KIND_OPENPGP_KEYRING,
+        return new TrustRootRef(TrustRootRef.KIND_OPENPGP_CERT_D,
                 home != null ? home : "sq default store");
     }
 
@@ -790,12 +792,32 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
             boolean verified = verifyCertFile(artifactFile, sigFile, certFile);
             return new OpenPgpVerifyResult(
                     verified ? ClaimOutcome.VERIFIED : ClaimOutcome.FAILED, null,
-                    userId, algorithm, version, fingerprint, fingerprint);
+                    userId, algorithm, version, fingerprint, fingerprint)
+                    .withKeyFingerprints(fingerprint, primaryFingerprintOf(certFile, fingerprint));
         } catch (IOException e) {
             throw new ToolExecutionException("Failed to create temp file for SQ verification", e);
         } finally {
             deleteSilently(sigFile);
         }
+    }
+
+    /**
+     * Reads the primary fingerprint of the certificate that verified a signature, so that
+     * policy naming the primary key matches a signature made by one of its subkeys, as it
+     * does under the other backends.
+     *
+     * @param certFile the certificate file sq verified against
+     * @param signingFingerprint the fingerprint of the signing key
+     * @return the primary fingerprint, or {@code null} when it is the signing key itself or
+     *         the certificate cannot be read
+     */
+    static String primaryFingerprintOf(Path certFile, String signingFingerprint) {
+        PGPPublicKeyRing ring = certFile == null ? null : BcKeyStore.readPublicKeyRing(certFile);
+        if (ring == null) {
+            return null;
+        }
+        String primary = HexFormat.of().withUpperCase().formatHex(ring.getPublicKey().getFingerprint());
+        return primary.equalsIgnoreCase(signingFingerprint) ? null : primary;
     }
 
     private static void deleteSilently(Path file) {

@@ -41,7 +41,7 @@ Sigmund offers everything `sigstore-maven-plugin` does, plus:
 - **Identity matching** — configure expected Sigstore identities and verify them against signed artifacts. When `subject` + `issuer` are both set, the OIDC token is also validated at signing time before artifacts ship.
 - **Signature verification** — verify Sigstore bundles (and OpenPGP signatures) from the same tool
 - **Dependency trust verification** — enforce that dependencies are signed by known trusted parties
-- **Cross-backend identity matching** — a signer configured with just an `email` credential matches both OpenPGP (via UID) and Sigstore (via Fulcio certificate SAN)
+- **Cross-backend identity matching** — a signer configured with an `email` credential matches both OpenPGP (via an address `keys.openpgp.org` verified for the key) and Sigstore (via the Fulcio certificate SAN), from the issuers the policy trusts
 - **Hybrid signing** — produce both `.asc` (OpenPGP) and `.sigstore.json` (Sigstore) in a single `sign` goal execution
 - **Post-quantum cryptography** — add ML-DSA signatures alongside classic OpenPGP and Sigstore
 - **CLI** — sign, verify, and inspect signatures outside Maven
@@ -161,10 +161,9 @@ signing:
 ```yaml
 signers:
   ci-pipeline:
-    name: "CI Pipeline"
-    sigstore:
-      issuer: "https://token.actions.githubusercontent.com"
-      source-repository-uri: "https://github.com/myorg/myrepo"
+    identities:
+      - issuer: "https://token.actions.githubusercontent.com"
+        source-repository-uri: "https://github.com/myorg/myrepo"
 
 signing:
   signer: ci-pipeline
@@ -176,10 +175,9 @@ signing:
 ```yaml
 signers:
   ci-pipeline:
-    name: "CI Pipeline"
-    sigstore:
-      issuer: "https://token.actions.githubusercontent.com"
-      subject: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/tags/v1.0.0"
+    identities:
+      - issuer: "https://token.actions.githubusercontent.com"
+        subject: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/tags/v1.0.0"
 
 signing:
   signer: ci-pipeline
@@ -239,12 +237,10 @@ Sigmund can produce both `.asc` (OpenPGP) and `.sigstore.json` (Sigstore) in a s
 ```yaml
 signers:
   release:
-    name: "Release Signing"
-    email: "release@example.com"
-    openpgp4: "ABCD1234..."
-    sigstore:
-      issuer: "https://token.actions.githubusercontent.com"
-      source-repository-uri: "https://github.com/myorg/myrepo"
+    openpgp4: "ABCD1234..."          # full 40-character fingerprint
+    identities:
+      - issuer: "https://token.actions.githubusercontent.com"
+        source-repository-uri: "https://github.com/myorg/myrepo"
 
 signing:
   signer: release
