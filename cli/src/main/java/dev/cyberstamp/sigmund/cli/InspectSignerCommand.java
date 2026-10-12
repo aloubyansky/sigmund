@@ -2,13 +2,13 @@ package dev.cyberstamp.sigmund.cli;
 
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.CredentialParser;
-import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SignerInspectionReport;
 import dev.cyberstamp.sigmund.core.SignerInspectionReportFormatter;
 import dev.cyberstamp.sigmund.core.ToolConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -103,26 +103,26 @@ public class InspectSignerCommand implements Callable<Integer> {
     private Sigmund buildSigmund() {
         SigmundConfig config = loadConfigSafely();
 
-        DiscoveryConfig fileDiscovery = config != null && config.discoveryConfig() != null
-                ? config.discoveryConfig()
-                : DiscoveryConfig.DEFAULT;
+        VerificationConfig fileVerification = config != null && config.verificationConfig() != null
+                ? config.verificationConfig()
+                : VerificationConfig.DEFAULT;
         ToolsConfig fileTools = config != null && config.toolsConfig() != null
                 ? config.toolsConfig()
                 : ToolsConfig.EMPTY;
 
         List<String> effectiveServers = keyservers != null
                 ? keyservers
-                : fileDiscovery.keyservers();
-        boolean effectiveResolve = keyservers != null || fileDiscovery.resolveSigners();
+                : fileVerification.keyservers();
+        boolean effectiveResolve = keyservers != null || fileVerification.resolveSigners();
 
-        DiscoveryConfig discoveryConfig = new DiscoveryConfig(
-                effectiveResolve, fileDiscovery.importToKeyring(),
-                effectiveServers, fileDiscovery.toolchain());
+        VerificationConfig verificationConfig = new VerificationConfig(
+                effectiveResolve, fileVerification.importToKeyring(),
+                effectiveServers, fileVerification.toolchain());
 
         ToolsConfig toolsConfig = mergeSquoiaHome(fileTools);
 
         return Sigmund.builder()
-                .discoveryConfig(discoveryConfig)
+                .verificationConfig(verificationConfig)
                 .toolsConfig(toolsConfig)
                 .build();
     }

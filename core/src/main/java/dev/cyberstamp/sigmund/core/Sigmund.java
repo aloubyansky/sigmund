@@ -28,8 +28,9 @@ import java.util.Set;
  * SigningOutput output = signer.sign(artifact, outputDir);
  *
  * // Verify trust
- * TrustVerifier verifier = sigmund.verifier(config.trustPolicy());
- * TrustResult result = verifier.assess(artifact, artifactFile, evidenceFiles);
+ * TrustVerifier verifier = sigmund.verifier(
+ *         RulePolicy.compile(config.trustPolicySpec(), config.signers()));
+ * ArtifactResult result = verifier.assess(coords, artifactFile, evidenceFiles);
  * }</pre>
  *
  * <h2>Programmatic construction</h2>
@@ -57,13 +58,13 @@ public class Sigmund implements AutoCloseable {
     private final List<EvidenceProvider> evidenceProviders;
     private final SigningConfig signingConfig;
     private final List<SignatureFormat> formats;
-    private final DiscoveryConfig discoveryConfig;
+    private final VerificationConfig verificationConfig;
     private final Map<String, OpenPgpDirectory> directories;
     private volatile boolean fetchWarningEmitted;
 
     private Sigmund(List<SignatureTool> tools, List<SignatureFormat> formats,
             List<EvidenceProvider> evidenceProviders, SigningConfig signingConfig,
-            DiscoveryConfig discoveryConfig, OpenPgpDirectory directory) {
+            VerificationConfig verificationConfig, OpenPgpDirectory directory) {
         if (tools.isEmpty()) {
             throw new SigmundException("No tools available");
         }
@@ -71,7 +72,7 @@ public class Sigmund implements AutoCloseable {
         this.formats = formats;
         this.evidenceProviders = evidenceProviders;
         this.signingConfig = signingConfig;
-        this.discoveryConfig = discoveryConfig;
+        this.verificationConfig = verificationConfig;
         this.directories = Map.of(directory.name(), directory);
     }
 
@@ -211,7 +212,7 @@ public class Sigmund implements AutoCloseable {
     /**
      * Creates a trust verifier using the given policy.
      * <p>
-     * The {@link DiscoveryConfig} set at build time is used for key fetching.
+     * The {@link VerificationConfig} set at build time is used for key fetching.
      *
      * @param policy the trust policy to apply
      * @return a new trust verifier
@@ -219,11 +220,11 @@ public class Sigmund implements AutoCloseable {
     public TrustVerifier verifier(TrustPolicy policy) {
         warnIfNoFetchCapableImporter();
         return new TrustVerifier(policy, evidenceProviders, new ClaimIdentityResolver(policy,
-                directories, discoveryConfig.resolveSigners()));
+                directories, verificationConfig.resolveSigners()));
     }
 
     private void warnIfNoFetchCapableImporter() {
-        if (fetchWarningEmitted || !discoveryConfig.resolveSigners()) {
+        if (fetchWarningEmitted || !verificationConfig.resolveSigners()) {
             return;
         }
         for (SignatureTool tool : tools) {
@@ -427,9 +428,9 @@ public class Sigmund implements AutoCloseable {
      * Builder for constructing a {@link Sigmund} instance.
      * <p>
      * {@link #build()} always initializes tools from registered factories based on the
-     * {@link DiscoveryConfig}. Explicit {@link #addTool(SignatureTool)} calls take precedence.
+     * {@link VerificationConfig}. Explicit {@link #addTool(SignatureTool)} calls take precedence.
      * {@link #config(SigmundConfig)} applies the full config including signing, tool, and
-     * discovery settings. {@link #discoveryConfig(DiscoveryConfig)} sets key fetching config.
+     * verification settings. {@link #verificationConfig(VerificationConfig)} sets key fetching config.
      * {@link #toolsConfig(ToolsConfig)} sets per-tool configuration overrides.
      */
     public static class Builder {
@@ -437,7 +438,7 @@ public class Sigmund implements AutoCloseable {
         private final List<SignatureTool> tools = new ArrayList<>(2);
         private final List<EvidenceProvider> extraProviders = new ArrayList<>();
         private ToolsConfig toolsConfig = ToolsConfig.EMPTY;
-        private DiscoveryConfig discoveryConfig = DiscoveryConfig.DEFAULT;
+        private VerificationConfig verificationConfig = VerificationConfig.DEFAULT;
         private OpenPgpDirectory directory;
         private SigningConfig signingConfig;
         private PassphraseProvider bcPassphraseProvider;
@@ -468,18 +469,18 @@ public class Sigmund implements AutoCloseable {
          * Sets key fetching and keyserver configuration, fixed at build time.
          * All {@link TrustVerifier} instances created from this {@link Sigmund} share it.
          *
-         * @param dc the discovery configuration
+         * @param dc the verification configuration
          * @return this builder
          */
-        public Builder discoveryConfig(DiscoveryConfig dc) {
-            this.discoveryConfig = dc != null ? dc : DiscoveryConfig.DEFAULT;
+        public Builder verificationConfig(VerificationConfig dc) {
+            this.verificationConfig = dc != null ? dc : VerificationConfig.DEFAULT;
             return this;
         }
 
         /**
          * Applies the full configuration.
          * <p>
-         * Overrides any prior {@code toolsConfig()} or {@code discoveryConfig()} call.
+         * Overrides any prior {@code toolsConfig()} or {@code verificationConfig()} call.
          * Explicit {@code addTool()} calls take precedence over initialized tools.
          *
          * @param config the unified configuration
@@ -487,7 +488,7 @@ public class Sigmund implements AutoCloseable {
          */
         public Builder config(SigmundConfig config) {
             this.toolsConfig = config.toolsConfig();
-            this.discoveryConfig = config.discoveryConfig();
+            this.verificationConfig = config.verificationConfig();
             this.signingConfig = config.signingConfig();
             return this;
         }
@@ -589,7 +590,7 @@ public class Sigmund implements AutoCloseable {
         /**
          * Builds the {@link Sigmund} instance.
          * <p>
-         * First initializes tools from registered factories based on {@link DiscoveryConfig}
+         * First initializes tools from registered factories based on {@link VerificationConfig}
          * (explicit {@link #addTool} calls take precedence — already-added tools are
          * skipped), then enforces exclusive signer constraints (see
          * {@link SignatureToolFactory#isDefaultExclusiveSigner()}). When no signing
@@ -626,7 +627,7 @@ public class Sigmund implements AutoCloseable {
                 }
 
                 return new Sigmund(List.copyOf(tools), List.copyOf(formats),
-                        List.copyOf(providers), signingConfig, discoveryConfig,
+                        List.copyOf(providers), signingConfig, verificationConfig,
                         directory != null ? directory : KeysOpenPgpOrgDirectory.standard());
             } catch (RuntimeException e) {
                 // Clean up any AutoCloseable tools before propagating the exception
@@ -753,20 +754,20 @@ public class Sigmund implements AutoCloseable {
         }
 
         /**
-         * Initializes tools from registered factories using the discovery toolchain.
+         * Initializes tools from registered factories using the verification toolchain.
          * <p>
-         * Reads the toolchain from {@link DiscoveryConfig#effectiveToolchain()} and
+         * Reads the toolchain from {@link VerificationConfig#effectiveToolchain()} and
          * per-tool settings from {@link ToolsConfig}. Explicitly added tools are skipped.
          */
         private void initializeTools() {
-            List<String> priority = discoveryConfig.effectiveToolchain();
+            List<String> priority = verificationConfig.effectiveToolchain();
             for (String toolName : priority) {
                 if (findByName(toolName) != null) {
                     continue;
                 }
                 initializeTool(toolName);
             }
-            if (discoveryConfig.toolchain() == null) {
+            if (verificationConfig.toolchain() == null) {
                 for (SignatureToolFactory factory : allFactories()) {
                     if (findByName(factory.toolName()) == null
                             && !priority.contains(factory.toolName())) {
@@ -778,7 +779,7 @@ public class Sigmund implements AutoCloseable {
 
         /**
          * Initializes a single tool from its factory, merging per-tool settings
-         * from {@link ToolsConfig} with discovery settings from {@link DiscoveryConfig}.
+         * from {@link ToolsConfig} with verification settings from {@link VerificationConfig}.
          * <p>
          * OpenPGP-specific fetch settings ({@code resolve-signers}, {@code import-to-keyring},
          * {@code keyservers}) are only injected for factories whose
@@ -840,7 +841,7 @@ public class Sigmund implements AutoCloseable {
         }
 
         /**
-         * Injects discovery-level fetch settings into a tool's settings map.
+         * Injects verification-level fetch settings into a tool's settings map.
          * These settings are read by tool factories to configure key fetching behavior.
          *
          * @param toolSettings the base tool settings (may be mutated)
@@ -848,9 +849,9 @@ public class Sigmund implements AutoCloseable {
          */
         private Map<String, String> injectFetchSettings(Map<String, String> toolSettings) {
             var merged = new HashMap<>(toolSettings);
-            merged.put("resolve-signers", String.valueOf(discoveryConfig.resolveSigners()));
-            merged.put("import-to-keyring", String.valueOf(discoveryConfig.importToKeyring()));
-            merged.put("keyservers", String.join(",", discoveryConfig.keyservers()));
+            merged.put("resolve-signers", String.valueOf(verificationConfig.resolveSigners()));
+            merged.put("import-to-keyring", String.valueOf(verificationConfig.importToKeyring()));
+            merged.put("keyservers", String.join(",", verificationConfig.keyservers()));
             return Map.copyOf(merged);
         }
 

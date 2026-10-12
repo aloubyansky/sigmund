@@ -236,22 +236,51 @@ diverge (§2). It implements §3.2.1:
 2. claims with UNSUPPORTED_ALGORITHM are set aside; requirements are
    evaluated over the claims that verified
 3. no requirement applies                        -> NOT_CONFIGURED
-4. requirements unmet, the rule demands a claim kind,
-   and a claim was set aside                     -> INDETERMINATE(UNSUPPORTED_ALGORITHM)
-5. requirements met:
+4. requirements met:
    ANY_CLAIM                                     -> SATISFIED
    ALL_CLAIMS and a verified claim unaccepted    -> UNSATISFIED
    ALL_CLAIMS and an INDETERMINATE claim remains -> INDETERMINATE(that reason)
    otherwise                                     -> SATISFIED
-6. requirements unmet, in order:
+5. requirements unmet, in order:
    any remaining INDETERMINATE claim             -> INDETERMINATE(that reason)
-   any verified claim                            -> UNSATISFIED
-   claims set aside in step 2                    -> INDETERMINATE(UNSUPPORTED_ALGORITHM)
+   requirements met had the set-aside claims
+   been made by the keys they name               -> INDETERMINATE(UNSUPPORTED_ALGORITHM)
+   nothing verified and a set-aside claim
+   names no key                                  -> INDETERMINATE(UNSUPPORTED_ALGORITHM)
+   any claim verified or set aside               -> UNSATISFIED
    nothing found                                 -> NO_CLAIM
 ```
 
-Setting aside before the `NOT_CONFIGURED` check is not observable — with no rule
-nothing can demand a claim kind — but it keeps the order the same as §3.2.1.
+Setting aside before the `NOT_CONFIGURED` check is not observable, but it keeps
+the order the same as §3.2.1.
+
+**Signers only an uncheckable claim names (revised 2026-10-16).** A set-aside
+claim proves nothing, but an OpenPGP packet names the key that made it, which
+`ClaimResult.declaredIssuer` records apart from the proven credentials. When a
+requirement is unmet and would be met had each set-aside claim been made by the
+key it names, the requirement is unmet only for want of a tool: an artifact
+co-signed with a post-quantum key that a classic-only verifier cannot check is
+`INDETERMINATE(UNSUPPORTED_ALGORITHM)` — install a tool that can — not
+`UNSATISFIED`, which would send the policy owner looking for a trust problem.
+The verified claims are evaluated again alongside the hypothetical ones because a
+requirement is a conjunction and the evaluator does not say which clauses are
+open: a verified claim may meet one clause and a set-aside claim another. It
+cannot excuse a wrong signer: adding claims only meets more clauses, so the step
+holds only when every clause the verified claims leave unmet accepts a key some
+set-aside claim names. An appended block naming a required co-signer
+does turn `UNSATISFIED` into `INDETERMINATE` when the classic signature is
+genuine, which is exactly what the honest artifact gets on that verifier; both
+block by default. This replaces an earlier "the rule demands a claim kind" step,
+which the schema cannot express.
+
+The same named key decides the other way when nothing verified: an artifact whose
+only claims are set aside, each naming a key the requirement does not accept, is
+`UNSATISFIED`, as it would be had a classic block verified beside them — a tool
+would not change the verdict, and the operator's next step is a trust decision,
+not an install. Only when some set-aside claim names no key, leaving no signer to
+judge, is it `INDETERMINATE(UNSUPPORTED_ALGORITHM)`. The report shows each
+set-aside claim's named key, marked as not verified, so the operator can tell
+which key the policy would have to name.
 
 ```java
 public enum ClaimSetMode { ALL_CLAIMS, ANY_CLAIM }
@@ -266,15 +295,15 @@ be built and tested independently:
 
 ```java
 public interface RequirementEvaluator {
-    Evaluation evaluate(ArtifactCoords coords, List<ClaimResult> verifiedClaims);  // null: no rule applies
+    Evaluation evaluate(List<ClaimResult> verifiedClaims);
 
     record Evaluation(boolean satisfied, List<ClaimResult> accepted,
             List<ClaimResult> unaccepted) { }
 }
 ```
 
-It takes the coordinate rather than the subject, because rules match at GAV
-level and never need the digest.
+The rule is matched once, before the roll-up, and its `Requirement` is the
+evaluator; no rule means no evaluator, which is `NOT_CONFIGURED`.
 
 ### Tool-level results
 
@@ -295,6 +324,55 @@ detail, but they carry `ClaimOutcome` plus an `IndeterminateReason` instead of
 
 `UnverifiedResult` keeps its role for outcomes produced without a tool, and its
 invariant becomes "never `VERIFIED`".
+
+#### Key validity is not signature validity (revised 2026-10-16)
+
+A backend can decline a signature that is cryptographically correct, because it
+will not use the key that made it. Reporting that as `FAILED` turns a verifier
+decision into an attack signal that blocks every build, and since the toolchain
+decides which backend answers, it makes the verdict depend on an argument. Each
+backend therefore separates the two:
+
+| Situation | Outcome |
+|---|---|
+| The signature does not match the artifact's bytes | `FAILED` |
+| The key had expired when it signed, or was revoked — as compromised at any time, for another reason before it signed (§3.8) | `FAILED` |
+| The key's certificate carries no self-signature binding it — keys.openpgp.org serves such a certificate for an owner who never verified an address | `INDETERMINATE(KEY_UNAVAILABLE)` |
+| The verification policy rejects an algorithm the signature or its binding uses | `INDETERMINATE(UNSUPPORTED_ALGORITHM)` |
+| The tool threw, or produced no verdict | `INDETERMINATE(TOOL_UNAVAILABLE)` |
+
+Self-signatures that are present, use accepted algorithms and still do not bind
+the key are a broken or forged certificate, and stay `FAILED`.
+
+How each backend reaches these:
+
+- **Bouncy Castle** checks `isTestedCorrect()` before `isValid(policy)`, and
+  explains an invalid key from its revocation and expiry at the signature's time
+  and from the self-signatures it carries.
+- **GnuPG** is judged by its `--status-fd` lines, not its exit code: it exits 0
+  for a good signature by a revoked key (`REVKEYSIG`) or by a key that had
+  expired when it signed (`EXPKEYSIG` with a `KEYEXPIRED` time not after the
+  signature's), so an exit-code reading verified both.
+- **Sequoia** reports through text: its closing tally separates a *bad signature*
+  from a *bad key*, and the detail of a bad key says whether it was revoked,
+  expired, rejected by policy, or not bound.
+
+The algorithms accepted are defined once, in `VerificationAlgorithms`, and
+translated per backend: Bouncy Castle's `OpenPGPPolicy`, a Sequoia crypto policy
+passed through `SEQUOIA_CRYPTO_POLICY`, and GnuPG's defaults, which already
+match. On top of each backend's modern defaults they are: SHA-1 and RIPEMD-160
+document signatures; SHA-1 and RIPEMD-160 self-signatures at any date; RSA and
+DSA keys from 1024 bits. SHA-1 self-signatures are accepted without a cut-off
+because the practical attack on SHA-1, a chosen-prefix collision, needs the
+victim to sign attacker-prepared data, and a self-signature is made by the key's
+owner over their own key — GnuPG exempts them for the same reason, and Sigmund
+relies on no third-party certifications. The definition is not configurable: no
+one has asked for a different one, and since it changes what is accepted, a
+setting for it would belong in the policy file, not in arguments (§5.3). The
+Sigmund version recorded with a result pins it (§3.7).
+
+`KeyValidityAgreementTest` runs every row above through all three backends and
+requires one answer.
 
 `SignatureEvidenceAdapter` keeps its tool-selection behaviour — first tool that
 reaches a verdict wins, transient reasons trigger a key fetch and retry — but

@@ -7,6 +7,7 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * What a verification run found, grouped for reporting, and which of it blocks the build.
@@ -87,11 +88,13 @@ public final class VerificationReport {
      * Returns the artifacts whose outcome the policy does not tolerate.
      *
      * <p>
-     * {@link ArtifactOutcome#FAILED} always blocks: a signature that does not verify is an
-     * attack signal, not a coverage question, and no setting overrides it — including for an
-     * artifact the policy allows to carry no signature at all. Missing evidence blocks unless
-     * the policy tolerates it for that artifact, and an artifact no rule covers never blocks,
-     * because policy is silent about it rather than permissive.
+     * Each outcome's enforcement is resolved by
+     * {@link TrustPolicy#enforcementFor(ArtifactOutcome, MatchedRule)} from the rule that
+     * matched the artifact. {@link ArtifactOutcome#FAILED} always blocks: a signature that does not
+     * verify is an attack signal, not a coverage question, and no setting overrides it. When a
+     * policy is {@linkplain TrustPolicy#declared() declared} every non-{@link ArtifactOutcome#SATISFIED} outcome blocks unless
+     * the matched
+     * rule or the defaults relax it; in zero-config only {@code FAILED} blocks.
      *
      * @return the blocking results, in the order they were assessed
      */
@@ -99,7 +102,7 @@ public final class VerificationReport {
         List<ArtifactResult> blocking = new ArrayList<>();
         byOutcome.forEach((outcome, results) -> {
             for (ArtifactResult result : results) {
-                if (blocks(outcome, result)) {
+                if (enforcement(result).blocks()) {
                     blocking.add(result);
                 }
             }
@@ -107,14 +110,100 @@ public final class VerificationReport {
         return List.copyOf(blocking);
     }
 
-    private boolean blocks(ArtifactOutcome outcome, ArtifactResult result) {
-        return switch (outcome) {
-            case FAILED -> true;
-            case UNSATISFIED, INDETERMINATE -> policy.onUntrusted() == UntrustedPolicy.FAIL;
-            case NO_CLAIM -> policy.onUntrusted() == UntrustedPolicy.FAIL
-                    && !policy.isUnsignedAllowed(result.subject().coords());
-            case SATISFIED, NOT_CONFIGURED -> false;
+    /**
+     * Returns what the policy does about one artifact's outcome.
+     *
+     * <p>
+     * Resolved here, once, so that every insertion point treats the same result alike: a goal
+     * logging an ignored outcome as a warning while an extension stayed silent about it would
+     * be two verifiers disagreeing.
+     *
+     * @param result a result of this run
+     * @return the enforcement action for the result's outcome under the rule that matched it
+     */
+    public EnforcementAction enforcement(ArtifactResult result) {
+        return policy.enforcementFor(result.outcome(), result.matchedRule());
+    }
+
+    /**
+     * Returns the heading for one outcome's section: the outcome, how many artifacts reached it,
+     * and how many of those the policy chose to ignore, by where that choice was made.
+     *
+     * <p>
+     * Ignored artifacts are counted rather than dropped. Ignoring decides that an outcome does
+     * not act on the build; it does not make the outcome untrue, and a run in which most
+     * artifacts carried no claim must not read as one with full coverage (§2.1). Each source of
+     * the decision — a rule's own override, the policy {@code defaults}, or the absence of a
+     * policy — is named with its count, so a large ignored share traces to the line that
+     * allowed it.
+     *
+     * @param outcome the outcome whose section is being headed
+     * @return the heading, such as {@code NO_CLAIM (390) — ignored: 387 by rules[4] '*'}
+     */
+    public String heading(ArtifactOutcome outcome) {
+        List<ArtifactResult> results = byOutcome.getOrDefault(outcome, List.of());
+        String heading = outcome + " (" + results.size() + ")";
+        if (outcome == ArtifactOutcome.SATISFIED) {
+            return heading;
+        }
+        Map<String, Integer> ignoredBySource = new LinkedHashMap<>();
+        for (ArtifactResult result : results) {
+            if (enforcement(result) == EnforcementAction.IGNORE) {
+                ignoredBySource.merge(actionSource(result), 1, Integer::sum);
+            }
+        }
+        if (ignoredBySource.isEmpty()) {
+            return heading;
+        }
+        return heading + " — ignored: " + ignoredBySource.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer> comparingByValue().reversed()
+                        .thenComparing(Map.Entry.comparingByKey()))
+                .map(entry -> entry.getValue() + " " + entry.getKey())
+                .collect(Collectors.joining(", "));
+    }
+
+    /**
+     * Returns one artifact's line: its coordinate, tagged with what its outcome does to the
+     * build unless it is {@link ArtifactOutcome#SATISFIED}.
+     *
+     * <p>
+     * The tag repeats what a build tool's log level already shows, because a log read as plain
+     * text — in a CI artifact, a ticket, a diff — has lost those levels.
+     *
+     * @param result a result of this run
+     * @return the line, such as {@code org.example:lib:1.0 [blocks]}
+     */
+    public String describe(ArtifactResult result) {
+        String coords = result.subject().coords().toString();
+        if (result.outcome() == ArtifactOutcome.SATISFIED) {
+            return coords;
+        }
+        return coords + switch (enforcement(result)) {
+            case FAIL -> " [blocks]";
+            case WARN -> " [warning]";
+            case IGNORE -> " [ignored]";
         };
+    }
+
+    /**
+     * Names where an artifact's enforcement action was decided: the matched rule when it
+     * overrides this outcome, otherwise the policy defaults, or no policy at all.
+     */
+    private String actionSource(ArtifactResult result) {
+        MatchedRule rule = result.matchedRule();
+        if (rule != null && rule.enforcement().containsKey(result.outcome())) {
+            return "by " + rule.location() + " '" + rule.pattern() + "'";
+        }
+        return policy.declared() ? "by defaults" : "with no policy";
+    }
+
+    /**
+     * Returns whether any artifact's outcome blocks the build.
+     *
+     * @return {@code true} if at least one result blocks
+     */
+    public boolean blocks() {
+        return !blocking().isEmpty();
     }
 
     /**
@@ -128,7 +217,8 @@ public final class VerificationReport {
      * @param summary one line per claim naming who attested and how, empty when nothing
      *        attested these artifacts
      * @param detail what that attestation proved and what it was checked against, indented
-     *        under the summary; empty when the claims recorded neither
+     *        under the summary, and the key a claim no tool could check names as its issuer,
+     *        marked as not verified; empty when the claims recorded none of these
      * @param artifacts the artifacts, in coordinate order
      */
     public record AttesterGroup(List<String> summary, List<String> detail,
@@ -195,6 +285,11 @@ public final class VerificationReport {
             for (Credential credential : claim.attesterCredentials()) {
                 detail.add("  credential " + credential.type() + " " + credential.displayName());
             }
+            Credential declared = claim.declaredIssuer();
+            if (declared != null && !claim.attesterCredentials().contains(declared)) {
+                detail.add("  declared issuer " + declared.type() + " " + declared.displayName()
+                        + " (not verified)");
+            }
             TrustRootRef trustRoot = claim.trustRoot();
             if (trustRoot != null && trustRoot.identifier() != null) {
                 detail.add("  trust root " + trustRoot.displayName());
@@ -246,9 +341,6 @@ public final class VerificationReport {
         }
         if (claim.attesterDisplayName() != null) {
             headline.append(" - ").append(claim.attesterDisplayName());
-        }
-        if (claim.role() != AttesterRole.UNKNOWN) {
-            headline.append(" [").append(claim.role().name().toLowerCase()).append(']');
         }
         return headline.toString();
     }

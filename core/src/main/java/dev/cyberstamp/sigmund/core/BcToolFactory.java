@@ -74,7 +74,7 @@ final class BcToolFactory implements SignatureToolFactory {
     public SignatureTool createVerifyOnly(Map<String, String> settings) {
         BcKeyStore keyStore = buildKeyStore(settings);
         boolean resolveSigners = "true".equals(settings.get("resolve-signers"));
-        List<String> keyservers = DiscoveryConfig.parseKeyserversSetting(settings.get("keyservers"));
+        List<String> keyservers = VerificationConfig.parseKeyserversSetting(settings.get("keyservers"));
         KeyserverFetcher fetcher = resolveSigners && !keyservers.isEmpty()
                 ? new KeyserverFetcher(keyStore, keyservers)
                 : null;

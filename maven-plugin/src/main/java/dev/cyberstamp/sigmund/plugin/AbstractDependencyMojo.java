@@ -1,10 +1,10 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
-import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -134,26 +134,26 @@ abstract class AbstractDependencyMojo extends AbstractSigmundMojo {
     }
 
     /**
-     * Resolves the discovery config using field-level overrides from the mojo parameters.
+     * Resolves the verification config using field-level overrides from the mojo parameters.
      *
-     * @param fileConfig the base discovery configuration from the config file
-     * @return the resolved discovery configuration
+     * @param fileConfig the base verification configuration from the config file
+     * @return the resolved verification configuration
      */
-    protected DiscoveryConfig resolveDiscoveryConfig(DiscoveryConfig fileConfig) {
-        return resolveDiscoveryConfig(fileConfig, resolveSigners, keyservers, importToKeyring);
+    protected VerificationConfig resolveVerificationConfig(VerificationConfig fileConfig) {
+        return resolveVerificationConfig(fileConfig, resolveSigners, keyservers, importToKeyring);
     }
 
     /**
-     * Builds a {@link SignatureInspector} with the given discovery and tools configurations.
+     * Builds a {@link SignatureInspector} with the given verification and tools configurations.
      *
-     * @param discoveryConfig the resolved discovery configuration
+     * @param verificationConfig the resolved verification configuration
      * @param toolsConfig the resolved tools configuration
      * @return the configured signature inspector
      * @throws MojoExecutionException if construction fails
      */
-    protected SignatureInspector buildInspector(DiscoveryConfig discoveryConfig, ToolsConfig toolsConfig)
+    protected SignatureInspector buildInspector(VerificationConfig verificationConfig, ToolsConfig toolsConfig)
             throws MojoExecutionException {
-        Sigmund sigmund = buildSigmund(discoveryConfig, toolsConfig);
+        Sigmund sigmund = buildSigmund(verificationConfig, toolsConfig);
         return SignatureInspector.builder()
                 .log(getLog())
                 .sigmund(sigmund)

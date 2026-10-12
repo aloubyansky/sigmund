@@ -9,34 +9,156 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 class VerificationReportTest {
 
     private static final String FP = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
-    private static final SignerIdentity ALICE = new SignerIdentity("alice",
-            List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)));
 
     private static ArtifactResult result(String name, ArtifactOutcome outcome,
             IndeterminateReason reason, ClaimResult... claims) {
+        return result(name, outcome, reason, null, claims);
+    }
+
+    private static ArtifactResult result(String name, ArtifactOutcome outcome,
+            IndeterminateReason reason, MatchedRule matchedRule, ClaimResult... claims) {
         ArtifactCoords coords = new ArtifactCoords("org.example", name, "", "jar", "1.0");
         ArtifactSubject subject = new ArtifactSubject(coords, DigestSet.sha256(FP.toLowerCase()));
-        return new ArtifactResult(subject, outcome, reason, List.of(claims), Instant.EPOCH);
+        return new ArtifactResult(subject, outcome, reason, matchedRule, List.of(claims),
+                Instant.EPOCH);
     }
 
-    private static ClaimResult claim(String attester) {
-        return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null, List.of(), attester,
-                AttesterRole.UNKNOWN, TrustRootRef.unknown(),
-                new EvidenceRef(Path.of("lib.jar.asc"), DigestSet.sha256(FP.toLowerCase()),
-                        Evidence.SOURCE_SIDECAR),
-                null, ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");
+    private static VerificationReport reportFor(TrustPolicy policy, List<ArtifactResult> results) {
+        return VerificationReport.of(results, policy);
     }
 
-    private static TrustPolicy policy(UntrustedPolicy onUntrusted, List<String> unsigned) {
-        return new DefaultTrustPolicy(Map.of("org.example", List.of(ALICE)), unsigned,
-                ListedEvidencePolicy.ALL, UnlistedEvidencePolicy.IGNORE, onUntrusted,
-                List.of());
+    private static TrustPolicy requiring(String pattern, String signerId) {
+        var signer = new SignerIdentity(signerId,
+                List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)));
+        var spec = new TrustPolicySpec(
+                List.of(new RuleSpec(List.of(ArtifactPattern.parse(pattern)),
+                        List.of(Set.of(signerId)), Map.of(), "rules[0]")),
+                ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
+        return RulePolicy.compile(spec, new SignersConfig(Map.of(signerId, signer)));
+    }
+
+    private static TrustPolicy catchAllIgnore() {
+        var spec = new TrustPolicySpec(
+                List.of(new RuleSpec(List.of(ArtifactPattern.parse("*")), List.of(),
+                        Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), "rules[0]")),
+                ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
+        return RulePolicy.compile(spec, SignersConfig.EMPTY);
+    }
+
+    @Nested
+    class EnforcementInTheReport {
+
+        private static MatchedRule matched(TrustPolicy policy, String name) {
+            ArtifactCoords coords = new ArtifactCoords("org.example", name, "", "jar", "1.0");
+            return policy.matchRule(coords).toMatchedRule(coords);
+        }
+
+        private static TrustPolicy ignoringByRuleAndByDefaults() {
+            var spec = new TrustPolicySpec(List.of(
+                    new RuleSpec(List.of(ArtifactPattern.parse("org.example:a")), List.of(),
+                            Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE),
+                            "rules[0]"),
+                    new RuleSpec(List.of(ArtifactPattern.parse("org.example:*")), List.of(),
+                            Map.of(), "rules[1]")),
+                    ClaimSetMode.ALL_CLAIMS,
+                    Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), List.of(), true);
+            return RulePolicy.compile(spec, SignersConfig.EMPTY);
+        }
+
+        @Test
+        void eachResultCarriesTheActionThePolicyResolvesForIt() {
+            TrustPolicy policy = catchAllIgnore();
+            ArtifactResult tolerated = result("x", ArtifactOutcome.NO_CLAIM, null,
+                    matched(policy, "x"));
+            ArtifactResult broken = result("y", ArtifactOutcome.FAILED, null, matched(policy, "y"));
+            VerificationReport report = reportFor(policy, List.of(tolerated, broken));
+
+            assertThat(report.enforcement(tolerated)).isEqualTo(EnforcementAction.IGNORE);
+            assertThat(report.enforcement(broken)).isEqualTo(EnforcementAction.FAIL);
+        }
+
+        @Test
+        void headingCountsAnOutcomeNothingIgnored() {
+            VerificationReport report = reportFor(requiring("org.example:*", "a"),
+                    List.of(result("a", ArtifactOutcome.NO_CLAIM, null)));
+
+            assertThat(report.heading(ArtifactOutcome.NO_CLAIM)).isEqualTo("NO_CLAIM (1)");
+        }
+
+        @Test
+        void headingNamesTheRuleThatIgnoredArtifacts() {
+            TrustPolicy policy = catchAllIgnore();
+            VerificationReport report = reportFor(policy, List.of(
+                    result("x", ArtifactOutcome.NO_CLAIM, null, matched(policy, "x")),
+                    result("y", ArtifactOutcome.NO_CLAIM, null, matched(policy, "y"))));
+
+            assertThat(report.heading(ArtifactOutcome.NO_CLAIM))
+                    .isEqualTo("NO_CLAIM (2) — ignored: 2 by rules[0] '*'");
+        }
+
+        @Test
+        void headingSplitsIgnoredArtifactsByWhereTheActionCameFrom() {
+            TrustPolicy policy = ignoringByRuleAndByDefaults();
+            VerificationReport report = reportFor(policy, List.of(
+                    result("a", ArtifactOutcome.NO_CLAIM, null, matched(policy, "a")),
+                    result("b", ArtifactOutcome.NO_CLAIM, null, matched(policy, "b")),
+                    result("c", ArtifactOutcome.NO_CLAIM, null, matched(policy, "c"))));
+
+            assertThat(report.heading(ArtifactOutcome.NO_CLAIM)).isEqualTo(
+                    "NO_CLAIM (3) — ignored: 2 by defaults, 1 by rules[0] 'org.example:a'");
+        }
+
+        @Test
+        void headingSaysWhenNothingIsEnforcedForLackOfAPolicy() {
+            VerificationReport report = reportFor(RulePolicy.EMPTY,
+                    List.of(result("a", ArtifactOutcome.NOT_CONFIGURED, null)));
+
+            assertThat(report.heading(ArtifactOutcome.NOT_CONFIGURED))
+                    .isEqualTo("NOT_CONFIGURED (1) — ignored: 1 with no policy");
+        }
+
+        @Test
+        void headingOfSatisfiedArtifactsMentionsNoEnforcement() {
+            VerificationReport report = reportFor(RulePolicy.EMPTY,
+                    List.of(result("a", ArtifactOutcome.SATISFIED, null)));
+
+            assertThat(report.heading(ArtifactOutcome.SATISFIED)).isEqualTo("SATISFIED (1)");
+        }
+
+        @Test
+        void artifactLineIsTaggedWithWhatItsOutcomeDoes() {
+            TrustPolicy policy = catchAllIgnore();
+            ArtifactResult blocking = result("a", ArtifactOutcome.FAILED, null, matched(policy, "a"));
+            ArtifactResult ignored = result("b", ArtifactOutcome.NO_CLAIM, null, matched(policy, "b"));
+            ArtifactResult satisfied = result("c", ArtifactOutcome.SATISFIED, null,
+                    matched(policy, "c"));
+            VerificationReport report = reportFor(policy,
+                    List.of(blocking, ignored, satisfied));
+
+            assertThat(report.describe(blocking)).isEqualTo("org.example:a:1.0 [blocks]");
+            assertThat(report.describe(ignored)).isEqualTo("org.example:b:1.0 [ignored]");
+            assertThat(report.describe(satisfied)).isEqualTo("org.example:c:1.0");
+        }
+
+        @Test
+        void artifactLineIsTaggedAsAWarningWhenTheRuleWarns() {
+            var spec = new TrustPolicySpec(List.of(new RuleSpec(
+                    List.of(ArtifactPattern.parse("*")), List.of(),
+                    Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.WARN), "rules[0]")),
+                    ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
+            TrustPolicy policy = RulePolicy.compile(spec, SignersConfig.EMPTY);
+            ArtifactResult warned = result("a", ArtifactOutcome.NO_CLAIM, null, matched(policy, "a"));
+
+            assertThat(reportFor(policy, List.of(warned)).describe(warned))
+                    .isEqualTo("org.example:a:1.0 [warning]");
+        }
     }
 
     @Nested
@@ -49,7 +171,7 @@ class VerificationReportTest {
         private static ClaimResult by(String attester, String fingerprint) {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
                     List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, fingerprint)),
-                    attester, AttesterRole.UNKNOWN,
+                    attester,
                     TrustRootRef.certD(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
                     Instant.parse("2026-03-12T10:04:11Z"), ClaimTimeSource.SIGNER,
                     Instant.EPOCH, "Ed25519", "bc");
@@ -132,9 +254,9 @@ class VerificationReportTest {
         }
 
         @Test
-        void aClaimThatCouldNotBeDecidedCarriesItsReasonAndRole() {
+        void aClaimThatCouldNotBeDecidedCarriesItsReason() {
             ClaimResult unresolved = new ClaimResult("openpgp", ClaimOutcome.INDETERMINATE,
-                    IndeterminateReason.KEY_UNAVAILABLE, List.of(), null, AttesterRole.PUBLISHER,
+                    IndeterminateReason.KEY_UNAVAILABLE, List.of(), null,
                     TrustRootRef.unknown(), REF, null, ClaimTimeSource.SIGNER, Instant.EPOCH,
                     null, "sq");
 
@@ -143,8 +265,37 @@ class VerificationReportTest {
                             IndeterminateReason.KEY_UNAVAILABLE, unresolved)));
 
             assertThat(groups.get(0).summary()).containsExactly(
-                    "openpgp INDETERMINATE (KEY_UNAVAILABLE) by sq [publisher]");
+                    "openpgp INDETERMINATE (KEY_UNAVAILABLE) by sq");
             assertThat(groups.get(0).detail()).isEmpty();
+        }
+
+        /** Without it an operator told the signer is not accepted cannot tell which key to add. */
+        @Test
+        void anUncheckableClaimNamesTheKeyItDeclaresAsUnverified() {
+            String pqc = "CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9";
+            ClaimResult uncheckable = new ClaimResult("openpgp", ClaimOutcome.INDETERMINATE,
+                    IndeterminateReason.UNSUPPORTED_ALGORITHM, List.of(), null,
+                    TrustRootRef.unknown(), REF, null, ClaimTimeSource.SIGNER, Instant.EPOCH,
+                    "ML-DSA-87+Ed448", null, KeyCredential.openPgp(pqc));
+
+            List<VerificationReport.AttesterGroup> groups = VerificationReport.groupByAttester(
+                    List.of(result("lib", ArtifactOutcome.UNSATISFIED, null, uncheckable)));
+
+            assertThat(groups.get(0).detail()).containsExactly(
+                    "  declared issuer openpgp6 " + pqc + " (not verified)");
+        }
+
+        @Test
+        void aDeclaredIssuerTheClaimProvedIsNotRepeated() {
+            ClaimResult verified = new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
+                    List.of(KeyCredential.openPgp(FP)), "Alice", TrustRootRef.unknown(), REF,
+                    null, ClaimTimeSource.SIGNER, Instant.EPOCH, "Ed25519", "bc",
+                    KeyCredential.openPgp(FP));
+
+            List<VerificationReport.AttesterGroup> groups = VerificationReport.groupByAttester(
+                    List.of(result("lib", ArtifactOutcome.SATISFIED, null, verified)));
+
+            assertThat(groups.get(0).detail()).containsExactly("  credential openpgp4 " + FP);
         }
 
         @Test
@@ -170,7 +321,7 @@ class VerificationReportTest {
         private static ClaimResult detailedClaim(Instant claimTime) {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
                     List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)),
-                    "Alice <alice@example.com>", AttesterRole.PUBLISHER,
+                    "Alice <alice@example.com>",
                     TrustRootRef.certD(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
                     claimTime, ClaimTimeSource.SIGNER, Instant.parse("2026-09-24T08:00:00Z"),
                     "Ed25519", "bc");
@@ -240,7 +391,7 @@ class VerificationReportTest {
                     result("a", ArtifactOutcome.SATISFIED, null),
                     result("b", ArtifactOutcome.SATISFIED, null),
                     result("c", ArtifactOutcome.NO_CLAIM, null)),
-                    policy(UntrustedPolicy.FAIL, List.of()));
+                    RulePolicy.EMPTY);
 
             assertThat(report.counts()).containsEntry(ArtifactOutcome.SATISFIED, 2)
                     .containsEntry(ArtifactOutcome.NO_CLAIM, 1);
@@ -253,7 +404,7 @@ class VerificationReportTest {
                     result("a", ArtifactOutcome.NO_CLAIM, null),
                     result("b", ArtifactOutcome.FAILED, null),
                     result("c", ArtifactOutcome.SATISFIED, null)),
-                    policy(UntrustedPolicy.FAIL, List.of()));
+                    RulePolicy.EMPTY);
 
             // reports read the same way every run: the order is the enum's, not the order
             // artifacts happened to be resolved in
@@ -265,7 +416,7 @@ class VerificationReportTest {
         void theGroupingCannotBeModifiedByCallers() {
             VerificationReport report = VerificationReport.of(
                     List.of(result("a", ArtifactOutcome.SATISFIED, null)),
-                    policy(UntrustedPolicy.FAIL, List.of()));
+                    RulePolicy.EMPTY);
 
             assertThatThrownBy(() -> report.byOutcome().clear())
                     .isInstanceOf(UnsupportedOperationException.class);
@@ -278,7 +429,7 @@ class VerificationReportTest {
         void countsOnlyWhatWasSeen() {
             VerificationReport report = VerificationReport.of(
                     List.of(result("a", ArtifactOutcome.SATISFIED, null)),
-                    policy(UntrustedPolicy.FAIL, List.of()));
+                    RulePolicy.EMPTY);
 
             assertThat(report.counts()).doesNotContainKey(ArtifactOutcome.FAILED);
         }
@@ -288,53 +439,50 @@ class VerificationReportTest {
     class TheFailureDecision {
 
         @Test
-        void aFailedSignatureAlwaysBlocks() {
-            VerificationReport report = VerificationReport.of(
-                    List.of(result("a", ArtifactOutcome.FAILED, null)),
-                    policy(UntrustedPolicy.WARN, List.of()));
-
-            assertThat(report.blocking()).hasSize(1);
+        void zeroConfigPassesExceptFailed() {
+            assertThat(reportFor(RulePolicy.EMPTY,
+                    List.of(result("a", ArtifactOutcome.NOT_CONFIGURED, null))).blocks()).isFalse();
+            assertThat(reportFor(RulePolicy.EMPTY,
+                    List.of(result("a", ArtifactOutcome.FAILED, null))).blocks()).isTrue();
         }
 
         @Test
-        void anUnsatisfiedArtifactBlocksWhenPolicySaysSo() {
-            List<ArtifactResult> results = List.of(result("a", ArtifactOutcome.UNSATISFIED, null));
-
-            assertThat(VerificationReport.of(results, policy(UntrustedPolicy.FAIL, List.of()))
-                    .blocking()).hasSize(1);
-            assertThat(VerificationReport.of(results, policy(UntrustedPolicy.WARN, List.of()))
-                    .blocking()).isEmpty();
+        void notConfiguredFailsWhenPolicyDeclared() {
+            TrustPolicy policy = requiring("com.acme.*", "a");
+            assertThat(reportFor(policy,
+                    List.of(result("a", ArtifactOutcome.NOT_CONFIGURED, null))).blocks()).isTrue();
         }
 
         @Test
-        void missingEvidenceBlocksUnlessPolicyToleratesIt() {
-            List<ArtifactResult> results = List.of(result("a", ArtifactOutcome.NO_CLAIM, null));
+        void anUnsatisfiedArtifactBlocksWhenPolicyDeclared() {
+            TrustPolicy policy = requiring("org.example:*", "a");
+            ArtifactCoords coords = new ArtifactCoords("org.example", "a", "", "jar", "1.0");
+            MatchedRule mr = policy.matchRule(coords).toMatchedRule(coords);
 
-            assertThat(VerificationReport.of(results, policy(UntrustedPolicy.FAIL, List.of()))
-                    .blocking()).hasSize(1);
-            assertThat(VerificationReport
-                    .of(results, policy(UntrustedPolicy.FAIL, List.of("org.example:a")))
-                    .blocking()).isEmpty();
+            assertThat(reportFor(policy,
+                    List.of(result("a", ArtifactOutcome.UNSATISFIED, null, mr))).blocks()).isTrue();
         }
 
         @Test
-        void anArtifactNoRuleCoversDoesNotBlock() {
-            VerificationReport report = VerificationReport.of(
-                    List.of(result("a", ArtifactOutcome.NOT_CONFIGURED, null)),
-                    policy(UntrustedPolicy.FAIL, List.of()));
+        void catchAllIgnoreToleratesUnsigned() {
+            TrustPolicy policy = catchAllIgnore();
+            ArtifactCoords coords = new ArtifactCoords("org.other", "x", "", "jar", "1");
+            MatchedRule mr = policy.matchRule(coords).toMatchedRule(coords);
 
-            assertThat(report.blocking()).isEmpty();
+            assertThat(reportFor(policy,
+                    List.of(result("x", ArtifactOutcome.NO_CLAIM, null, mr))).blocks()).isFalse();
         }
 
         @Test
         void aToleratedArtifactStillBlocksOnABrokenSignature() {
             // the point of verifying rather than skipping: policy tolerates missing evidence,
             // not evidence that fails
-            VerificationReport report = VerificationReport.of(
-                    List.of(result("a", ArtifactOutcome.FAILED, null)),
-                    policy(UntrustedPolicy.FAIL, List.of("org.example:a")));
+            TrustPolicy policy = catchAllIgnore();
+            ArtifactCoords coords = new ArtifactCoords("org.other", "x", "", "jar", "1");
+            MatchedRule mr = policy.matchRule(coords).toMatchedRule(coords);
 
-            assertThat(report.blocking()).hasSize(1);
+            assertThat(reportFor(policy,
+                    List.of(result("x", ArtifactOutcome.FAILED, null, mr))).blocks()).isTrue();
         }
     }
 }

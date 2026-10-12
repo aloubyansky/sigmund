@@ -25,7 +25,7 @@ import java.util.Map;
  * <h2>Toolchain resolution</h2>
  * <p>
  * The {@code toolchain} list defines which signing tools to use and in what order.
- * If empty or {@code null}, the default toolchain from {@link DiscoveryConfig} is used.
+ * If empty or {@code null}, the default toolchain from {@link VerificationConfig} is used.
  * Each tool name must have a corresponding entry in the top-level {@code tools} registry
  * for configuration lookup during initialization.
  *
@@ -33,7 +33,7 @@ import java.util.Map;
  * @param toolchain tools to use for signing and their priority order; empty means use default
  * @param credentialTypes default credential types to produce; empty means use all available
  * @param profiles named profiles mapping to credential type lists; opt-in overlay
- * @see DiscoveryConfig#effectiveToolchain()
+ * @see VerificationConfig#effectiveToolchain()
  * @see ToolsConfig
  */
 public record SigningConfig(

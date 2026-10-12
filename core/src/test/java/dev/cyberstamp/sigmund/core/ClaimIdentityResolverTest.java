@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -90,7 +91,7 @@ class ClaimIdentityResolverTest {
         void aFailedSignatureIsNeverLookedUp() {
             TrustPolicy policy = policy(release, List.of(DIRECTORY));
             ClaimResult failed = new ClaimResult("openpgp", ClaimOutcome.FAILED, null, List.of(),
-                    null, AttesterRole.UNKNOWN, TrustRootRef.unknown(), evidence(), null,
+                    null, TrustRootRef.unknown(), evidence(), null,
                     ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");
 
             resolve(policy, failed);
@@ -140,22 +141,25 @@ class ClaimIdentityResolverTest {
     }
 
     private static TrustPolicy policy(SignerIdentity signer, List<String> issuers) {
-        return new DefaultTrustPolicy(Map.of("org.example", List.of(signer)), List.of(),
-                ListedEvidencePolicy.ALL, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
-                issuers);
+        var signers = new SignersConfig(Map.of(signer.id(), signer));
+        var spec = new TrustPolicySpec(
+                List.of(new RuleSpec(List.of(ArtifactPattern.parse("org.example")),
+                        List.of(Set.of(signer.id())), Map.of(), "rules[0]")),
+                ClaimSetMode.ALL_CLAIMS, Map.of(), issuers, true);
+        return RulePolicy.compile(spec, signers);
     }
 
     private static boolean satisfied(TrustPolicy policy, List<ClaimResult> claims) {
         List<ClaimResult> verified = claims.stream()
                 .filter(c -> c.outcome() == ClaimOutcome.VERIFIED).toList();
-        RequirementEvaluator.Evaluation evaluation = policy.requirements().evaluate(COORDS, verified);
-        return evaluation != null && evaluation.satisfied();
+        Rule rule = policy.matchRule(COORDS);
+        return rule != null && rule.requirement().evaluate(verified).satisfied();
     }
 
     private static ClaimResult claim(String fingerprint) {
         return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
                 List.of(KeyCredential.openPgp(fingerprint)), "Anyone <" + ADDRESS + ">",
-                AttesterRole.UNKNOWN, TrustRootRef.unknown(), evidence(), null,
+                TrustRootRef.unknown(), evidence(), null,
                 ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");
     }
 

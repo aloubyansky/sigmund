@@ -43,7 +43,7 @@ class EphemeralSigningKeyTest {
             sigmund = Sigmund.builder().build();
         } else if ("key-provider".equals(mode)) {
             List<String> toolchain = List.of("bc", "gpg");
-            SigmundConfig config = new SigmundConfig(1, null, null, null,
+            SigmundConfig config = new SigmundConfig(null, null, null,
                     new SigningConfig(null, toolchain, List.of(), Map.of()),
                     null, null);
             Sigmund.Builder builder = Sigmund.builder().config(config);

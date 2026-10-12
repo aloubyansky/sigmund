@@ -12,7 +12,6 @@ import org.junit.jupiter.api.io.TempDir;
 class ConfigLoaderTest {
 
     private static final String MINIMAL_CONFIG = """
-            version: 1
             issuers: [keys.openpgp.org]
             signers:
               alice:
@@ -26,7 +25,6 @@ class ConfigLoaderTest {
 
         SigmundConfig config = ConfigLoader.load(configFile);
         assertThat(config).isNotNull();
-        assertThat(config.version()).isEqualTo(1);
         assertThat(config.signers().get("alice")).isNotNull();
     }
 
@@ -45,7 +43,6 @@ class ConfigLoaderTest {
 
         SigmundConfig config = ConfigLoader.load(null, missing);
         assertThat(config).isNotNull();
-        assertThat(config.version()).isEqualTo(1);
         assertThat(config.signers().isEmpty()).isTrue();
         assertThat(config.signingConfig()).isEqualTo(SigningConfig.DEFAULT);
         assertThat(config.toolsConfig().isEmpty()).isTrue();

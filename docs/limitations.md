@@ -9,6 +9,8 @@ This page documents known limitations, ecosystem maturity notes, and caveats for
 - [PQC signature verification requires Sequoia](#pqc-signature-verification-requires-sequoia)
 - [GPG ephemeral key fetch not supported](#gpg-ephemeral-key-fetch-not-supported)
 - [GPG exit code 2 for hybrid .asc files](#gpg-exit-code-2-for-hybrid-asc-files)
+- [Sequoia verdicts are read from its report text](#sequoia-verdicts-are-read-from-its-report-text)
+- [GnuPG does not honour revocation reasons](#gnupg-does-not-honour-revocation-reasons)
 - [Key passphrase protection caveats](#key-passphrase-protection-caveats)
   - [BC keys: decrypted material on the Java heap](#bc-keys-decrypted-material-on-the-java-heap)
   - [Sequoia PQC keys: generated without passphrase](#sequoia-pqc-keys-generated-without-passphrase)
@@ -50,9 +52,31 @@ When a signing key is not in the GPG keyring, verification returns `INDETERMINAT
 
 GnuPG returns exit code 2 (rather than 0) when verifying a hybrid `.asc` file containing both v4 and v6 signature packets. GPG successfully verifies the v4 classical signature and reports "Good signature," but the v6 PQC packet triggers a warning about an unknown packet version, which changes the exit code.
 
-**Sigmund handles this correctly** — it checks for "Good signature" in GPG's output when exit code is 2 and treats it as a pass.
+**Sigmund handles this correctly** — it does not judge GnuPG by its exit code at all, but by the `--status-fd` status lines, where the v4 signature's `GOODSIG` is reported as usual.
 
 **Impact on external scripts:** CI systems or scripts that check GPG's exit code strictly (expecting only 0 for success) may interpret exit code 2 as a failure. If you encounter this, update your scripts to check for "Good signature" in GPG's stderr rather than relying solely on the exit code.
+
+## Sequoia verdicts are read from its report text
+
+`sq verify` has no machine-readable report. Sigmund reads the closing tally of its text report —
+`N bad signature` versus `N bad key` — and the detail of a bad key (revoked, expired, rejected by
+policy, not bound) to tell a tampered artifact from a key `sq` will not use. This matches what
+`sq` 1.4 prints, including the no-break space between a count and its noun. If a future `sq`
+changed the tally, Sigmund would report `INDETERMINATE` with `TOOL_UNAVAILABLE`; if it changed
+only how it describes a revoked or expired key, such a key could be read as `KEY_UNAVAILABLE`
+instead of `FAILED`. The backend agreement tests run every case against the installed `sq`, so
+either change fails Sigmund's build rather than going unnoticed.
+
+## GnuPG does not honour revocation reasons
+
+The design (§3.8 of the design direction) honours a revocation's reason code: a key revoked as
+compromised invalidates every signature it made, while one retired or superseded invalidates only
+signatures made after the revocation. Bouncy Castle and Sequoia do this. GnuPG reports a
+signature by a revoked key (`REVKEYSIG`) without the revocation's time or reason, so Sigmund
+treats every such signature as `FAILED` when GnuPG answers — including a signature made before
+a key was retired, which the other backends verify. GnuPG is stricter, never more lenient, than
+the others here. Reading the revocation details from GnuPG's key listing is part of roadmap task
+P4.7.
 
 ## Key passphrase protection caveats
 

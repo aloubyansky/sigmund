@@ -1,0 +1,17 @@
+# Sequoia crypto policy (sequoia-policy-config format) matching VerificationAlgorithms.
+# Sequoia judges a hash by the property a signature needs: a document signature needs
+# collision resistance, a self-signature only second pre-image resistance. Anything not
+# listed keeps Sequoia's built-in default rather than the host's system policy.
+
+[hash_algorithms]
+sha1.collision_resistance = "always"
+sha1.second_preimage_resistance = "always"
+ripemd160.collision_resistance = "always"
+ripemd160.second_preimage_resistance = "always"
+
+[asymmetric_algorithms]
+rsa1024 = "always"
+dsa1024 = "always"
+dsa2048 = "always"
+dsa3072 = "always"
+dsa4096 = "always"

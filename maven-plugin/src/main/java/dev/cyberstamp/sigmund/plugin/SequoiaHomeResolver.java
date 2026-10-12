@@ -14,7 +14,7 @@ final class SequoiaHomeResolver {
     }
 
     /**
-     * Returns discovery tool overrides for the sq home directory.
+     * Returns verification tool overrides for the sq home directory.
      *
      * @param sqHome the configured sqHome parameter, or {@code null} if not set
      * @return tool overrides map (empty if sqHome is null)

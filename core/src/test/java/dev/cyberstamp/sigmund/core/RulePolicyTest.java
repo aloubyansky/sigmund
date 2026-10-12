@@ -1,0 +1,159 @@
+package dev.cyberstamp.sigmund.core;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.io.StringReader;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+
+class RulePolicyTest {
+
+    private static SigmundConfig parse(String yaml) {
+        return SigmundConfigParser.parse("<test>", new StringReader(yaml));
+    }
+
+    private static ArtifactCoords coords(String namespace, String name, String version) {
+        return new ArtifactCoords(namespace, name, "", "jar", version);
+    }
+
+    @Test
+    void compilesAndMatchesMostSpecific() {
+        var doc = parse("""
+                signers: { a: "a@x.io", b: "b@x.io" }
+                issuers: [keys.openpgp.org]
+                rules:
+                  - match: ["com.acme.*"]
+                    requires: [a]
+                  - match: ["com.acme.secret.*"]
+                    requires: [b]
+                """);
+        var policy = RulePolicy.compile(doc.trustPolicySpec(), doc.signers());
+        assertThat(policy.matchRule(coords("com.acme.secret", "x", "1")).requirement().clauses())
+                .hasSize(1);
+        assertThat(policy.matchRule(coords("com.acme.other", "y", "1"))).isNotNull();
+        assertThat(policy.matchRule(coords("org.other", "z", "1"))).isNull();
+    }
+
+    @Test
+    void undefinedSignerRefIsErrorAtCompile() {
+        var doc = parse("rules: [{ match: [\"*\"], requires: [ghost] }]");
+        assertThatThrownBy(() -> RulePolicy.compile(doc.trustPolicySpec(), doc.signers()))
+                .isInstanceOf(PolicyConfigException.class).hasMessageContaining("ghost");
+    }
+
+    @Test
+    void specificityTieIsErrorAtCompile() {
+        var doc = parse("""
+                signers: { a: "a@x.io" }
+                issuers: [keys.openpgp.org]
+                rules:
+                  - match: ["com.acme.*"]
+                    requires: [a]
+                  - match: ["com.acme.*"]
+                    requires: [a]
+                """);
+        assertThatThrownBy(() -> RulePolicy.compile(doc.trustPolicySpec(), doc.signers()))
+                .isInstanceOf(PolicyConfigException.class).hasMessageContaining("specificity");
+    }
+
+    @ParameterizedTest(name = "{0} ties with {1}")
+    @CsvSource({
+            "com.acme:*:1.0,   com.acme:lib,      com.acme:lib:1.0",
+            "com.acme.*:lib,   com.acme.*:*:1.0,  com.acme:lib:1.0",
+            "*:lib,            *:*:1.0,           *:lib:1.0"
+    })
+    void differentPatternsTyingOnASharedCoordinateAreErrorAtCompile(String a, String b,
+            String common) {
+        var doc = parse("""
+                signers: { a: "a@x.io" }
+                issuers: [keys.openpgp.org]
+                rules:
+                  - match: ["%s"]
+                    requires: [a]
+                  - match: ["%s"]
+                    requires: [a]
+                """.formatted(a, b));
+        assertThatThrownBy(() -> RulePolicy.compile(doc.trustPolicySpec(), doc.signers()))
+                .isInstanceOf(PolicyConfigException.class)
+                .hasMessageContaining("rules[0]")
+                .hasMessageContaining("rules[1]")
+                .hasMessageContaining(common);
+    }
+
+    @Test
+    void equalSpecificityWithoutASharedCoordinateCompiles() {
+        var doc = parse("""
+                signers: { a: "a@x.io" }
+                issuers: [keys.openpgp.org]
+                rules:
+                  - match: ["com.acme:a"]
+                    requires: [a]
+                  - match: ["com.acme:b"]
+                    requires: [a]
+                """);
+        var policy = RulePolicy.compile(doc.trustPolicySpec(), doc.signers());
+        assertThat(policy.matchRule(coords("com.acme", "b", "1")).location()).isEqualTo("rules[1]");
+    }
+
+    @Test
+    void patternsRepeatedWithinOneRuleCompile() {
+        var doc = parse("""
+                signers: { a: "a@x.io" }
+                issuers: [keys.openpgp.org]
+                rules:
+                  - match: ["com.acme:*:1.0", "com.acme:lib"]
+                    requires: [a]
+                """);
+        assertThat(RulePolicy.compile(doc.trustPolicySpec(), doc.signers())
+                .matchRule(coords("com.acme", "lib", "1.0"))).isNotNull();
+    }
+
+    @Test
+    void catchAllMatchesEverythingElse() {
+        var doc = parse("""
+                signers: { a: "a@x.io" }
+                issuers: [keys.openpgp.org]
+                rules:
+                  - match: ["com.acme.*"]
+                    requires: [a]
+                  - match: ["*"]
+                    on-no-claim: ignore
+                """);
+        var policy = RulePolicy.compile(doc.trustPolicySpec(), doc.signers());
+        assertThat(policy.matchRule(coords("org.other", "x", "1")).patterns().get(0).specificity())
+                .isEqualTo(0);
+    }
+
+    @Test
+    void signingIgnoresRuleErrors() {
+        // a spec with a bad rule parses fine and is never compiled on the signing path
+        var config = parse("""
+                signing: { signer: alice }
+                signers: { alice: { pgp4: "4AEE18F83AFDEB23000000000000000000000000" } }
+                rules: [{ match: ["*"], requires: [ghost] }]
+                """);
+        assertThat(config.signingConfig().signer()).isEqualTo("alice");
+    }
+
+    @Test
+    void issuerlessEntryAmbiguousIsError() {
+        // two issuers of the same kind that can both assert the entry's attributes
+        var doc = parse("""
+                issuers: [https://a.example, https://b.example]   # two OIDC issuers
+                signers: { ci: { identities: [{ source-repository-uri: https://github.com/x/y }] } }
+                """);
+        assertThatThrownBy(() -> RulePolicy.compile(doc.trustPolicySpec(), doc.signers()))
+                .isInstanceOf(PolicyConfigException.class).hasMessageContaining("ambiguous");
+    }
+
+    @Test
+    void issuerlessEntryWithOneAssertingIssuerIsFine() {
+        var doc = parse("""
+                issuers: [keys.openpgp.org, https://token.actions.githubusercontent.com]
+                signers: { alice: "alice@x.io" }
+                """);
+        RulePolicy.compile(doc.trustPolicySpec(), doc.signers()); // no throw: only the directory asserts email
+    }
+}

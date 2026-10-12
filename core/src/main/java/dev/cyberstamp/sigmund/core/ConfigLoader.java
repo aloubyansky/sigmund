@@ -96,6 +96,6 @@ public class ConfigLoader {
     }
 
     private static SigmundConfig defaultConfig() {
-        return new SigmundConfig(1, null, null, null, null, null, null);
+        return SigmundConfig.EMPTY;
     }
 }

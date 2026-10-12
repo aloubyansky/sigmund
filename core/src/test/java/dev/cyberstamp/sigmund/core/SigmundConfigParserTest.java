@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.StringReader;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -85,27 +86,29 @@ class SigmundConfigParserTest {
         }
 
         @Test
-        void identityUnknownFieldThrows() {
-            assertThatThrownBy(() -> parse("""
+        void identityUnknownFieldThrowsAtCompile() {
+            var config = parse("""
                     signers:
                       ci-pipeline:
                         identities:
                           - issuer: "https://token.actions.githubusercontent.com"
                             oidc-subject: "https://github.com/org/repo"
-                    """))
+                    """);
+            assertThatThrownBy(() -> RulePolicy.compile(config.trustPolicySpec(), config.signers()))
                     .isInstanceOf(PolicyConfigException.class)
                     .hasMessageContaining("oidc-subject");
         }
 
         @Test
         void misspelledAttributeSuggestsTheKnownName() {
-            assertThatThrownBy(() -> parse("""
+            var config = parse("""
                     signers:
                       ci-pipeline:
                         identities:
                           - issuer: "https://token.actions.githubusercontent.com"
                             build-config-ur: "https://github.com/org/repo/.github/workflows/release.yml"
-                    """))
+                    """);
+            assertThatThrownBy(() -> RulePolicy.compile(config.trustPolicySpec(), config.signers()))
                     .isInstanceOf(PolicyConfigException.class)
                     .hasMessageContaining("did you mean 'build-config-uri'");
         }
@@ -137,24 +140,62 @@ class SigmundConfigParserTest {
 
         @Test
         void identityWithoutIssuerNeedsAListedOidcIssuer() {
-            assertThatThrownBy(() -> parse("""
+            var config = parse("""
                     signers:
                       ci-pipeline:
                         identities:
                           - source-repository-uri: "https://github.com/org/repo"
-                    """))
+                    """);
+            assertThatThrownBy(() -> RulePolicy.compile(config.trustPolicySpec(), config.signers()))
                     .isInstanceOf(PolicyConfigException.class)
                     .hasMessageContaining("no listed issuer can assert source-repository-uri");
         }
 
         @Test
-        void unclassifiableIssuerInTheListThrows() {
-            assertThatThrownBy(() -> parse("""
+        void unclassifiableIssuersDoNotStopTheSigningPath() {
+            var config = parse("""
                     issuers:
                       - keyserver.ubuntu.com
-                    """))
+                    signers:
+                      alice:
+                        identities:
+                          - issuer: oidc.example
+                            email: alice@example.com
+                    signing:
+                      signer: alice
+                    """);
+
+            assertThat(config.signingConfig().signer()).isEqualTo("alice");
+            assertThat(config.signers().get("alice")).isNotNull();
+            assertThat(config.trustPolicySpec().issuers()).containsExactly("keyserver.ubuntu.com");
+        }
+
+        @Test
+        void unclassifiableIssuerInTheListFailsWhenTheVerifierLoads() {
+            var config = parse("""
+                    issuers:
+                      - keyserver.ubuntu.com
+                    """);
+
+            assertThatThrownBy(() -> RulePolicy.compile(config.trustPolicySpec(), config.signers()))
                     .isInstanceOf(PolicyConfigException.class)
-                    .hasMessageContaining("keyserver.ubuntu.com")
+                    .hasMessageContaining("Issuer 'keyserver.ubuntu.com' in 'issuers'")
+                    .hasMessageContaining("neither a known directory");
+        }
+
+        @Test
+        void unclassifiableInlineIssuerFailsWhenTheVerifierLoadsNamingTheSigner() {
+            var config = parse("""
+                    signers:
+                      alice:
+                        identities:
+                          - issuer: oidc.example
+                            email: alice@example.com
+                    """);
+
+            assertThatThrownBy(() -> RulePolicy.compile(config.trustPolicySpec(), config.signers()))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("Issuer 'oidc.example' in signer 'alice'")
                     .hasMessageContaining("neither a known directory");
         }
 
@@ -165,16 +206,17 @@ class SigmundConfigParserTest {
                       - keys.openpgp.org
                       - https://keys.openpgp.org/
                     """);
-            assertThat(config.trustPolicy().issuers()).containsExactly("https://keys.openpgp.org");
+            assertThat(config.trustPolicySpec().issuers()).containsExactly("https://keys.openpgp.org");
         }
 
         @Test
         void emailWithoutAnyIssuerThrows() {
-            assertThatThrownBy(() -> parse("""
+            var config = parse("""
                     signers:
                       alice:
                         email: "alice@example.com"
-                    """))
+                    """);
+            assertThatThrownBy(() -> RulePolicy.compile(config.trustPolicySpec(), config.signers()))
                     .isInstanceOf(PolicyConfigException.class)
                     .hasMessageContaining("no listed issuer can assert email")
                     .hasMessageContaining("keys.openpgp.org");
@@ -192,7 +234,7 @@ class SigmundConfigParserTest {
             var identity = (IdentityCredential) config.signers().get("bot").credentials().get(0);
             assertThat(identity.issuer()).isEqualTo("https://accounts.google.com");
             assertThat(identity.attribute(IdentityCredential.EMAIL)).isEqualTo("bot@example.com");
-            assertThat(config.trustPolicy().issuers()).isEmpty();
+            assertThat(config.trustPolicySpec().issuers()).isEmpty();
         }
 
         @Test
@@ -252,13 +294,14 @@ class SigmundConfigParserTest {
 
         @Test
         void inlineDirectoryCannotAssertWorkflowAttributes() {
-            assertThatThrownBy(() -> parse("""
+            var config = parse("""
                     signers:
                       ci:
                         identities:
                           - issuer: keys.openpgp.org
                             source-repository-uri: "https://github.com/org/repo"
-                    """))
+                    """);
+            assertThatThrownBy(() -> RulePolicy.compile(config.trustPolicySpec(), config.signers()))
                     .isInstanceOf(PolicyConfigException.class)
                     .hasMessageContaining("issuer 'https://keys.openpgp.org' cannot assert source-repository-uri");
         }
@@ -287,7 +330,7 @@ class SigmundConfigParserTest {
                     """);
             var sc = (IdentityCredential) config.signers().get("ci-pipeline").credentials().get(0);
             assertThat(sc.issuer()).isNull();
-            assertThat(config.trustPolicy().issuers())
+            assertThat(config.trustPolicySpec().issuers())
                     .containsExactly("https://token.actions.githubusercontent.com");
         }
 
@@ -478,144 +521,233 @@ class SigmundConfigParserTest {
     }
 
     @Nested
-    class TrustParsing {
+    class RulesParsing {
 
         @Test
-        void artifactGroupsExpandInTrust() {
-            String yaml = """
-                    issuers: [keys.openpgp.org]
-                    signers:
-                      alice: "alice@example.com"
-                    artifacts:
+        void artifactSetsKeyParsed() {
+            var config = parse("""
+                    artifact-sets:
+                      apache-stack: [org.apache.maven.*]
+                    """);
+            assertThat(config.artifactSets().get("apache-stack")).containsExactly("org.apache.maven.*");
+        }
+
+        @Test
+        void rulesParsedToSpec() {
+            var doc = parse("""
+                    rules:
+                      - match: ["com.acme.*"]
+                        requires: [acme-release, {any-of: [ci-a, ci-b]}]
+                        on-no-claim: ignore
+                    """).trustPolicySpec();
+            assertThat(doc.rules()).hasSize(1);
+            assertThat(doc.rules().get(0).clauseIds())
+                    .containsExactly(Set.of("acme-release"), Set.of("ci-a", "ci-b"));
+            assertThat(doc.rules().get(0).enforcement())
+                    .containsEntry(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE);
+            assertThat(doc.declared()).isTrue();
+        }
+
+        @Test
+        void matchExpandsArtifactSetNames() {
+            var doc = parse("""
+                    artifact-sets:
                       apache-stack:
                         - org.apache.maven.*
                         - org.apache.commons.*
-                    trust:
-                      apache-stack: alice
-                    """;
-            SigmundConfig config = SigmundConfigParser.parse("<test>", new StringReader(yaml));
-            TrustPolicy policy = config.trustPolicy();
-            // "apache-stack" should be expanded into its two patterns
-            assertThat(policy.expectedSigners(
-                    artifact("org.apache.maven.plugins", "maven-compiler-plugin", "3.13.0")).isEmpty())
-                    .isFalse();
-            assertThat(policy.expectedSigners(
-                    artifact("org.apache.commons", "commons-lang3", "3.14")).isEmpty())
-                    .isFalse();
-            // A non-matching artifact should have no signers
-            assertThat(policy.expectedSigners(
-                    artifact("com.example", "lib", "1.0")).isEmpty())
+                    rules:
+                      - match: [apache-stack]
+                        requires: [alice]
+                    """).trustPolicySpec();
+            assertThat(doc.rules().get(0).patterns())
+                    .containsExactly(ArtifactPattern.parse("org.apache.maven.*"),
+                            ArtifactPattern.parse("org.apache.commons.*"));
+        }
+
+        @Test
+        void inlinePatternAndArtifactSetMayMix() {
+            var doc = parse("""
+                    artifact-sets:
+                      stack: [org.apache.maven.*]
+                    rules:
+                      - match: [stack, "com.acme:lib"]
+                        requires: [alice]
+                    """).trustPolicySpec();
+            assertThat(doc.rules().get(0).patterns())
+                    .containsExactly(ArtifactPattern.parse("org.apache.maven.*"),
+                            ArtifactPattern.parse("com.acme:lib"));
+        }
+
+        @Test
+        void signingOnlyConfigIsNotAPolicy() {
+            var doc = parse("""
+                    signers: { alice: "alice@example.com" }
+                    signing: { signer: alice }
+                    """).trustPolicySpec();
+            assertThat(doc.declared()).isFalse();
+        }
+
+        @Test
+        void emptyRulesIsAPolicy() {
+            assertThat(parse("rules: []").trustPolicySpec().declared()).isTrue();
+        }
+
+        @Test
+        void defaultsAloneIsAPolicy() {
+            assertThat(parse("defaults: { on-no-claim: warn }").trustPolicySpec().declared())
                     .isTrue();
         }
 
         @Test
-        void trustMappingsResolved() {
-            var config = parse("""
-                    signers:
-                      alice:
-                        openpgp4: "4AEE18F83AFDEB23000000000000000000000000"
-                    trust:
-                      "org.example:*": [alice]
-                    """);
-            var artifact = artifact("org.example", "lib", "1.0");
-            var expected = config.trustPolicy().expectedSigners(artifact);
-            assertThat(expected.size()).isEqualTo(1);
-            assertThat(expected.get(0).id()).isEqualTo("alice");
-        }
-
-        @Test
-        void trustMappingsSingleString() {
-            var config = parse("""
-                    issuers: [keys.openpgp.org]
-                    signers:
-                      bob: "bob@example.com"
-                    trust:
-                      "org.example:lib": bob
-                    """);
-            var expected = config.trustPolicy().expectedSigners(artifact("org.example", "lib", "1.0"));
-            assertThat(expected.size()).isEqualTo(1);
-            assertThat(expected.get(0).id()).isEqualTo("bob");
-        }
-
-        @Test
-        void trustMappingsUndefinedSignerThrows() {
+        void misspelledArtifactSetIsErrorSuggestingTheNearestSet() {
             assertThatThrownBy(() -> parse("""
-                    trust:
-                      "org.example:*": [nonexistent]
+                    artifact-sets:
+                      apache-stack: [org.apache.maven.*]
+                    rules:
+                      - match: [apache-stak]
+                        requires: [alice]
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("rules[0]")
+                    .hasMessageContaining("'apache-stak'")
+                    .hasMessageContaining("did you mean 'apache-stack'");
+        }
+
+        @Test
+        void undefinedArtifactSetIsErrorExplainingTheSingleWordGroupForm() {
+            assertThatThrownBy(() -> parse("rules: [{ match: [junit], requires: [alice] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("not a defined artifact-set")
+                    .hasMessageContaining("'junit:*'");
+        }
+
+        @Test
+        void singleWordGroupIsWrittenWithAnArtifactWildcard() {
+            var doc = parse("rules: [{ match: [\"junit:*\"], requires: [alice] }]")
+                    .trustPolicySpec();
+            assertThat(doc.rules().get(0).patterns())
+                    .containsExactly(ArtifactPattern.parse("junit:*"));
+        }
+
+        @Test
+        void dottedGroupIsAPatternNotASetReference() {
+            var doc = parse("rules: [{ match: [com.acme], requires: [alice] }]")
+                    .trustPolicySpec();
+            assertThat(doc.rules().get(0).patterns())
+                    .containsExactly(ArtifactPattern.parse("com.acme"));
+        }
+
+        @Test
+        void anyOfEntryThatIsAMappingIsError() {
+            assertThatThrownBy(() -> parse(
+                    "rules: [{ match: [\"*\"], requires: [{any-of: [alice, {name: bob}]}] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("rules[0]")
+                    .hasMessageContaining("must be signer ids")
+                    .hasMessageContaining("mapping");
+        }
+
+        @Test
+        void nestedAnyOfIsErrorNamingTheShape() {
+            assertThatThrownBy(() -> parse(
+                    "rules: [{ match: [\"*\"], requires: [{any-of: [alice, {any-of: [bob]}]}] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("nested 'any-of' is not supported");
+        }
+
+        @Test
+        void nullAnyOfEntryIsError() {
+            assertThatThrownBy(() -> parse(
+                    "rules: [{ match: [\"*\"], requires: [{any-of: [alice, ~]}] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("must be signer ids");
+        }
+
+        @Test
+        void blankSignerReferenceIsError() {
+            assertThatThrownBy(() -> parse("rules: [{ match: [\"*\"], requires: [\"\"] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("blank");
+            assertThatThrownBy(() -> parse(
+                    "rules: [{ match: [\"*\"], requires: [{any-of: [\" \"]}] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("blank");
+        }
+
+        @Test
+        void numericSignerIdIsAReference() {
+            var doc = parse("rules: [{ match: [\"*\"], requires: [{any-of: [123]}] }]")
+                    .trustPolicySpec();
+            assertThat(doc.rules().get(0).clauseIds()).containsExactly(Set.of("123"));
+        }
+
+        @Test
+        void emptyRequiresIsError() {
+            assertThatThrownBy(() -> parse("rules: [{ match: [\"*\"], requires: [] }]"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("requires");
+        }
+
+        @Test
+        void scalarRequiresIsError() {
+            assertThatThrownBy(() -> parse("rules: [{ match: [\"*\"], requires: a }]"))
+                    .isInstanceOf(PolicyConfigException.class);
+        }
+
+        @Test
+        void requiresMayBeOmittedForACatchAll() {
+            var doc = parse("""
+                    rules:
+                      - match: ["*"]
+                        on-no-claim: ignore
+                    """).trustPolicySpec();
+            assertThat(doc.rules().get(0).clauseIds()).isEmpty();
+        }
+
+        @Test
+        void fourSegmentPatternIsError() {
+            assertThatThrownBy(() -> parse("rules: [{ match: [\"a:b:c:d\"], requires: [a] }]"))
+                    .isInstanceOf(PolicyConfigException.class);
+        }
+
+        @Test
+        void unknownRuleKeyIsError() {
+            assertThatThrownBy(() -> parse("""
+                    rules:
+                      - match: ["*"]
+                        requires: [a]
+                        on-bogus: warn
                     """))
                     .isInstanceOf(PolicyConfigException.class);
         }
 
         @Test
-        void memberCredentialMatchesTrust() {
-            var config = parse("""
-                    signers:
-                      apache:
-                        members:
-                          - openpgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
-                          - openpgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
-                    trust:
-                      "org.apache.*": apache
-                    """);
-            var expected = config.trustPolicy().expectedSigners(
-                    artifact("org.apache.maven.plugins", "maven-compiler-plugin", "3.13.0"));
-            assertThat(expected.size()).isEqualTo(1);
-            assertThat(expected.get(0).id()).isEqualTo("apache");
-
-            var creds = expected.get(0).credentials();
-            assertThat(creds.size()).isEqualTo(2);
-            assertThat(creds.stream()
-                    .anyMatch(c -> c instanceof KeyCredential fc
-                            && fc.fingerprint().equals("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12")))
-                    .isTrue();
-            assertThat(creds.stream()
-                    .anyMatch(c -> c instanceof KeyCredential fc
-                            && fc.fingerprint().equals("BBE7232D7991050B54C8EA0ADC08637CA615D22C")))
-                    .isTrue();
+        void extraClaimsDefaultsToReject() {
+            assertThat(parse("rules: [{ match: [\"*\"], requires: [a] }]")
+                    .trustPolicySpec().extraClaims()).isEqualTo(ClaimSetMode.ALL_CLAIMS);
         }
 
         @Test
-        void signatureOptionalAllowed() {
-            var config = parse("""
-                    signature-optional:
-                      - "org.example:optional-lib"
-                    """);
-            assertThat(config.trustPolicy().isUnsignedAllowed(
-                    artifact("org.example", "optional-lib", "1.0"))).isTrue();
-            assertThat(config.trustPolicy().isUnsignedAllowed(
-                    artifact("org.example", "other-lib", "1.0"))).isFalse();
-        }
-    }
-
-    @Nested
-    class PolicyParsing {
-
-        @Test
-        void defaults() {
-            var config = parse("version: 1");
-            assertThat(config.trustPolicy().listedEvidence()).isEqualTo(ListedEvidencePolicy.ALL);
-            assertThat(config.trustPolicy().unlistedEvidence()).isEqualTo(UnlistedEvidencePolicy.IGNORE);
-            assertThat(config.trustPolicy().onUntrusted()).isEqualTo(UntrustedPolicy.FAIL);
+        void extraClaimsIgnoreParsed() {
+            assertThat(parse("""
+                    defaults: { extra-claims: ignore }
+                    rules: [{ match: ["*"], requires: [a] }]
+                    """).trustPolicySpec().extraClaims()).isEqualTo(ClaimSetMode.ANY_CLAIM);
         }
 
         @Test
-        void warnPolicy() {
-            var config = parse("""
-                    policy:
-                      on-untrusted: warn
-                      listed-evidence: any
-                    """);
-            assertThat(config.trustPolicy().onUntrusted()).isEqualTo(UntrustedPolicy.WARN);
-            assertThat(config.trustPolicy().listedEvidence()).isEqualTo(ListedEvidencePolicy.ANY);
+        void defaultsEnforcementParsed() {
+            var doc = parse("""
+                    defaults: { on-no-claim: warn }
+                    rules: []
+                    """).trustPolicySpec();
+            assertThat(doc.defaults())
+                    .containsEntry(ArtifactOutcome.NO_CLAIM, EnforcementAction.WARN);
         }
 
         @Test
-        void invalidPolicyThrows() {
-            assertThatThrownBy(() -> parse("""
-                    policy:
-                      on-untrusted: ignore
-                    """))
-                    .isInstanceOf(PolicyConfigException.class);
+        void failedEnforcementSettingIsError() {
+            assertThatThrownBy(() -> parse("defaults: { on-failed: warn }\nrules: []"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("FAILED");
         }
     }
 
@@ -645,7 +777,7 @@ class SigmundConfigParserTest {
 
         @Test
         void noSigningSection() {
-            var config = parse("version: 1");
+            var config = parse("");
             assertThat(config.signingConfig()).isEqualTo(SigningConfig.DEFAULT);
         }
     }
@@ -662,7 +794,7 @@ class SigmundConfigParserTest {
                       keyservers:
                         - "hkps://keys.openpgp.org"
                     """);
-            var dc = config.discoveryConfig();
+            var dc = config.verificationConfig();
             assertThat(dc.resolveSigners()).isTrue();
             assertThat(dc.importToKeyring()).isFalse();
             assertThat(dc.keyservers()).isEqualTo(List.of("hkps://keys.openpgp.org"));
@@ -674,7 +806,7 @@ class SigmundConfigParserTest {
                     verification:
                       toolchain: [sq, gpg]
                     """);
-            assertThat(config.discoveryConfig().toolchain()).isEqualTo(List.of("sq", "gpg"));
+            assertThat(config.verificationConfig().toolchain()).isEqualTo(List.of("sq", "gpg"));
         }
 
         @Test
@@ -683,7 +815,7 @@ class SigmundConfigParserTest {
                     verification:
                       toolchain: gpg
                     """);
-            assertThat(config.discoveryConfig().toolchain()).isEqualTo(List.of("gpg"));
+            assertThat(config.verificationConfig().toolchain()).isEqualTo(List.of("gpg"));
         }
 
         @Test
@@ -692,14 +824,14 @@ class SigmundConfigParserTest {
                     verification:
                       resolve-signers: true
                     """);
-            assertThat(config.discoveryConfig().toolchain()).isNull();
-            assertThat(config.discoveryConfig().effectiveToolchain()).isEqualTo(DiscoveryConfig.DEFAULT_TOOL_PRIORITY);
+            assertThat(config.verificationConfig().toolchain()).isNull();
+            assertThat(config.verificationConfig().effectiveToolchain()).isEqualTo(VerificationConfig.DEFAULT_TOOL_PRIORITY);
         }
 
         @Test
         void noVerificationSection() {
-            var config = parse("version: 1");
-            assertThat(config.discoveryConfig()).isEqualTo(DiscoveryConfig.DEFAULT);
+            var config = parse("");
+            assertThat(config.verificationConfig()).isEqualTo(VerificationConfig.DEFAULT);
         }
     }
 
@@ -726,8 +858,67 @@ class SigmundConfigParserTest {
 
         @Test
         void noToolsSection() {
-            var config = parse("version: 1");
+            var config = parse("");
             assertThat(config.toolsConfig().isEmpty()).isTrue();
+        }
+    }
+
+    @Nested
+    class SchemaMigration {
+
+        @Test
+        void oldTrustSchemaRejectedWithGuidance() {
+            assertThatThrownBy(() -> parse("trust: { \"org.acme:*\": alice }"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("rules");
+        }
+
+        @Test
+        void oldArtifactsKeyRejectedWithGuidance() {
+            assertThatThrownBy(() -> parse("artifacts: { g: [\"com.acme.*\"] }"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("artifact-sets");
+        }
+
+        @Test
+        void oldSignatureOptionalRejectedWithGuidance() {
+            assertThatThrownBy(() -> parse("signature-optional: true"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("rules");
+        }
+
+        @Test
+        void versionKeyRejectedWithGuidance() {
+            assertThatThrownBy(() -> parse("version: 2"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("remove it");
+        }
+
+        @Test
+        void oldPolicyKeyRejectedWithGuidance() {
+            assertThatThrownBy(() -> parse("policy: { enforce: true }"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("rules");
+        }
+    }
+
+    @Nested
+    class TopLevelKeys {
+
+        @Test
+        void unknownTopLevelKeyIsErrorSuggestingTheNearestKey() {
+            assertThatThrownBy(() -> parse("rule: [{ match: [\"*\"], requires: [a] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("'rule'")
+                    .hasMessageContaining("did you mean 'rules'");
+        }
+
+        @Test
+        void unknownTopLevelKeyFarFromAnyKnownKeyListsTheKnownKeys() {
+            assertThatThrownBy(() -> parse("frobnicate: true"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("'frobnicate'")
+                    .hasMessageContaining("artifact-sets");
+        }
+
+        @Test
+        void emptyDocumentIsZeroConfig() {
+            assertThat(parse("").trustPolicySpec().declared()).isFalse();
         }
     }
 
@@ -737,7 +928,6 @@ class SigmundConfigParserTest {
         @Test
         void parsesCompleteConfig() {
             var config = parse("""
-                    version: 1
                     issuers: [keys.openpgp.org]
                     signers:
                       alice:
@@ -745,24 +935,32 @@ class SigmundConfigParserTest {
                         pgp4: "4AEE18F83AFDEB23000000000000000000000000"
                         pgp6: "ABCD1234ABCD1234000000000000000000000000000000000000000000000000"
                       bob: "bob@example.com"
+                    artifact-sets:
+                      example-stack: ["org.example.*"]
                     signing:
                       signer: alice
-                    trust:
-                      "org.example:*": [alice, bob]
-                    signature-optional:
-                      - "org.example:optional-lib"
-                    policy:
-                      on-untrusted: fail
+                    rules:
+                      - match: ["org.example:*"]
+                        requires: [alice, bob]
+                      - match: ["*"]
+                        on-no-claim: ignore
+                    defaults:
+                      extra-claims: ignore
                     verification:
                       resolve-signers: true
                       keyservers:
                         - "hkps://keys.openpgp.org"
                     """);
-            assertThat(config.version()).isEqualTo(1);
             assertThat(config.signers().names().size()).isEqualTo(2);
             assertThat(config.signingConfig().signer()).isEqualTo("alice");
-            assertThat(config.trustPolicy().listedEvidence()).isEqualTo(ListedEvidencePolicy.ALL);
-            assertThat(config.discoveryConfig().resolveSigners()).isTrue();
+            assertThat(config.trustPolicySpec().rules()).hasSize(2);
+            assertThat(config.trustPolicySpec().extraClaims()).isEqualTo(ClaimSetMode.ANY_CLAIM);
+            assertThat(config.trustPolicySpec().declared()).isTrue();
+            assertThat(config.verificationConfig().resolveSigners()).isTrue();
+
+            TrustPolicy policy = RulePolicy.compile(config.trustPolicySpec(), config.signers());
+            assertThat(policy.matchRule(artifact("org.example", "lib", "1.0")).requirement()
+                    .clauses()).hasSize(2);
         }
     }
 

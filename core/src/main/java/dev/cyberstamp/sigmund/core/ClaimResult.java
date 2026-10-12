@@ -9,9 +9,9 @@ import java.util.List;
  *
  * <p>
  * A result that changes between runs has to be explainable from the record: which claim was
- * checked, who attested it and in what capacity, which trust root answered, which evidence
- * file it came from, when the claim was made and who said so. Recording only a verdict leaves
- * a differing outcome indistinguishable from a bug.
+ * checked, who attested it, which trust root answered, which evidence file it came from, when
+ * the claim was made and who said so. Recording only a verdict leaves a differing outcome
+ * indistinguishable from a bug.
  *
  * <p>
  * This is deliberately not the artifact-level view: a claim is never {@code NO_CLAIM} and is
@@ -26,7 +26,6 @@ import java.util.List;
  *        verified; a claim left indeterminate because an identity could not be looked up
  *        keeps the key credentials its signature proved, for the report
  * @param attesterDisplayName a human-readable attester description, or {@code null}
- * @param role the capacity the attester acted in
  * @param trustRoot the trust root the claim was verified against
  * @param evidence the evidence the claim was parsed from
  * @param claimTime when the claim was made, or {@code null} when the evidence records none
@@ -34,6 +33,11 @@ import java.util.List;
  * @param verifiedAt when Sigmund evaluated the claim
  * @param algorithm the signing algorithm, or {@code null} when unknown
  * @param verifiedBy the tool that produced the outcome, or {@code null} when none could
+ * @param declaredIssuer the key the evidence names as having made the claim — never proven, and
+ *        never a credential; {@code null} when the evidence names none by full fingerprint. It
+ *        lets a claim no installed tool can check say whose signature it would be, so that a
+ *        requirement left unmet only for want of such a claim reads as unsupported rather than
+ *        as the wrong signer
  */
 public record ClaimResult(
         String kind,
@@ -41,14 +45,39 @@ public record ClaimResult(
         IndeterminateReason reason,
         List<Credential> attesterCredentials,
         String attesterDisplayName,
-        AttesterRole role,
         TrustRootRef trustRoot,
         EvidenceRef evidence,
         Instant claimTime,
         ClaimTimeSource claimTimeSource,
         Instant verifiedAt,
         String algorithm,
-        String verifiedBy) {
+        String verifiedBy,
+        Credential declaredIssuer) {
+
+    /**
+     * Creates a result for a claim whose evidence names no issuer by full fingerprint.
+     *
+     * @param kind the format that produced the claim
+     * @param outcome what verification established
+     * @param reason why verification could not complete, {@code null} unless indeterminate
+     * @param attesterCredentials the credentials the claim proved
+     * @param attesterDisplayName a human-readable attester description, or {@code null}
+     * @param trustRoot the trust root the claim was verified against
+     * @param evidence the evidence the claim was parsed from
+     * @param claimTime when the claim was made, or {@code null}
+     * @param claimTimeSource who asserted {@code claimTime}
+     * @param verifiedAt when Sigmund evaluated the claim
+     * @param algorithm the signing algorithm, or {@code null} when unknown
+     * @param verifiedBy the tool that produced the outcome, or {@code null} when none could
+     */
+    public ClaimResult(String kind, ClaimOutcome outcome, IndeterminateReason reason,
+            List<Credential> attesterCredentials, String attesterDisplayName,
+            TrustRootRef trustRoot, EvidenceRef evidence, Instant claimTime,
+            ClaimTimeSource claimTimeSource, Instant verifiedAt, String algorithm,
+            String verifiedBy) {
+        this(kind, outcome, reason, attesterCredentials, attesterDisplayName, trustRoot, evidence,
+                claimTime, claimTimeSource, verifiedAt, algorithm, verifiedBy, null);
+    }
 
     /**
      * Normalizes the optional components and rejects results that cannot be explained.
@@ -76,7 +105,6 @@ public record ClaimResult(
         attesterCredentials = attesterCredentials == null
                 ? List.of()
                 : List.copyOf(attesterCredentials);
-        role = role == null ? AttesterRole.UNKNOWN : role;
         trustRoot = trustRoot == null ? TrustRootRef.unknown() : trustRoot;
     }
 
@@ -87,9 +115,7 @@ public record ClaimResult(
      * The claim supplies its kind and its time; the tool's result supplies the outcome, and the
      * tool itself supplies the credentials the claim proved — that mapping belongs to the tool
      * ({@link SignatureTool#extractCredentials(VerifyResult)}), because only it knows what its
-     * own result type establishes. Role is left {@link AttesterRole#UNKNOWN} here — deriving it is a
-     * policy-time decision, because the issuer that asserted an identity is what says in which
-     * capacity it was acting.
+     * own result type establishes.
      *
      * @param claim the claim that was verified
      * @param kind the format that produced the claim
@@ -105,9 +131,39 @@ public record ClaimResult(
             List<Credential> provenCredentials, EvidenceRef evidence, TrustRootRef trustRoot,
             String verifiedBy, Instant verifiedAt) {
         return new ClaimResult(kind, result.outcome(), result.reason(), provenCredentials,
-                result.signerDisplayName(), AttesterRole.UNKNOWN, trustRoot, evidence,
+                result.signerDisplayName(), trustRoot, evidence,
                 claim.claimTime(), claim.claimTimeSource(), verifiedAt, result.algorithm(),
-                verifiedBy);
+                verifiedBy, declaredIssuerOf(claim));
+    }
+
+    /**
+     * The key an OpenPGP signature packet names as its issuer, when it names it by full
+     * fingerprint; a 64-bit key ID does not identify a key.
+     */
+    private static Credential declaredIssuerOf(Claim claim) {
+        return claim instanceof OpenPgpClaim openPgp
+                && KeyCredential.isOpenPgpFingerprint(openPgp.issuerFingerprint())
+                        ? KeyCredential.openPgp(openPgp.issuerFingerprint())
+                        : null;
+    }
+
+    /**
+     * Returns this claim as it would be had the key it names verified it, or {@code null} when
+     * it names none.
+     *
+     * <p>
+     * Only for asking whether a requirement <em>could</em> be met by claims no installed tool
+     * can check; the copy is never reported, stored or used to accept anything.
+     *
+     * @return the hypothetical copy, or {@code null}
+     */
+    ClaimResult asIfVerifiedByDeclaredIssuer() {
+        if (declaredIssuer == null) {
+            return null;
+        }
+        return new ClaimResult(kind, ClaimOutcome.VERIFIED, null, List.of(declaredIssuer),
+                attesterDisplayName, trustRoot, evidence, claimTime, claimTimeSource, verifiedAt,
+                algorithm, verifiedBy, declaredIssuer);
     }
 
     /**
@@ -120,9 +176,9 @@ public record ClaimResult(
     public ClaimResult withAdditionalCredentials(List<Credential> additional) {
         List<Credential> credentials = new ArrayList<>(attesterCredentials);
         credentials.addAll(additional);
-        return new ClaimResult(kind, outcome, reason, credentials, attesterDisplayName, role,
+        return new ClaimResult(kind, outcome, reason, credentials, attesterDisplayName,
                 trustRoot, evidence, claimTime, claimTimeSource, verifiedAt, algorithm,
-                verifiedBy);
+                verifiedBy, declaredIssuer);
     }
 
     /**
@@ -134,8 +190,8 @@ public record ClaimResult(
      */
     public ClaimResult unresolved(IndeterminateReason unresolvedReason) {
         return new ClaimResult(kind, ClaimOutcome.INDETERMINATE, unresolvedReason,
-                attesterCredentials, attesterDisplayName, role, trustRoot, evidence, claimTime,
-                claimTimeSource, verifiedAt, algorithm, verifiedBy);
+                attesterCredentials, attesterDisplayName, trustRoot, evidence, claimTime,
+                claimTimeSource, verifiedAt, algorithm, verifiedBy, declaredIssuer);
     }
 
     /**

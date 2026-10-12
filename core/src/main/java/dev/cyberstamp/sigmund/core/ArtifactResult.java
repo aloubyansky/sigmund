@@ -15,6 +15,7 @@ import java.util.List;
  * @param subject the artifact, identified by the bytes that were verified
  * @param outcome what verification established
  * @param reason why it could not be decided, {@code null} unless indeterminate
+ * @param matchedRule the policy rule that applied to the artifact, {@code null} when none did
  * @param claims every claim found for the artifact, contributing or not
  * @param verifiedAt when Sigmund evaluated the artifact
  */
@@ -22,6 +23,7 @@ public record ArtifactResult(
         ArtifactSubject subject,
         ArtifactOutcome outcome,
         IndeterminateReason reason,
+        MatchedRule matchedRule,
         List<ClaimResult> claims,
         Instant verifiedAt) {
 

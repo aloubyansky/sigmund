@@ -1,18 +1,17 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
+import dev.cyberstamp.sigmund.core.ArtifactOutcome;
 import dev.cyberstamp.sigmund.core.ArtifactResult;
 import dev.cyberstamp.sigmund.core.AssessmentRequest;
-import dev.cyberstamp.sigmund.core.DiscoveryConfig;
-import dev.cyberstamp.sigmund.core.ListedEvidencePolicy;
+import dev.cyberstamp.sigmund.core.RulePolicy;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
-import dev.cyberstamp.sigmund.core.SignerIdentity;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
 import dev.cyberstamp.sigmund.core.TrustVerifier;
-import dev.cyberstamp.sigmund.core.UnlistedEvidencePolicy;
-import dev.cyberstamp.sigmund.core.UntrustedPolicy;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.VerificationReport;
+import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -27,12 +26,6 @@ import org.apache.maven.plugins.annotations.Parameter;
 
 @Mojo(name = "verify", defaultPhase = LifecyclePhase.VALIDATE, threadSafe = true)
 public class VerifyMojo extends AbstractDependencyMojo {
-
-    @Parameter(property = "sigmund.onUntrusted")
-    private String onUntrusted;
-
-    @Parameter(property = "sigmund.listedEvidence")
-    private String listedEvidence;
 
     @Parameter(property = "sigmund.verifyPomFiles", defaultValue = "false")
     private boolean verifyPomFiles;
@@ -53,10 +46,10 @@ public class VerifyMojo extends AbstractDependencyMojo {
         }
 
         SigmundConfig config = loadAndValidateConfig();
-        TrustPolicy trustPolicy = applyPolicyOverrides(config.trustPolicy());
-        DiscoveryConfig discoveryConfig = resolveDiscoveryConfig(config.discoveryConfig());
+        TrustPolicy trustPolicy = RulePolicy.compile(config.trustPolicySpec(), config.signers());
+        VerificationConfig verificationConfig = resolveVerificationConfig(config.verificationConfig());
 
-        try (Sigmund sigmund = buildSigmund(discoveryConfig, mergeToolOverrides(config.toolsConfig()))) {
+        try (Sigmund sigmund = buildSigmund(verificationConfig, mergeToolOverrides(config.toolsConfig()))) {
             TrustVerifier verifier = sigmund.verifier(trustPolicy);
 
             List<ArtifactCoords> artifacts = resolveDependencies();
@@ -131,35 +124,69 @@ public class VerifyMojo extends AbstractDependencyMojo {
      */
     void reportResults(VerificationReport report) {
         report.byOutcome().forEach((outcome, results) -> {
-            int level = switch (outcome) {
-                case SATISFIED, NOT_CONFIGURED -> LOG_INFO;
-                case FAILED -> LOG_ERROR;
-                case UNSATISFIED, NO_CLAIM, INDETERMINATE -> LOG_WARN;
-            };
-            logLine(level, "");
-            logLine(level, outcome + " (" + results.size() + ")");
+            int sectionLevel = Math.max(LOG_INFO, mostSevere(report, results));
+            logLine(sectionLevel, "");
+            logLine(sectionLevel, report.heading(outcome));
             for (VerificationReport.AttesterGroup group : VerificationReport.groupByAttester(results)) {
-                for (String line : group.summary()) {
-                    logLine(level, "  " + line);
-                }
-                if (detail) {
-                    for (String line : group.detail()) {
-                        logLine(level, "  " + line);
-                    }
-                }
-                for (ArtifactResult result : group.artifacts()) {
-                    logLine(level, "    " + result.subject().coords());
-                    if (detail) {
-                        // at the severity of the outcome being explained: detail about a
-                        // failing artifact that an operator has to raise the log level to see
-                        // is detail they will not read
-                        for (String line : VerificationReport.explain(result)) {
-                            logLine(level, "      " + line);
-                        }
-                    }
-                }
+                reportGroup(report, group);
             }
         });
+    }
+
+    /**
+     * Logs one attester group, its shared lines at the most severe level among its artifacts
+     * and each artifact at its own.
+     *
+     * <p>
+     * Detail is logged at the severity of the artifact it explains: detail about a failing
+     * artifact that an operator has to raise the log level to see is detail they will not read.
+     */
+    private void reportGroup(VerificationReport report, VerificationReport.AttesterGroup group) {
+        int groupLevel = mostSevere(report, group.artifacts());
+        for (String line : group.summary()) {
+            logLine(groupLevel, "  " + line);
+        }
+        if (detail) {
+            for (String line : group.detail()) {
+                logLine(groupLevel, "  " + line);
+            }
+        }
+        for (ArtifactResult result : group.artifacts()) {
+            int level = levelOf(report, result);
+            logLine(level, "    " + report.describe(result));
+            if (detail) {
+                for (String line : VerificationReport.explain(result)) {
+                    logLine(level, "      " + line);
+                }
+            }
+        }
+    }
+
+    private int mostSevere(VerificationReport report, List<ArtifactResult> results) {
+        int level = LOG_DEBUG;
+        for (ArtifactResult result : results) {
+            level = Math.max(level, levelOf(report, result));
+        }
+        return level;
+    }
+
+    /**
+     * Maps what the policy does about an artifact to a log level.
+     *
+     * <p>
+     * An ignored artifact is listed only at debug, or at info when detail is asked for: the
+     * section heading already counts it, and a catch-all that ignores hundreds of unsigned
+     * dependencies would otherwise bury the lines an operator has to act on.
+     */
+    private int levelOf(VerificationReport report, ArtifactResult result) {
+        if (result.outcome() == ArtifactOutcome.SATISFIED) {
+            return LOG_INFO;
+        }
+        return switch (report.enforcement(result)) {
+            case FAIL -> LOG_ERROR;
+            case WARN -> LOG_WARN;
+            case IGNORE -> detail ? LOG_INFO : LOG_DEBUG;
+        };
     }
 
     /**
@@ -181,103 +208,61 @@ public class VerifyMojo extends AbstractDependencyMojo {
                         + coords);
     }
 
-    private SigmundConfig loadAndValidateConfig() throws MojoExecutionException {
+    /**
+     * Loads the configuration, falling back to zero-config when none exists at the default
+     * location.
+     *
+     * <p>
+     * A missing file at the default location means the project has not written a policy, so
+     * verification observes. A missing file at a location given explicitly is an error instead:
+     * a mistyped path must not quietly turn an enforcing build into an observing one. Whenever
+     * no policy is in force the log says so, so a green build is not mistaken for an enforced
+     * one.
+     *
+     * @return the configuration to verify with
+     * @throws MojoExecutionException when an explicitly given file does not exist or does not
+     *         parse
+     */
+    SigmundConfig loadAndValidateConfig() throws MojoExecutionException {
         SigmundConfig config = super.loadConfig();
         if (config == null) {
-            if (trustConfigFile == null) {
-                throw new MojoExecutionException(
-                        "Config file is not configured. "
-                                + "Create a sigmund.yaml in the project root or set -Dsigmund.trustConfig=<path>");
+            if (!isDefaultConfigLocation()) {
+                throw new MojoExecutionException("Config file not found at "
+                        + Path.of("").toAbsolutePath()
+                                .relativize(trustConfigFile.toPath().toAbsolutePath()));
             }
-            throw new MojoExecutionException(
-                    "Config file not found at "
-                            + Path.of("").toAbsolutePath()
-                                    .relativize(trustConfigFile.toPath().toAbsolutePath()));
+            getLog().info("No sigmund.yaml found; " + OBSERVING);
+            return SigmundConfig.EMPTY;
+        }
+        if (!config.trustPolicySpec().declared()) {
+            getLog().info(trustConfigFile.getName() + " declares no policy (rules or defaults); "
+                    + OBSERVING);
         }
         return config;
     }
 
-    /**
-     * Applies Maven property overrides ({@code onUntrusted}, {@code listedEvidence})
-     * to the trust policy from the config file. If no overrides are set, returns the
-     * policy unchanged.
-     */
-    private TrustPolicy applyPolicyOverrides(TrustPolicy filePolicy)
-            throws MojoExecutionException {
-        UntrustedPolicy effectiveUntrusted = parseUntrustedOverride(filePolicy);
-        ListedEvidencePolicy effectiveListed = parseListedEvidenceOverride(filePolicy);
+    private static final String OBSERVING = "observing only — every dependency is verified and "
+            + "reported, and only a signature that fails verification blocks the build";
 
-        if (effectiveUntrusted == filePolicy.onUntrusted()
-                && effectiveListed == filePolicy.listedEvidence()) {
-            return filePolicy;
+    private boolean isDefaultConfigLocation() {
+        if (trustConfigFile == null || project == null || project.getBasedir() == null) {
+            return true;
         }
-
-        return new OverrideTrustPolicy(filePolicy, effectiveListed, filePolicy.unlistedEvidence(), effectiveUntrusted);
+        File defaultLocation = new File(project.getBasedir(), "sigmund.yaml");
+        return trustConfigFile.getAbsoluteFile().equals(defaultLocation.getAbsoluteFile());
     }
 
-    private UntrustedPolicy parseUntrustedOverride(TrustPolicy filePolicy)
-            throws MojoExecutionException {
-        if (onUntrusted == null) {
-            return filePolicy.onUntrusted();
-        }
-        if ("fail".equalsIgnoreCase(onUntrusted)) {
-            return UntrustedPolicy.FAIL;
-        }
-        if ("warn".equalsIgnoreCase(onUntrusted)) {
-            return UntrustedPolicy.WARN;
-        }
-        throw new MojoExecutionException(
-                "Invalid sigmund.onUntrusted value '" + onUntrusted
-                        + "': must be 'fail' or 'warn'");
-    }
-
-    private ListedEvidencePolicy parseListedEvidenceOverride(TrustPolicy filePolicy)
-            throws MojoExecutionException {
-        if (listedEvidence == null) {
-            return filePolicy.listedEvidence();
-        }
-        if ("all".equalsIgnoreCase(listedEvidence)) {
-            return ListedEvidencePolicy.ALL;
-        }
-        if ("any".equalsIgnoreCase(listedEvidence)) {
-            return ListedEvidencePolicy.ANY;
-        }
-        throw new MojoExecutionException(
-                "Invalid sigmund.listedEvidence value '" + listedEvidence
-                        + "': must be 'all' or 'any'");
-    }
-
-    private static final int LOG_INFO = 0;
-    private static final int LOG_WARN = 1;
-    private static final int LOG_ERROR = 2;
+    private static final int LOG_DEBUG = 0;
+    private static final int LOG_INFO = 1;
+    private static final int LOG_WARN = 2;
+    private static final int LOG_ERROR = 3;
 
     private void logLine(int level, String line) {
         switch (level) {
             case LOG_ERROR -> getLog().error(line);
             case LOG_WARN -> getLog().warn(line);
-            default -> getLog().info(line);
-        }
-    }
-
-    /**
-     * A delegating {@link TrustPolicy} that overrides {@code listedEvidence}
-     * and {@code onUntrusted} from Maven property settings while keeping the original
-     * trust mappings and unsigned patterns.
-     */
-    private record OverrideTrustPolicy(
-            TrustPolicy delegate,
-            ListedEvidencePolicy listedEvidence,
-            UnlistedEvidencePolicy unlistedEvidence,
-            UntrustedPolicy onUntrusted) implements TrustPolicy {
-
-        @Override
-        public List<SignerIdentity> expectedSigners(ArtifactCoords artifact) {
-            return delegate.expectedSigners(artifact);
-        }
-
-        @Override
-        public boolean isUnsignedAllowed(ArtifactCoords artifact) {
-            return delegate.isUnsignedAllowed(artifact);
+            case LOG_INFO -> getLog().info(line);
+            default -> getLog().debug(line);
         }
     }
 }
