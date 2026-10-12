@@ -486,7 +486,7 @@ class SigmundConfigParserTest {
                     issuers: [keys.openpgp.org]
                     signers:
                       alice: "alice@example.com"
-                    artifacts:
+                    artifact-sets:
                       apache-stack:
                         - org.apache.maven.*
                         - org.apache.commons.*
@@ -506,6 +506,15 @@ class SigmundConfigParserTest {
             assertThat(policy.expectedSigners(
                     artifact("com.example", "lib", "1.0")).isEmpty())
                     .isTrue();
+        }
+
+        @Test
+        void artifactSetsKeyParsed() {
+            var config = parse("""
+                    artifact-sets:
+                      apache-stack: [org.apache.maven.*]
+                    """);
+            assertThat(config.artifactSets().get("apache-stack")).containsExactly("org.apache.maven.*");
         }
 
         @Test

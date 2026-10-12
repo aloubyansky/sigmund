@@ -22,7 +22,7 @@ import java.nio.file.Path;
  *
  * @param version the schema version (currently 1)
  * @param signers shared identity registry
- * @param artifacts named groups of artifact patterns for reuse in trust/unsigned sections
+ * @param artifactSets named groups of artifact patterns for reuse in trust/unsigned sections
  * @param trustPolicy the trust policy parsed from trust/unsigned/policy sections
  * @param signingConfig the signing configuration parsed from the signing section
  * @param toolsConfig the per-tool configuration registry parsed from the top-level tools section
@@ -32,7 +32,7 @@ import java.nio.file.Path;
 public record SigmundConfig(
         int version,
         SignersConfig signers,
-        ArtifactsConfig artifacts,
+        ArtifactSetsConfig artifactSets,
         TrustPolicy trustPolicy,
         SigningConfig signingConfig,
         ToolsConfig toolsConfig,
@@ -45,8 +45,8 @@ public record SigmundConfig(
         if (signers == null) {
             signers = SignersConfig.EMPTY;
         }
-        if (artifacts == null) {
-            artifacts = ArtifactsConfig.EMPTY;
+        if (artifactSets == null) {
+            artifactSets = ArtifactSetsConfig.EMPTY;
         }
         if (trustPolicy == null) {
             trustPolicy = DefaultTrustPolicy.EMPTY;

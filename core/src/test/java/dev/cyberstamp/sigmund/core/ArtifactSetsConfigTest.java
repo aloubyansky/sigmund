@@ -7,13 +7,13 @@ import java.util.Map;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-class ArtifactsConfigTest {
+class ArtifactSetsConfigTest {
 
     @Nested
     class GroupExpansion {
         @Test
         void expandsTrustMappingGroupNames() {
-            var config = new ArtifactsConfig(Map.of(
+            var config = new ArtifactSetsConfig(Map.of(
                     "apache-stack", List.of("org.apache.maven.*", "org.apache.commons.*")));
             var raw = Map.of("apache-stack", List.of("apache"));
             var expanded = config.expandTrustMappings(raw);
@@ -24,7 +24,7 @@ class ArtifactsConfigTest {
 
         @Test
         void preservesLiteralPatternsWhenNoGroupMatch() {
-            var config = new ArtifactsConfig(Map.of());
+            var config = new ArtifactSetsConfig(Map.of());
             var raw = Map.of("com.example:mylib", List.of("alice"));
             var expanded = config.expandTrustMappings(raw);
             assertThat(expanded.containsKey("com.example:mylib")).isTrue();
@@ -32,7 +32,7 @@ class ArtifactsConfigTest {
 
         @Test
         void expandsPatternList() {
-            var config = new ArtifactsConfig(Map.of(
+            var config = new ArtifactSetsConfig(Map.of(
                     "internal", List.of("com.internal.*", "com.internal2.*")));
             var expanded = config.expandPatterns(List.of("internal", "com.other.*"));
             assertThat(expanded.size()).isEqualTo(3);
@@ -42,7 +42,7 @@ class ArtifactsConfigTest {
 
         @Test
         void emptyConfig() {
-            assertThat(ArtifactsConfig.EMPTY.isEmpty()).isTrue();
+            assertThat(ArtifactSetsConfig.EMPTY.isEmpty()).isTrue();
         }
     }
 }

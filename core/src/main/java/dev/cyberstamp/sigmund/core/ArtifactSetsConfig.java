@@ -8,17 +8,17 @@ import java.util.Map;
 
 /**
  * Read-only registry of named artifact pattern groups, parsed from the
- * {@code artifacts} section of {@code sigmund.yaml}.
+ * {@code artifact-sets} section of {@code sigmund.yaml}.
  * <p>
  * Provides group expansion for the {@code trust} and {@code unsigned} sections —
  * when a key matches a group name, it is expanded into the group's patterns.
  *
  * @see SigmundConfig
  */
-public class ArtifactsConfig {
+public class ArtifactSetsConfig {
 
     /** Empty artifact groups. */
-    public static final ArtifactsConfig EMPTY = new ArtifactsConfig(Map.of());
+    public static final ArtifactSetsConfig EMPTY = new ArtifactSetsConfig(Map.of());
 
     private final Map<String, List<String>> groups;
 
@@ -27,7 +27,7 @@ public class ArtifactsConfig {
      *
      * @param groups group names mapped to lists of artifact patterns
      */
-    public ArtifactsConfig(Map<String, List<String>> groups) {
+    public ArtifactSetsConfig(Map<String, List<String>> groups) {
         this.groups = groups != null ? Map.copyOf(groups) : Map.of();
     }
 
@@ -67,7 +67,7 @@ public class ArtifactsConfig {
         for (var entry : rawTrust.entrySet()) {
             List<String> patterns = groups.getOrDefault(entry.getKey(), List.of(entry.getKey()));
             for (String pattern : patterns) {
-                expanded.merge(pattern, entry.getValue(), ArtifactsConfig::mergeUnique);
+                expanded.merge(pattern, entry.getValue(), ArtifactSetsConfig::mergeUnique);
             }
         }
         return expanded;

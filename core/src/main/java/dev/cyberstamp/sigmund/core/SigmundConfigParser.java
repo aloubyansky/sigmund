@@ -78,11 +78,11 @@ class SigmundConfigParser {
         ToolsConfig toolsConfig = parseToolsRegistry(root.get("tools"));
         DiscoveryConfig discoveryConfig = parseDiscoveryConfig(root.get("verification"));
 
-        ArtifactsConfig artifacts = parseArtifactGroups(root.get("artifacts"));
+        ArtifactSetsConfig artifactSets = parseArtifactGroups(root.get("artifact-sets"));
         Map<String, List<String>> rawTrust = parseTrustSection(root.get("trust"));
-        Map<String, List<String>> expandedTrust = artifacts.expandTrustMappings(rawTrust);
+        Map<String, List<String>> expandedTrust = artifactSets.expandTrustMappings(rawTrust);
         List<String> rawUnsigned = parseStringList(root.get("signature-optional"));
-        List<String> expandedUnsigned = artifacts.expandPatterns(rawUnsigned);
+        List<String> expandedUnsigned = artifactSets.expandPatterns(rawUnsigned);
         ListedEvidencePolicy listedEvidence = parseListedEvidencePolicy(root);
         UnlistedEvidencePolicy unlistedEvidence = parseUnlistedEvidencePolicy(root);
         UntrustedPolicy untrustedPolicy = parseUntrustedPolicy(root);
@@ -92,7 +92,7 @@ class SigmundConfigParser {
                 trustMappings, expandedUnsigned, listedEvidence, unlistedEvidence, untrustedPolicy,
                 issuers);
 
-        return new SigmundConfig(version, signers, artifacts, trustPolicy,
+        return new SigmundConfig(version, signers, artifactSets, trustPolicy,
                 signingConfig, toolsConfig, discoveryConfig);
     }
 
@@ -510,9 +510,9 @@ class SigmundConfigParser {
 
     // --- Artifact Groups ---
 
-    private static ArtifactsConfig parseArtifactGroups(JsonNode node) {
+    private static ArtifactSetsConfig parseArtifactGroups(JsonNode node) {
         Map<String, List<String>> groups = parseStringListMap(node);
-        return new ArtifactsConfig(groups);
+        return new ArtifactSetsConfig(groups);
     }
 
     private static Map<String, List<String>> parseStringListMap(JsonNode node) {
