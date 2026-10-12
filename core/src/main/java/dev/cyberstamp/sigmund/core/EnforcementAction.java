@@ -37,6 +37,7 @@ public enum EnforcementAction {
      * @param value the string to parse
      * @return the matching {@code EnforcementAction}
      * @throws PolicyConfigException if the value is not recognized
+     * @throws NullPointerException if value is null
      */
     public static EnforcementAction parse(String value) {
         String normalized = value.trim().toLowerCase();
