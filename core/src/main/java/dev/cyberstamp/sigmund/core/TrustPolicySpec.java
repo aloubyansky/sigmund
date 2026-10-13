@@ -8,7 +8,8 @@ import java.util.Map;
  * <p>
  * This is the shape that the parser produces. It holds {@link RuleSpec} instances rather than
  * compiled {@link Rule} instances, so that the parser can complete before signer resolution.
- * Task 5 (the compiler) will resolve signers and build compiled {@link Rule} instances.
+ * The compiler, {@link RulePolicy#compile}, resolves signers and builds compiled {@link Rule}
+ * instances.
  * <p>
  * The {@link #present()} flag indicates whether a trust policy section was present in the YAML,
  * so that the absence of policy can be distinguished from an empty policy.

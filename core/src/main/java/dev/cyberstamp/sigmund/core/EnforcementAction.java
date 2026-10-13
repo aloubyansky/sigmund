@@ -1,5 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
+import java.util.Locale;
+
 /**
  * Specifies how policy violations are handled: fail, warn, or ignore.
  * <p>
@@ -40,7 +42,7 @@ public enum EnforcementAction {
      * @throws NullPointerException if value is null
      */
     public static EnforcementAction parse(String value) {
-        String normalized = value.trim().toLowerCase();
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
         return switch (normalized) {
             case "fail" -> FAIL;
             case "warn" -> WARN;

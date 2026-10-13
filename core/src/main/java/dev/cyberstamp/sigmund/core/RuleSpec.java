@@ -9,8 +9,8 @@ import java.util.Set;
  * <p>
  * This is the shape that the parser produces. It holds string IDs for clauses rather than
  * resolved {@link SignerIdentity} instances, so that the parser can complete before signer
- * resolution. Task 5 (the compiler) will resolve the clause IDs into {@link Clause} instances
- * and build a {@link Rule}.
+ * resolution. The compiler, {@link RulePolicy#compile}, resolves the clause IDs into
+ * {@link Clause} instances and builds a {@link Rule}.
  * <p>
  * The clause ID structure is a list of sets: each set is a disjunction (OR) of signer IDs,
  * and the list is a conjunction (AND) of these disjunctions, forming conjunctive normal form (CNF).

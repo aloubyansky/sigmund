@@ -14,6 +14,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -75,7 +76,6 @@ class SigmundConfigParser {
     }
 
     private static SigmundConfig parseRoot(JsonNode root) {
-        // Detect v1 schema keys and provide migration guidance
         if (root.has("trust")) {
             throw new PolicyConfigException(
                     "The 'trust' key is no longer supported; use 'rules' instead");
@@ -563,7 +563,7 @@ class SigmundConfigParser {
         if (value == null) {
             return ClaimSetMode.ALL_CLAIMS;
         }
-        return switch (value.trim().toLowerCase()) {
+        return switch (value.trim().toLowerCase(Locale.ROOT)) {
             case "reject" -> ClaimSetMode.ALL_CLAIMS;
             case "ignore" -> ClaimSetMode.ANY_CLAIM;
             default -> throw new PolicyConfigException("defaults: 'extra-claims' must be 'reject'"

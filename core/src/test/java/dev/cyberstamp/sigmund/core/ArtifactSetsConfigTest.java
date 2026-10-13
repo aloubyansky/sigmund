@@ -10,34 +10,19 @@ import org.junit.jupiter.api.Test;
 class ArtifactSetsConfigTest {
 
     @Nested
-    class GroupExpansion {
+    class Lookup {
         @Test
-        void expandsTrustMappingGroupNames() {
+        void returnsAGroupsPatternsByName() {
             var config = new ArtifactSetsConfig(Map.of(
                     "apache-stack", List.of("org.apache.maven.*", "org.apache.commons.*")));
-            var raw = Map.of("apache-stack", List.of("apache"));
-            var expanded = config.expandTrustMappings(raw);
-            assertThat(expanded.containsKey("org.apache.maven.*")).isTrue();
-            assertThat(expanded.containsKey("org.apache.commons.*")).isTrue();
-            assertThat(expanded.containsKey("apache-stack")).isFalse();
+            assertThat(config.get("apache-stack"))
+                    .containsExactly("org.apache.maven.*", "org.apache.commons.*");
         }
 
         @Test
-        void preservesLiteralPatternsWhenNoGroupMatch() {
-            var config = new ArtifactSetsConfig(Map.of());
-            var raw = Map.of("com.example:mylib", List.of("alice"));
-            var expanded = config.expandTrustMappings(raw);
-            assertThat(expanded.containsKey("com.example:mylib")).isTrue();
-        }
-
-        @Test
-        void expandsPatternList() {
-            var config = new ArtifactSetsConfig(Map.of(
-                    "internal", List.of("com.internal.*", "com.internal2.*")));
-            var expanded = config.expandPatterns(List.of("internal", "com.other.*"));
-            assertThat(expanded.size()).isEqualTo(3);
-            assertThat(expanded.contains("com.internal.*")).isTrue();
-            assertThat(expanded.contains("com.other.*")).isTrue();
+        void returnsNullForAnUnknownName() {
+            var config = new ArtifactSetsConfig(Map.of("internal", List.of("com.internal.*")));
+            assertThat(config.get("com.example:mylib")).isNull();
         }
 
         @Test

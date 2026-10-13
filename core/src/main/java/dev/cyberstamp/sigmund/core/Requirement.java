@@ -49,10 +49,6 @@ public record Requirement(List<Clause> clauses, List<String> defaultIssuers) {
             verifiedClaims = List.of();
         }
 
-        // Check if every clause has at least one claim that satisfies it (conjunction). An empty
-        // requirement is NOT vacuously satisfied: a catch-all rule with no clauses must leave an
-        // unsigned artifact as NO_CLAIM (ADR-007 §2.1) so its enforcement decides, rather than
-        // reading as full coverage.
         boolean satisfied = !clauses.isEmpty();
         for (Clause clause : clauses) {
             boolean clauseSatisfied = false;
@@ -68,7 +64,6 @@ public record Requirement(List<Clause> clauses, List<String> defaultIssuers) {
             }
         }
 
-        // Partition claims into accepted and unaccepted
         List<ClaimResult> accepted = verifiedClaims.stream()
                 .filter(claim -> clauses.stream().anyMatch(clause -> clause.accepts(claim, defaultIssuers)))
                 .toList();

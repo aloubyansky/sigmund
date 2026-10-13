@@ -6,9 +6,9 @@ import java.util.Map;
 /**
  * A compiled policy rule: artifact patterns, a requirement, and enforcement overrides.
  * <p>
- * This is the compiled form of a {@link RuleSpec}, produced by the compiler (Task 5) after
- * resolving signer IDs into {@link SignerIdentity} instances and building {@link Clause} and
- * {@link Requirement} structures.
+ * This is the compiled form of a {@link RuleSpec}, produced by the compiler,
+ * {@link RulePolicy#compile}, after resolving signer IDs into {@link SignerIdentity} instances and
+ * building {@link Clause} and {@link Requirement} structures.
  * <p>
  * A rule matches an artifact if any of its patterns matches. When several rules match, the
  * most specific wins, determined by {@link #specificity(ArtifactCoords)}.

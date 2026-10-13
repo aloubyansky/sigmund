@@ -15,10 +15,6 @@ import java.util.Set;
  * signer references are resolved, identity entries are checked against the trusted issuers, and
  * specificity ties are rejected — so "fail-fast at load" means "when the verifier loads," and the
  * signing path, which never compiles, is immune to verification-only configuration errors.
- * <p>
- * The {@code present} flag distinguishes a parsed policy from the zero-config {@link #EMPTY}: a
- * present policy enforces every non-{@link ArtifactOutcome#SATISFIED} outcome by default, while
- * zero-config only fails on {@link ArtifactOutcome#FAILED}.
  *
  * @see TrustPolicySpec
  * @see Rule
@@ -26,8 +22,8 @@ import java.util.Set;
 public final class RulePolicy implements TrustPolicy {
 
     /**
-     * The zero-config policy: no rules, default extra-claims, no enforcement defaults, no issuers,
-     * and {@code present = false}.
+     * The zero-config policy: no rules, default extra-claims, no enforcement defaults, and no
+     * issuers.
      */
     public static final RulePolicy EMPTY = compile(TrustPolicySpec.EMPTY, SignersConfig.EMPTY);
 
@@ -35,16 +31,13 @@ public final class RulePolicy implements TrustPolicy {
     private final ClaimSetMode extraClaims;
     private final Map<ArtifactOutcome, EnforcementAction> defaults;
     private final List<String> issuers;
-    private final boolean present;
 
     private RulePolicy(List<Rule> rules, ClaimSetMode extraClaims,
-            Map<ArtifactOutcome, EnforcementAction> defaults, List<String> issuers,
-            boolean present) {
+            Map<ArtifactOutcome, EnforcementAction> defaults, List<String> issuers) {
         this.rules = List.copyOf(rules);
         this.extraClaims = extraClaims;
         this.defaults = Map.copyOf(defaults);
         this.issuers = List.copyOf(issuers);
-        this.present = present;
     }
 
     /**
@@ -68,7 +61,7 @@ public final class RulePolicy implements TrustPolicy {
             rules.add(compileRule(spec, signers, doc.issuers()));
         }
         rejectSpecificityTies(rules);
-        return new RulePolicy(rules, doc.extraClaims(), doc.defaults(), doc.issuers(), doc.present());
+        return new RulePolicy(rules, doc.extraClaims(), doc.defaults(), doc.issuers());
     }
 
     private static Rule compileRule(RuleSpec spec, SignersConfig signers, List<String> issuers) {
