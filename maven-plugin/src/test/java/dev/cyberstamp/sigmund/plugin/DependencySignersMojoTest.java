@@ -241,6 +241,27 @@ class DependencySignersMojoTest {
             // Check that a rule matches for the unsigned artifact
             assertThat(policy.matchRule(LIB_COORDS)).isNotNull();
         }
+
+        /**
+         * When every artifact is unsigned there are no trust requirements, so the config carries
+         * only the tolerant {@code on-no-claim} rule. The {@code rules:} header must still be emitted
+         * exactly once ahead of that item, or the file is malformed YAML that fails to reparse.
+         */
+        @Test
+        void produceAWellFormedRulesSectionWhenNothingIsSigned(@TempDir Path dir) throws Exception {
+            DependencySignersMojo mojo = new DependencySignersMojo();
+            mojo.setLog(new RecordingLog());
+            Path configFile = dir.resolve("sigmund.yaml");
+
+            mojo.writeTrustConfigYaml(List.of(noClaim), configFile.toFile());
+
+            String yaml = Files.readString(configFile);
+            assertThat(yaml.split("rules:", -1).length - 1).isEqualTo(1);
+            assertThat(yaml).contains("on-no-claim: ignore");
+            SigmundConfig config = SigmundConfig.parse(configFile);
+            TrustPolicy policy = RulePolicy.compile(config.trustPolicySpec(), config.signers());
+            assertThat(policy.matchRule(LIB_COORDS)).isNotNull();
+        }
     }
 
     @Nested

@@ -438,8 +438,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
 
         try (PrintWriter w = new PrintWriter(Files.newBufferedWriter(configFile.toPath()))) {
             writeSignersSection(w, signersByKey);
-            writeTrustSection(w, trustPatterns);
-            writeUnsignedSection(w, unsignedModulePatterns);
+            writeRulesSection(w, trustPatterns, unsignedModulePatterns);
             if (w.checkError()) {
                 throw new IOException("Error writing trust config");
             }
@@ -552,10 +551,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             throw new MojoExecutionException("Failed to read trust config: " + configFile, e);
         }
 
-        // Insert in reverse order (unsigned, trust, signers) so earlier
-        // insertions don't shift the line numbers for later ones
-        spliceUnsigned(lines, newUnsigned);
-        spliceTrust(lines, newTrustPatterns);
+        spliceRules(lines, newTrustPatterns, newUnsigned);
         spliceSigners(lines, newSigners);
 
         try {
@@ -606,34 +602,25 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         insertAtSectionEnd(lines, "signers", newLines);
     }
 
-    private void spliceTrust(List<String> lines, Map<String, List<String>> newTrustPatterns) {
-        if (newTrustPatterns.isEmpty()) {
+    /**
+     * Splices new rule items into the existing {@code rules} section.
+     * <p>
+     * Both the newly discovered signer requirements and the newly discovered unsigned modules are
+     * expressed as {@code rules} items, matching the generate path's schema, so an updated config
+     * round-trips through the parser. When the config has no {@code rules} section yet, one is
+     * appended with these items.
+     *
+     * @param lines the config file lines, mutated in place
+     * @param newTrustPatterns artifact patterns mapped to the signer ids that must sign them
+     * @param newUnsigned module patterns tolerated via {@code on-no-claim: ignore}
+     */
+    private void spliceRules(List<String> lines, Map<String, List<String>> newTrustPatterns,
+            List<String> newUnsigned) {
+        List<String> newLines = buildRuleLines(newTrustPatterns, newUnsigned);
+        if (newLines.isEmpty()) {
             return;
         }
-        List<String> newLines = new ArrayList<>();
-        newTrustPatterns.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
-                .forEach(entry -> {
-                    String pattern = entry.getKey();
-                    List<String> signerIds = entry.getValue();
-                    if (signerIds.size() == 1) {
-                        newLines.add("  " + pattern + ": " + signerIds.get(0));
-                    } else {
-                        newLines.add("  " + pattern + ": [" + String.join(", ", signerIds) + "]");
-                    }
-                });
-        insertAtSectionEnd(lines, "trust", newLines);
-    }
-
-    private void spliceUnsigned(List<String> lines, List<String> newUnsigned) {
-        if (newUnsigned.isEmpty()) {
-            return;
-        }
-        List<String> newLines = newUnsigned.stream()
-                .distinct().sorted()
-                .map(c -> "  - " + c)
-                .toList();
-        insertAtSectionEnd(lines, "signature-optional", newLines);
+        insertAtSectionEnd(lines, "rules", newLines);
     }
 
     /**
@@ -667,27 +654,54 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
     }
 
     /**
-     * Writes the rules section sorted by artifact pattern. Each rule matches one or more
-     * artifact patterns and requires one or more signers.
+     * Writes the {@code rules} section for a freshly generated config.
+     * <p>
+     * A single {@code rules:} header is emitted exactly once, followed by every rule item: first the
+     * signer requirements derived from the trust patterns, then a tolerant rule for the unsigned
+     * modules. When there is nothing to write — neither trust patterns nor unsigned modules — the
+     * section is omitted entirely so the output never carries an orphaned header.
+     *
+     * @param w the writer
+     * @param trustPatterns artifact patterns mapped to the signer ids that must sign them
+     * @param unsignedCoords module patterns tolerated via {@code on-no-claim: ignore}
      */
-    private void writeTrustSection(PrintWriter w, Map<String, List<String>> trustPatterns) {
-        if (trustPatterns.isEmpty()) {
+    private void writeRulesSection(PrintWriter w, Map<String, List<String>> trustPatterns,
+            List<String> unsignedCoords) {
+        List<String> ruleLines = buildRuleLines(trustPatterns, unsignedCoords);
+        if (ruleLines.isEmpty()) {
             return;
         }
         w.println("rules:");
+        ruleLines.forEach(w::println);
+        w.println();
+    }
+
+    /**
+     * Builds the rule item lines shared by the generate and update paths.
+     * <p>
+     * The ordering is stable: trust requirements first (sorted by pattern), then a single tolerant
+     * rule for the unsigned modules. Each item is a two-space-indented {@code - match:} entry, so the
+     * lines slot directly under a {@code rules:} header.
+     *
+     * @param trustPatterns artifact patterns mapped to the signer ids that must sign them
+     * @param unsignedCoords module patterns tolerated via {@code on-no-claim: ignore}
+     * @return the rule item lines, empty when there is nothing to write
+     */
+    private static List<String> buildRuleLines(Map<String, List<String>> trustPatterns,
+            List<String> unsignedCoords) {
+        List<String> ruleLines = new ArrayList<>();
         trustPatterns.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
                 .forEach(entry -> {
-                    String pattern = entry.getKey();
-                    List<String> signerIds = entry.getValue();
-                    w.println("  - match: [" + pattern + "]");
-                    if (signerIds.size() == 1) {
-                        w.println("    requires: [" + signerIds.get(0) + "]");
-                    } else {
-                        w.println("    requires: [" + String.join(", ", signerIds) + "]");
-                    }
+                    ruleLines.add("  - match: [" + entry.getKey() + "]");
+                    ruleLines.add("    requires: [" + String.join(", ", entry.getValue()) + "]");
                 });
-        w.println();
+        if (!unsignedCoords.isEmpty()) {
+            ruleLines.add("  - match: [" + unsignedCoords.stream().distinct().sorted()
+                    .collect(Collectors.joining(", ")) + "]");
+            ruleLines.add("    on-no-claim: ignore");
+        }
+        return ruleLines;
     }
 
     /**
@@ -735,18 +749,6 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
      */
     private static String userIdComment(String userId) {
         return userId == null ? "" : "  # user ID on the key, unverified: " + userId.replaceAll("\\R", " ");
-    }
-
-    private void writeUnsignedSection(PrintWriter w, List<String> unsignedCoords) {
-        if (unsignedCoords.isEmpty()) {
-            return;
-        }
-        // Unsigned artifacts are represented as rules with on-no-claim: ignore enforcement
-        if (!unsignedCoords.isEmpty()) {
-            w.println("  - match: [" +
-                    unsignedCoords.stream().distinct().sorted().collect(Collectors.joining(", ")) + "]");
-            w.println("    on-no-claim: ignore");
-        }
     }
 
     String generateSignerId(String signerDisplayName, int counter) {

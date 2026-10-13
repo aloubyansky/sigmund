@@ -29,8 +29,20 @@ assert signersCount == 1 : "Should have exactly one signers: section, found ${si
 int rulesCount = yaml.split("rules:").length - 1
 assert rulesCount == 1 : "Should have exactly one rules: section, found ${rulesCount}"
 
+// Round-trip guard: the updated config must stay on the new rules schema and must never emit
+// any of the removed v1 keys, each of which the parser's tripwire hard-errors on. These
+// line-level checks stand in for a reparse (the parser is not on the verify.groovy classpath):
+// a config carrying any of these keys at the top level would fail SigmundConfig.parse.
+def topLevelKeys = yaml.readLines().findAll { !it.startsWith(" ") && it.contains(":") }
+    .collect { it.substring(0, it.indexOf(":")).trim() }
+assert topLevelKeys.contains("rules") : "Updated config must use the rules schema"
+assert !topLevelKeys.contains("trust") : "Updated config must not emit the removed 'trust:' key"
+assert !topLevelKeys.contains("signature-optional") : "Updated config must not emit the removed 'signature-optional:' key"
+assert !topLevelKeys.contains("policy") : "Updated config must not emit the removed 'policy:' key"
+assert !topLevelKeys.contains("artifacts") : "Updated config must not emit the removed 'artifacts:' key"
+
 // Comments should be preserved
 assert yaml.contains("# Trust configuration for update test") : "Header comment should be preserved"
 assert yaml.contains("# Gary Gregory signs commons-lang3") : "Inline comment should be preserved"
 
-println "SUCCESS: updated sigmund.yaml with missing signer, preserved comments, and reported UNKNOWN for jspecify"
+println "SUCCESS: updated sigmund.yaml stays on the rules schema (no v1 keys), preserved comments, and reported UNKNOWN for jspecify"
