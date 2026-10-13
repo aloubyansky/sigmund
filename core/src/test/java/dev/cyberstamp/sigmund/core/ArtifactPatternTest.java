@@ -141,4 +141,17 @@ class ArtifactPatternTest {
             assertThat(ArtifactPattern.parse("*").specificity()).isZero();
         }
     }
+
+    @Test
+    void catchAllMatchesAnythingAtLowestSpecificity() {
+        var star = ArtifactPattern.parse("*");
+        assertThat(star.matches(new ArtifactCoords("any.ns", "x", "", "jar", "9"))).isTrue();
+        assertThat(star.specificity()).isEqualTo(0);
+    }
+
+    @Test
+    void fourSegmentPatternRejected() {
+        assertThatThrownBy(() -> ArtifactPattern.parse("a:b:c:d"))
+                .isInstanceOf(PolicyConfigException.class);
+    }
 }
