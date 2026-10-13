@@ -35,9 +35,11 @@ public record Requirement(List<Clause> clauses, List<String> defaultIssuers) {
     /**
      * Evaluates the verified claims against this requirement.
      * <p>
-     * The requirement is satisfied when every clause is satisfied by at least one claim
-     * (conjunction). A claim is accepted when any clause accepts it, and unaccepted when
-     * none do.
+     * The requirement is satisfied when it has at least one clause and every clause is satisfied by
+     * at least one claim (conjunction). A requirement with no clauses — a catch-all rule that states
+     * no signer — is never satisfied, so an unsigned artifact rolls up to
+     * {@link ArtifactOutcome#NO_CLAIM} and the rule's enforcement decides, rather than reading as
+     * full coverage. A claim is accepted when any clause accepts it, and unaccepted when none do.
      *
      * @param verifiedClaims the claims that verified for the artifact
      * @return the evaluation result indicating whether the requirement was satisfied
@@ -47,8 +49,11 @@ public record Requirement(List<Clause> clauses, List<String> defaultIssuers) {
             verifiedClaims = List.of();
         }
 
-        // Check if every clause has at least one claim that satisfies it (conjunction)
-        boolean satisfied = true;
+        // Check if every clause has at least one claim that satisfies it (conjunction). An empty
+        // requirement is NOT vacuously satisfied: a catch-all rule with no clauses must leave an
+        // unsigned artifact as NO_CLAIM (ADR-007 §2.1) so its enforcement decides, rather than
+        // reading as full coverage.
+        boolean satisfied = !clauses.isEmpty();
         for (Clause clause : clauses) {
             boolean clauseSatisfied = false;
             for (ClaimResult claim : verifiedClaims) {

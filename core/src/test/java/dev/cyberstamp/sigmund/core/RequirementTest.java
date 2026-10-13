@@ -52,6 +52,23 @@ class RequirementTest {
     }
 
     @Test
+    void emptyRequirementNotVacuouslySatisfied() {
+        var req = new Requirement(List.of(), List.of());   // catch-all with no clauses
+        var ev = req.evaluate(List.of());
+        assertThat(ev.satisfied()).isFalse();
+        assertThat(ev.accepted()).isEmpty();
+        assertThat(ev.unaccepted()).isEmpty();
+    }
+
+    @Test
+    void emptyRequirementLeavesAnUnlistedClaimUnaccepted() {
+        var req = new Requirement(List.of(), List.of());
+        var ev = req.evaluate(List.of(claimFrom("mallory")));
+        assertThat(ev.satisfied()).isFalse();
+        assertThat(ev.unaccepted()).hasSize(1);
+    }
+
+    @Test
     void emptyClaimsListUnsatisfied() {
         var req = requirement(clause("alice"));
         var ev = req.evaluate(List.of());

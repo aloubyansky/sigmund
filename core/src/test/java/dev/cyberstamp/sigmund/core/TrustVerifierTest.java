@@ -134,6 +134,21 @@ class TrustVerifierTest {
         }
 
         @Test
+        void anUnsignedArtifactUnderARequiresLessCatchAllIsNoClaimAndTolerated() {
+            var spec = new TrustPolicySpec(
+                    List.of(new RuleSpec(List.of(ArtifactPattern.parse("*")), List.of(),
+                            Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), "rules[0]")),
+                    ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
+            TrustPolicy policy = RulePolicy.compile(spec, SignersConfig.EMPTY);
+
+            ArtifactResult result = assess(policy, List.of());
+
+            assertThat(result.outcome()).isEqualTo(ArtifactOutcome.NO_CLAIM);
+            assertThat(result.matchedRule()).isNotNull();
+            assertThat(VerificationReport.of(List.of(result), policy, true).blocks()).isFalse();
+        }
+
+        @Test
         void anUnavailableKeyLeavesTheVerdictUndecided() {
             ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS),
                     List.of(evidenceFile),
