@@ -148,6 +148,28 @@ class TrustVerifierTest {
             assertThat(VerificationReport.of(List.of(result), policy, true).blocks()).isFalse();
         }
 
+        /**
+         * The same requires-less catch-all tolerates an <em>unsigned</em> straggler via
+         * {@code on-no-claim: ignore}, but a <em>signed</em> straggler is a different case: under the
+         * default {@code extra-claims: reject} a verified claim from a signer no clause named is an
+         * unaccepted surplus claim, so the artifact rolls up to {@link ArtifactOutcome#UNSATISFIED},
+         * which {@code on-no-claim} does not relax. This fails closed and blocks — intended, and
+         * pinned here so the surprise is caught if it ever changes (ADR-007 Enforcement).
+         */
+        @Test
+        void aSignedStragglerUnderARequiresLessCatchAllIsUnsatisfiedAndBlocks() {
+            var spec = new TrustPolicySpec(
+                    List.of(new RuleSpec(List.of(ArtifactPattern.parse("*")), List.of(),
+                            Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), "rules[0]")),
+                    ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
+            TrustPolicy policy = RulePolicy.compile(spec, SignersConfig.EMPTY);
+
+            ArtifactResult result = assess(policy, List.of(evidenceFile), verifiedBy(ALICE));
+
+            assertThat(result.outcome()).isEqualTo(ArtifactOutcome.UNSATISFIED);
+            assertThat(VerificationReport.of(List.of(result), policy, true).blocks()).isTrue();
+        }
+
         @Test
         void anUnavailableKeyLeavesTheVerdictUndecided() {
             ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS),

@@ -198,6 +198,13 @@ with an important difference: the artifact is still verified and still counted a
 — so a `FAILED` signature on a tolerated artifact still fails the build. Today
 those artifacts are filtered out before assessment and never looked at.
 
+A requires-less catch-all (`match: ["*"]` with no `requires`) tolerates an
+*unsigned* straggler through `on-no-claim`, but a straggler that *is* signed by a
+signer no clause named is `UNSATISFIED` under the default `extra-claims: reject`,
+not `NO_CLAIM`, so `on-no-claim` does not relax it and the build blocks — fail-closed
+by design. To tolerate signed stragglers too, also set `on-unsatisfied: ignore`
+(or switch to `extra-claims: ignore`).
+
 Enforcement decides build failure only. It never changes an outcome, so observe
 mode (§5.4) and VSA emission (§6) report the same results a strict run would.
 
