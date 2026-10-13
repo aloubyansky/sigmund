@@ -17,29 +17,60 @@ import java.util.List;
  * must succeed.
  *
  * @param clauses the clauses that must all be satisfied
+ * @param defaultIssuers the issuers trusted for identity credentials that do not name their own
  */
-public record Requirement(List<Clause> clauses) {
+public record Requirement(List<Clause> clauses, List<String> defaultIssuers) {
 
     /**
      * Creates a requirement with defensive copies.
      *
      * @param clauses the clauses in CNF form
+     * @param defaultIssuers the trusted default issuers
      */
     public Requirement {
         clauses = clauses == null ? List.of() : List.copyOf(clauses);
+        defaultIssuers = defaultIssuers == null ? List.of() : List.copyOf(defaultIssuers);
     }
 
     /**
      * Evaluates the verified claims against this requirement.
      * <p>
-     * This is a temporary stub for Task 3. The actual CNF evaluation logic will be implemented
-     * in Task 4.
+     * The requirement is satisfied when every clause is satisfied by at least one claim
+     * (conjunction). A claim is accepted when any clause accepts it, and unaccepted when
+     * none do.
      *
      * @param verifiedClaims the claims that verified for the artifact
      * @return the evaluation result indicating whether the requirement was satisfied
-     * @throws UnsupportedOperationException always, until Task 4 implements the logic
      */
     public RequirementEvaluator.Evaluation evaluate(List<ClaimResult> verifiedClaims) {
-        throw new UnsupportedOperationException("Task 4: CNF evaluation not yet implemented");
+        if (verifiedClaims == null) {
+            verifiedClaims = List.of();
+        }
+
+        // Check if every clause has at least one claim that satisfies it (conjunction)
+        boolean satisfied = true;
+        for (Clause clause : clauses) {
+            boolean clauseSatisfied = false;
+            for (ClaimResult claim : verifiedClaims) {
+                if (clause.accepts(claim, defaultIssuers)) {
+                    clauseSatisfied = true;
+                    break;
+                }
+            }
+            if (!clauseSatisfied) {
+                satisfied = false;
+                break;
+            }
+        }
+
+        // Partition claims into accepted and unaccepted
+        List<ClaimResult> accepted = verifiedClaims.stream()
+                .filter(claim -> clauses.stream().anyMatch(clause -> clause.accepts(claim, defaultIssuers)))
+                .toList();
+        List<ClaimResult> unaccepted = verifiedClaims.stream()
+                .filter(claim -> clauses.stream().noneMatch(clause -> clause.accepts(claim, defaultIssuers)))
+                .toList();
+
+        return new RequirementEvaluator.Evaluation(satisfied, accepted, unaccepted);
     }
 }

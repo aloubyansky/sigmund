@@ -14,7 +14,7 @@ class RuleTest {
     void ruleScoresByBestMatchingPattern() {
         var rule = new Rule(
                 List.of(ArtifactPattern.parse("com.acme.*"), ArtifactPattern.parse("com.acme:lib")),
-                new Requirement(List.of()), Map.of(), "rules[0]");
+                new Requirement(List.of(), List.of()), Map.of(), "rules[0]");
         var c = new ArtifactCoords("com.acme", "lib", "", "jar", "1.0");
         assertThat(rule.matches(c)).isTrue();
         assertThat(rule.specificity(c)).isEqualTo(ArtifactPattern.parse("com.acme:lib").specificity());
