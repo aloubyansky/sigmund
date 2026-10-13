@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -140,9 +141,12 @@ class ClaimIdentityResolverTest {
     }
 
     private static TrustPolicy policy(SignerIdentity signer, List<String> issuers) {
-        return new DefaultTrustPolicy(Map.of("org.example", List.of(signer)), List.of(),
-                ListedEvidencePolicy.ALL, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
-                issuers);
+        var signers = new SignersConfig(Map.of(signer.id(), signer));
+        var spec = new TrustPolicySpec(
+                List.of(new RuleSpec(List.of(ArtifactPattern.parse("org.example")),
+                        List.of(Set.of(signer.id())), Map.of(), "rules[0]")),
+                ClaimSetMode.ALL_CLAIMS, Map.of(), issuers, true);
+        return RulePolicy.compile(spec, signers);
     }
 
     private static boolean satisfied(TrustPolicy policy, List<ClaimResult> claims) {

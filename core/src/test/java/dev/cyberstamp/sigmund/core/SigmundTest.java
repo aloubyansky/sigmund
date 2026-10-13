@@ -472,12 +472,8 @@ class SigmundTest {
             var tool = mockVerifyingTool("gpg", format, true, result);
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
-                var policy = new DefaultTrustPolicy(
-                        Map.of("org.example:*",
-                                List.of(new SignerIdentity("alice",
-                                        List.of(new KeyCredential("openpgp4", "4AEE18F83AFDEB23000000000000000000000000"))))),
-                        List.of(), ListedEvidencePolicy.ANY, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
-                        List.of());
+                var policy = ruleForNamespace("alice",
+                        new KeyCredential("openpgp4", "4AEE18F83AFDEB23000000000000000000000000"));
                 TrustVerifier verifier = sigmund.verifier(policy);
 
                 Path artifact = createTempFile("test.jar");
@@ -499,12 +495,8 @@ class SigmundTest {
             var tool = mockVerifyingTool("gpg", format, true, result);
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
-                var policy = new DefaultTrustPolicy(
-                        Map.of("org.example:*",
-                                List.of(new SignerIdentity("alice",
-                                        List.of(new KeyCredential("openpgp4", "4AEE18F83AFDEB23000000000000000000000000"))))),
-                        List.of(), ListedEvidencePolicy.ANY, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
-                        List.of());
+                var policy = ruleForNamespace("alice",
+                        new KeyCredential("openpgp4", "4AEE18F83AFDEB23000000000000000000000000"));
                 TrustVerifier verifier = sigmund.verifier(policy);
 
                 Path artifact = createTempFile("test2.jar");
@@ -521,7 +513,7 @@ class SigmundTest {
             try (var sigmund = Sigmund.builder()
                     .addTool(mockTool("gpg", true, false, Set.of("openpgp4")))
                     .build()) {
-                TrustVerifier verifier = sigmund.verifier(DefaultTrustPolicy.EMPTY);
+                TrustVerifier verifier = sigmund.verifier(RulePolicy.EMPTY);
 
                 Path artifact = createTempFile("test3.jar");
                 ArtifactCoords artifactId = testArtifact("org.example", "lib", "1.0");
@@ -1220,6 +1212,15 @@ class SigmundTest {
 
     private static ArtifactCoords testArtifact(String ns, String name, String version) {
         return new ArtifactCoords(ns, name, "", "jar", version);
+    }
+
+    private static TrustPolicy ruleForNamespace(String signerId, Credential credential) {
+        var signer = new SignerIdentity(signerId, List.of(credential));
+        var spec = new TrustPolicySpec(
+                List.of(new RuleSpec(List.of(ArtifactPattern.parse("org.example:*")),
+                        List.of(Set.of(signerId)), Map.of(), "rules[0]")),
+                ClaimSetMode.ANY_CLAIM, Map.of(), List.of(), true);
+        return RulePolicy.compile(spec, new SignersConfig(Map.of(signerId, signer)));
     }
 
     /**

@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -78,11 +79,13 @@ class TrustVerifierTest {
         return claim(ClaimOutcome.VERIFIED, null, signer.credentials());
     }
 
-    private static TrustPolicy expecting(SignerIdentity signer,
-            ListedEvidencePolicy listedEvidence) {
-        return new DefaultTrustPolicy(Map.of(COORDS.namespace(), List.of(signer)), List.of(),
-                listedEvidence, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
-                List.of());
+    private static TrustPolicy expecting(SignerIdentity signer, ClaimSetMode extraClaims) {
+        var signers = new SignersConfig(Map.of(signer.id(), signer));
+        var spec = new TrustPolicySpec(
+                List.of(new RuleSpec(List.of(ArtifactPattern.parse(COORDS.namespace())),
+                        List.of(Set.of(signer.id())), Map.of(), "rules[0]")),
+                extraClaims, Map.of(), List.of(), true);
+        return RulePolicy.compile(spec, signers);
     }
 
     @Nested
@@ -90,7 +93,7 @@ class TrustVerifierTest {
 
         @Test
         void aClaimFromAnExpectedSignerSatisfiesThePolicy() {
-            ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ALL),
+            ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS),
                     List.of(evidenceFile), verifiedBy(ALICE));
 
             assertThat(result.outcome()).isEqualTo(ArtifactOutcome.SATISFIED);
@@ -101,7 +104,7 @@ class TrustVerifierTest {
             SignerIdentity mallory = new SignerIdentity("mallory",
                     List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, "DEADBEEF00000000000000000000000000000000")));
 
-            ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ALL),
+            ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS),
                     List.of(evidenceFile), verifiedBy(mallory));
 
             assertThat(result.outcome()).isEqualTo(ArtifactOutcome.UNSATISFIED);
@@ -109,7 +112,7 @@ class TrustVerifierTest {
 
         @Test
         void aFailedSignatureIsTheAttackSignal() {
-            ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ALL),
+            ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS),
                     List.of(evidenceFile), claim(ClaimOutcome.FAILED, null, List.of()));
 
             assertThat(result.outcome()).isEqualTo(ArtifactOutcome.FAILED);
@@ -117,14 +120,14 @@ class TrustVerifierTest {
 
         @Test
         void noEvidenceAtAllIsNoClaimRatherThanAFailure() {
-            ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ALL), List.of());
+            ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS), List.of());
 
             assertThat(result.outcome()).isEqualTo(ArtifactOutcome.NO_CLAIM);
         }
 
         @Test
         void anArtifactNoRuleCoversIsNotConfigured() {
-            ArtifactResult result = assess(DefaultTrustPolicy.EMPTY, List.of(evidenceFile),
+            ArtifactResult result = assess(RulePolicy.EMPTY, List.of(evidenceFile),
                     verifiedBy(ALICE));
 
             assertThat(result.outcome()).isEqualTo(ArtifactOutcome.NOT_CONFIGURED);
@@ -132,7 +135,7 @@ class TrustVerifierTest {
 
         @Test
         void anUnavailableKeyLeavesTheVerdictUndecided() {
-            ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ALL),
+            ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS),
                     List.of(evidenceFile),
                     claim(ClaimOutcome.INDETERMINATE, IndeterminateReason.KEY_UNAVAILABLE,
                             List.of()));
@@ -143,14 +146,14 @@ class TrustVerifierTest {
     }
 
     @Nested
-    class ClaimSetMode {
+    class ExtraClaimsHandling {
 
         @Test
         void allClaimsRejectsEvidenceFromAnUnlistedSigner() {
             SignerIdentity stranger = new SignerIdentity("stranger",
                     List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, "BEEF000000000000000000000000000000000000")));
 
-            ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ALL),
+            ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS),
                     List.of(evidenceFile), verifiedBy(ALICE), verifiedBy(stranger));
 
             assertThat(result.outcome()).isEqualTo(ArtifactOutcome.UNSATISFIED);
@@ -161,7 +164,7 @@ class TrustVerifierTest {
             SignerIdentity stranger = new SignerIdentity("stranger",
                     List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, "BEEF000000000000000000000000000000000000")));
 
-            ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ANY),
+            ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ANY_CLAIM),
                     List.of(evidenceFile), verifiedBy(ALICE), verifiedBy(stranger));
 
             assertThat(result.outcome()).isEqualTo(ArtifactOutcome.SATISFIED);
@@ -173,7 +176,7 @@ class TrustVerifierTest {
 
         @Test
         void theSubjectIsIdentifiedByTheBytesThatWereVerified() throws IOException {
-            ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ALL),
+            ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS),
                     List.of(evidenceFile), verifiedBy(ALICE));
 
             assertThat(result.subject().coords()).isEqualTo(COORDS);
@@ -183,7 +186,7 @@ class TrustVerifierTest {
 
         @Test
         void everyClaimIsKeptIncludingOnesThatDidNotContribute() {
-            ArtifactResult result = assess(expecting(ALICE, ListedEvidencePolicy.ANY),
+            ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ANY_CLAIM),
                     List.of(evidenceFile), verifiedBy(ALICE),
                     claim(ClaimOutcome.INDETERMINATE,
                             IndeterminateReason.UNSUPPORTED_ALGORITHM, List.of()));
