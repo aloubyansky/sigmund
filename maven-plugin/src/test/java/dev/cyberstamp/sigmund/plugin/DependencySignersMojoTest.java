@@ -7,7 +7,9 @@ import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ClaimOutcome;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
+import dev.cyberstamp.sigmund.core.RulePolicy;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
+import dev.cyberstamp.sigmund.core.TrustPolicy;
 import dev.cyberstamp.sigmund.core.UnverifiedResult;
 import dev.cyberstamp.sigmund.core.VerifyResult;
 import dev.cyberstamp.sigmund.plugin.SignatureInspector.SignedArtifact;
@@ -235,7 +237,9 @@ class DependencySignersMojoTest {
             mojo.writeTrustConfigYaml(List.of(noClaim, signed), configFile.toFile());
 
             SigmundConfig config = SigmundConfig.parse(configFile);
-            assertThat(config.trustPolicy().isUnsignedAllowed(LIB_COORDS)).isTrue();
+            TrustPolicy policy = RulePolicy.compile(config.trustPolicySpec(), config.signers());
+            // Check that a rule matches for the unsigned artifact
+            assertThat(policy.matchRule(LIB_COORDS)).isNotNull();
         }
     }
 
@@ -259,7 +263,9 @@ class DependencySignersMojoTest {
                     "# user ID on the key, unverified: User <user@example.com>")
                     .doesNotContain("email:", "name:");
             SigmundConfig config = SigmundConfig.parse(configFile);
-            assertThat(config.trustPolicy().expectedSigners(coords)).hasSize(1);
+            TrustPolicy policy = RulePolicy.compile(config.trustPolicySpec(), config.signers());
+            // Check that a rule exists for the artifact
+            assertThat(policy.matchRule(coords)).isNotNull();
         }
 
         @Test
@@ -274,7 +280,8 @@ class DependencySignersMojoTest {
 
             SigmundConfig config = SigmundConfig.parse(configFile);
             assertThat(config.signers().isEmpty()).isTrue();
-            assertThat(config.trustPolicy().expectedSigners(coords)).isEmpty();
+            // With no full fingerprint, no rule should be generated
+            assertThat(config.trustPolicySpec().rules()).isEmpty();
         }
 
         private void generate(List<SignedArtifact> results, Path configFile) throws Exception {

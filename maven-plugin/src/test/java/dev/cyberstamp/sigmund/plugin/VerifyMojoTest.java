@@ -6,21 +6,21 @@ import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ArtifactOutcome;
 import dev.cyberstamp.sigmund.core.ArtifactResult;
 import dev.cyberstamp.sigmund.core.ArtifactSubject;
-import dev.cyberstamp.sigmund.core.AttesterRole;
 import dev.cyberstamp.sigmund.core.ClaimOutcome;
 import dev.cyberstamp.sigmund.core.ClaimResult;
+import dev.cyberstamp.sigmund.core.ClaimSetMode;
 import dev.cyberstamp.sigmund.core.ClaimTimeSource;
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.DigestSet;
+import dev.cyberstamp.sigmund.core.EnforcementAction;
 import dev.cyberstamp.sigmund.core.Evidence;
 import dev.cyberstamp.sigmund.core.EvidenceRef;
 import dev.cyberstamp.sigmund.core.KeyCredential;
-import dev.cyberstamp.sigmund.core.ListedEvidencePolicy;
-import dev.cyberstamp.sigmund.core.SignerIdentity;
+import dev.cyberstamp.sigmund.core.MatchedRule;
+import dev.cyberstamp.sigmund.core.RequirementEvaluator;
+import dev.cyberstamp.sigmund.core.Rule;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
 import dev.cyberstamp.sigmund.core.TrustRootRef;
-import dev.cyberstamp.sigmund.core.UnlistedEvidencePolicy;
-import dev.cyberstamp.sigmund.core.UntrustedPolicy;
 import dev.cyberstamp.sigmund.core.VerificationReport;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -94,14 +94,14 @@ class VerifyMojoTest {
             ArtifactCoords coords = new ArtifactCoords("com.example", "lib", "", "jar", "1.0");
             ArtifactResult result = new ArtifactResult(
                     new ArtifactSubject(coords, DigestSet.sha256(FP.toLowerCase())),
-                    outcome, null, List.of(claims), Instant.EPOCH);
-            return VerificationReport.of(List.of(result), permissivePolicy());
+                    outcome, null, null, List.of(claims), Instant.EPOCH);
+            return VerificationReport.of(List.of(result), permissivePolicy(), false);
         }
 
         private ClaimResult verifiedClaim() {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
                     List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)),
-                    "Alice <alice@example.com>", AttesterRole.UNKNOWN,
+                    "Alice <alice@example.com>",
                     TrustRootRef.certD(Path.of("/home/alice/.local/share/pgp.cert.d")),
                     new EvidenceRef(Path.of("lib-1.0.jar.asc"),
                             DigestSet.sha256(FP.toLowerCase()), Evidence.SOURCE_SIDECAR),
@@ -183,28 +183,29 @@ class VerifyMojoTest {
         private TrustPolicy permissivePolicy() {
             return new TrustPolicy() {
                 @Override
-                public List<SignerIdentity> expectedSigners(ArtifactCoords artifact) {
+                public Rule matchRule(ArtifactCoords coords) {
+                    return null;
+                }
+
+                @Override
+                public RequirementEvaluator requirements() {
+                    return (coords, claims) -> null;
+                }
+
+                @Override
+                public ClaimSetMode claimSetMode() {
+                    return ClaimSetMode.ALL_CLAIMS;
+                }
+
+                @Override
+                public List<String> issuers() {
                     return List.of();
                 }
 
                 @Override
-                public boolean isUnsignedAllowed(ArtifactCoords artifact) {
-                    return true;
-                }
-
-                @Override
-                public ListedEvidencePolicy listedEvidence() {
-                    return ListedEvidencePolicy.ALL;
-                }
-
-                @Override
-                public UnlistedEvidencePolicy unlistedEvidence() {
-                    return UnlistedEvidencePolicy.IGNORE;
-                }
-
-                @Override
-                public UntrustedPolicy onUntrusted() {
-                    return UntrustedPolicy.WARN;
+                public EnforcementAction enforcementFor(ArtifactOutcome outcome,
+                        MatchedRule matchedRule, boolean present) {
+                    return EnforcementAction.IGNORE;
                 }
             };
         }

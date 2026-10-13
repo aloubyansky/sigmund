@@ -69,7 +69,7 @@ class TrustVerifierTest {
     private static ClaimResult claim(ClaimOutcome outcome, IndeterminateReason reason,
             List<Credential> proven) {
         return new ClaimResult("openpgp", outcome, reason, proven, "Alice <alice@example.com>",
-                AttesterRole.UNKNOWN, TrustRootRef.unknown(),
+                TrustRootRef.unknown(),
                 new EvidenceRef(evidenceFile, DigestSet.sha256(FP.toLowerCase()),
                         Evidence.SOURCE_SIDECAR),
                 null, ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");

@@ -114,7 +114,6 @@ class RequirementTest {
                 null,
                 signer.credentials(),
                 signerId + " <" + signerId + "@example.com>",
-                AttesterRole.UNKNOWN,
                 TrustRootRef.unknown(),
                 new EvidenceRef(DUMMY_EVIDENCE, DigestSet.sha256("dummy"), Evidence.SOURCE_SIDECAR),
                 null,

@@ -63,7 +63,7 @@ class VerificationReportTest {
         private static ClaimResult by(String attester, String fingerprint) {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
                     List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, fingerprint)),
-                    attester, AttesterRole.UNKNOWN,
+                    attester,
                     TrustRootRef.certD(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
                     Instant.parse("2026-03-12T10:04:11Z"), ClaimTimeSource.SIGNER,
                     Instant.EPOCH, "Ed25519", "bc");
@@ -146,9 +146,9 @@ class VerificationReportTest {
         }
 
         @Test
-        void aClaimThatCouldNotBeDecidedCarriesItsReasonAndRole() {
+        void aClaimThatCouldNotBeDecidedCarriesItsReason() {
             ClaimResult unresolved = new ClaimResult("openpgp", ClaimOutcome.INDETERMINATE,
-                    IndeterminateReason.KEY_UNAVAILABLE, List.of(), null, AttesterRole.PUBLISHER,
+                    IndeterminateReason.KEY_UNAVAILABLE, List.of(), null,
                     TrustRootRef.unknown(), REF, null, ClaimTimeSource.SIGNER, Instant.EPOCH,
                     null, "sq");
 
@@ -157,7 +157,7 @@ class VerificationReportTest {
                             IndeterminateReason.KEY_UNAVAILABLE, unresolved)));
 
             assertThat(groups.get(0).summary()).containsExactly(
-                    "openpgp INDETERMINATE (KEY_UNAVAILABLE) by sq [publisher]");
+                    "openpgp INDETERMINATE (KEY_UNAVAILABLE) by sq");
             assertThat(groups.get(0).detail()).isEmpty();
         }
 
@@ -184,7 +184,7 @@ class VerificationReportTest {
         private static ClaimResult detailedClaim(Instant claimTime) {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
                     List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)),
-                    "Alice <alice@example.com>", AttesterRole.PUBLISHER,
+                    "Alice <alice@example.com>",
                     TrustRootRef.certD(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
                     claimTime, ClaimTimeSource.SIGNER, Instant.parse("2026-09-24T08:00:00Z"),
                     "Ed25519", "bc");

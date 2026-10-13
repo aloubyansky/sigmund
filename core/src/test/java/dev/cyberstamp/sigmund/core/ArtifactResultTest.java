@@ -22,7 +22,7 @@ class ArtifactResultTest {
 
     private static ClaimResult claim(ClaimOutcome outcome, IndeterminateReason reason) {
         return new ClaimResult("openpgp", outcome, reason, List.of(), null,
-                AttesterRole.UNKNOWN, TrustRootRef.unknown(), REF, null,
+                TrustRootRef.unknown(), REF, null,
                 ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");
     }
 

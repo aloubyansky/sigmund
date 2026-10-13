@@ -18,7 +18,7 @@ class OutcomeRollupTest {
 
     private static ClaimResult claim(ClaimOutcome outcome, IndeterminateReason reason) {
         return new ClaimResult("openpgp", outcome, reason, List.of(), null,
-                AttesterRole.UNKNOWN, TrustRootRef.unknown(), REF, null,
+                TrustRootRef.unknown(), REF, null,
                 ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");
     }
 
@@ -29,7 +29,7 @@ class OutcomeRollupTest {
     /** Distinct verified claims: records with identical components are equal. */
     private static ClaimResult verifiedBy(String attester) {
         return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null, List.of(), attester,
-                AttesterRole.UNKNOWN, TrustRootRef.unknown(), REF, null,
+                TrustRootRef.unknown(), REF, null,
                 ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");
     }
 

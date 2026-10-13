@@ -156,7 +156,7 @@ class CredentialMatchingTest {
 
     private static ClaimResult claim(List<Credential> provenCredentials) {
         return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null, provenCredentials, null,
-                AttesterRole.UNKNOWN, TrustRootRef.unknown(), EVIDENCE_REF, null,
+                TrustRootRef.unknown(), EVIDENCE_REF, null,
                 ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");
     }
 }

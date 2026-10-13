@@ -4,14 +4,11 @@ import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ArtifactResult;
 import dev.cyberstamp.sigmund.core.AssessmentRequest;
 import dev.cyberstamp.sigmund.core.DiscoveryConfig;
-import dev.cyberstamp.sigmund.core.ListedEvidencePolicy;
+import dev.cyberstamp.sigmund.core.RulePolicy;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
-import dev.cyberstamp.sigmund.core.SignerIdentity;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
 import dev.cyberstamp.sigmund.core.TrustVerifier;
-import dev.cyberstamp.sigmund.core.UnlistedEvidencePolicy;
-import dev.cyberstamp.sigmund.core.UntrustedPolicy;
 import dev.cyberstamp.sigmund.core.VerificationReport;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -27,12 +24,6 @@ import org.apache.maven.plugins.annotations.Parameter;
 
 @Mojo(name = "verify", defaultPhase = LifecyclePhase.VALIDATE, threadSafe = true)
 public class VerifyMojo extends AbstractDependencyMojo {
-
-    @Parameter(property = "sigmund.onUntrusted")
-    private String onUntrusted;
-
-    @Parameter(property = "sigmund.listedEvidence")
-    private String listedEvidence;
 
     @Parameter(property = "sigmund.verifyPomFiles", defaultValue = "false")
     private boolean verifyPomFiles;
@@ -53,7 +44,7 @@ public class VerifyMojo extends AbstractDependencyMojo {
         }
 
         SigmundConfig config = loadAndValidateConfig();
-        TrustPolicy trustPolicy = applyPolicyOverrides(config.trustPolicy());
+        TrustPolicy trustPolicy = RulePolicy.compile(config.trustPolicySpec(), config.signers());
         DiscoveryConfig discoveryConfig = resolveDiscoveryConfig(config.discoveryConfig());
 
         try (Sigmund sigmund = buildSigmund(discoveryConfig, mergeToolOverrides(config.toolsConfig()))) {
@@ -84,7 +75,7 @@ public class VerifyMojo extends AbstractDependencyMojo {
 
             List<ArtifactResult> results = verifier.assessAll(requests);
 
-            VerificationReport report = VerificationReport.of(results, trustPolicy);
+            VerificationReport report = VerificationReport.of(results, trustPolicy, config.trustPolicySpec().present());
             reportResults(report);
             failIfNeeded(report);
         } catch (Exception e) {
@@ -197,56 +188,6 @@ public class VerifyMojo extends AbstractDependencyMojo {
         return config;
     }
 
-    /**
-     * Applies Maven property overrides ({@code onUntrusted}, {@code listedEvidence})
-     * to the trust policy from the config file. If no overrides are set, returns the
-     * policy unchanged.
-     */
-    private TrustPolicy applyPolicyOverrides(TrustPolicy filePolicy)
-            throws MojoExecutionException {
-        UntrustedPolicy effectiveUntrusted = parseUntrustedOverride(filePolicy);
-        ListedEvidencePolicy effectiveListed = parseListedEvidenceOverride(filePolicy);
-
-        if (effectiveUntrusted == filePolicy.onUntrusted()
-                && effectiveListed == filePolicy.listedEvidence()) {
-            return filePolicy;
-        }
-
-        return new OverrideTrustPolicy(filePolicy, effectiveListed, filePolicy.unlistedEvidence(), effectiveUntrusted);
-    }
-
-    private UntrustedPolicy parseUntrustedOverride(TrustPolicy filePolicy)
-            throws MojoExecutionException {
-        if (onUntrusted == null) {
-            return filePolicy.onUntrusted();
-        }
-        if ("fail".equalsIgnoreCase(onUntrusted)) {
-            return UntrustedPolicy.FAIL;
-        }
-        if ("warn".equalsIgnoreCase(onUntrusted)) {
-            return UntrustedPolicy.WARN;
-        }
-        throw new MojoExecutionException(
-                "Invalid sigmund.onUntrusted value '" + onUntrusted
-                        + "': must be 'fail' or 'warn'");
-    }
-
-    private ListedEvidencePolicy parseListedEvidenceOverride(TrustPolicy filePolicy)
-            throws MojoExecutionException {
-        if (listedEvidence == null) {
-            return filePolicy.listedEvidence();
-        }
-        if ("all".equalsIgnoreCase(listedEvidence)) {
-            return ListedEvidencePolicy.ALL;
-        }
-        if ("any".equalsIgnoreCase(listedEvidence)) {
-            return ListedEvidencePolicy.ANY;
-        }
-        throw new MojoExecutionException(
-                "Invalid sigmund.listedEvidence value '" + listedEvidence
-                        + "': must be 'all' or 'any'");
-    }
-
     private static final int LOG_INFO = 0;
     private static final int LOG_WARN = 1;
     private static final int LOG_ERROR = 2;
@@ -256,28 +197,6 @@ public class VerifyMojo extends AbstractDependencyMojo {
             case LOG_ERROR -> getLog().error(line);
             case LOG_WARN -> getLog().warn(line);
             default -> getLog().info(line);
-        }
-    }
-
-    /**
-     * A delegating {@link TrustPolicy} that overrides {@code listedEvidence}
-     * and {@code onUntrusted} from Maven property settings while keeping the original
-     * trust mappings and unsigned patterns.
-     */
-    private record OverrideTrustPolicy(
-            TrustPolicy delegate,
-            ListedEvidencePolicy listedEvidence,
-            UnlistedEvidencePolicy unlistedEvidence,
-            UntrustedPolicy onUntrusted) implements TrustPolicy {
-
-        @Override
-        public List<SignerIdentity> expectedSigners(ArtifactCoords artifact) {
-            return delegate.expectedSigners(artifact);
-        }
-
-        @Override
-        public boolean isUnsignedAllowed(ArtifactCoords artifact) {
-            return delegate.isUnsignedAllowed(artifact);
         }
     }
 }

@@ -9,6 +9,7 @@ import dev.cyberstamp.sigmund.core.IndeterminateReason;
 import dev.cyberstamp.sigmund.core.KeyCredential;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
 import dev.cyberstamp.sigmund.core.PolicyConfigException;
+import dev.cyberstamp.sigmund.core.RulePolicy;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
@@ -469,7 +470,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             throw new MojoExecutionException("Failed to parse config: " + configFile, e);
         }
 
-        TrustPolicy trustPolicy = existing.trustPolicy();
+        TrustPolicy trustPolicy = RulePolicy.compile(existing.trustPolicySpec(), existing.signers());
 
         Map<ArtifactCoords, List<SignedArtifact>> byArtifact = new HashMap<>();
         for (SignedArtifact r : results) {
@@ -485,8 +486,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             ArtifactCoords coords = entry.getKey();
             List<SignedArtifact> sigEntries = entry.getValue();
 
-            if (trustPolicy.isUnsignedAllowed(coords)
-                    || !trustPolicy.expectedSigners(coords).isEmpty()) {
+            if (trustPolicy.matchRule(coords) != null) {
                 continue;
             }
 
@@ -667,23 +667,24 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
     }
 
     /**
-     * Writes the trust section sorted by artifact pattern. When an artifact has
-     * multiple signers, they are emitted as a YAML array.
+     * Writes the rules section sorted by artifact pattern. Each rule matches one or more
+     * artifact patterns and requires one or more signers.
      */
     private void writeTrustSection(PrintWriter w, Map<String, List<String>> trustPatterns) {
         if (trustPatterns.isEmpty()) {
             return;
         }
-        w.println("trust:");
+        w.println("rules:");
         trustPatterns.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
                 .forEach(entry -> {
                     String pattern = entry.getKey();
                     List<String> signerIds = entry.getValue();
+                    w.println("  - match: [" + pattern + "]");
                     if (signerIds.size() == 1) {
-                        w.println("  " + pattern + ": " + signerIds.get(0));
+                        w.println("    requires: [" + signerIds.get(0) + "]");
                     } else {
-                        w.println("  " + pattern + ": [" + String.join(", ", signerIds) + "]");
+                        w.println("    requires: [" + String.join(", ", signerIds) + "]");
                     }
                 });
         w.println();
@@ -740,8 +741,12 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         if (unsignedCoords.isEmpty()) {
             return;
         }
-        w.println("signature-optional:");
-        unsignedCoords.stream().distinct().sorted().forEach(c -> w.println("  - " + c));
+        // Unsigned artifacts are represented as rules with on-no-claim: ignore enforcement
+        if (!unsignedCoords.isEmpty()) {
+            w.println("  - match: [" +
+                    unsignedCoords.stream().distinct().sorted().collect(Collectors.joining(", ")) + "]");
+            w.println("    on-no-claim: ignore");
+        }
     }
 
     String generateSignerId(String signerDisplayName, int counter) {

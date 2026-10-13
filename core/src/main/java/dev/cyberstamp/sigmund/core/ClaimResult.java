@@ -9,9 +9,9 @@ import java.util.List;
  *
  * <p>
  * A result that changes between runs has to be explainable from the record: which claim was
- * checked, who attested it and in what capacity, which trust root answered, which evidence
- * file it came from, when the claim was made and who said so. Recording only a verdict leaves
- * a differing outcome indistinguishable from a bug.
+ * checked, who attested it, which trust root answered, which evidence file it came from, when
+ * the claim was made and who said so. Recording only a verdict leaves a differing outcome
+ * indistinguishable from a bug.
  *
  * <p>
  * This is deliberately not the artifact-level view: a claim is never {@code NO_CLAIM} and is
@@ -26,7 +26,6 @@ import java.util.List;
  *        verified; a claim left indeterminate because an identity could not be looked up
  *        keeps the key credentials its signature proved, for the report
  * @param attesterDisplayName a human-readable attester description, or {@code null}
- * @param role the capacity the attester acted in
  * @param trustRoot the trust root the claim was verified against
  * @param evidence the evidence the claim was parsed from
  * @param claimTime when the claim was made, or {@code null} when the evidence records none
@@ -41,7 +40,6 @@ public record ClaimResult(
         IndeterminateReason reason,
         List<Credential> attesterCredentials,
         String attesterDisplayName,
-        AttesterRole role,
         TrustRootRef trustRoot,
         EvidenceRef evidence,
         Instant claimTime,
@@ -76,7 +74,6 @@ public record ClaimResult(
         attesterCredentials = attesterCredentials == null
                 ? List.of()
                 : List.copyOf(attesterCredentials);
-        role = role == null ? AttesterRole.UNKNOWN : role;
         trustRoot = trustRoot == null ? TrustRootRef.unknown() : trustRoot;
     }
 
@@ -87,9 +84,7 @@ public record ClaimResult(
      * The claim supplies its kind and its time; the tool's result supplies the outcome, and the
      * tool itself supplies the credentials the claim proved — that mapping belongs to the tool
      * ({@link SignatureTool#extractCredentials(VerifyResult)}), because only it knows what its
-     * own result type establishes. Role is left {@link AttesterRole#UNKNOWN} here — deriving it is a
-     * policy-time decision, because the issuer that asserted an identity is what says in which
-     * capacity it was acting.
+     * own result type establishes.
      *
      * @param claim the claim that was verified
      * @param kind the format that produced the claim
@@ -105,7 +100,7 @@ public record ClaimResult(
             List<Credential> provenCredentials, EvidenceRef evidence, TrustRootRef trustRoot,
             String verifiedBy, Instant verifiedAt) {
         return new ClaimResult(kind, result.outcome(), result.reason(), provenCredentials,
-                result.signerDisplayName(), AttesterRole.UNKNOWN, trustRoot, evidence,
+                result.signerDisplayName(), trustRoot, evidence,
                 claim.claimTime(), claim.claimTimeSource(), verifiedAt, result.algorithm(),
                 verifiedBy);
     }
@@ -120,7 +115,7 @@ public record ClaimResult(
     public ClaimResult withAdditionalCredentials(List<Credential> additional) {
         List<Credential> credentials = new ArrayList<>(attesterCredentials);
         credentials.addAll(additional);
-        return new ClaimResult(kind, outcome, reason, credentials, attesterDisplayName, role,
+        return new ClaimResult(kind, outcome, reason, credentials, attesterDisplayName,
                 trustRoot, evidence, claimTime, claimTimeSource, verifiedAt, algorithm,
                 verifiedBy);
     }
@@ -134,7 +129,7 @@ public record ClaimResult(
      */
     public ClaimResult unresolved(IndeterminateReason unresolvedReason) {
         return new ClaimResult(kind, ClaimOutcome.INDETERMINATE, unresolvedReason,
-                attesterCredentials, attesterDisplayName, role, trustRoot, evidence, claimTime,
+                attesterCredentials, attesterDisplayName, trustRoot, evidence, claimTime,
                 claimTimeSource, verifiedAt, algorithm, verifiedBy);
     }
 

@@ -252,9 +252,6 @@ public final class VerificationReport {
         if (claim.attesterDisplayName() != null) {
             headline.append(" - ").append(claim.attesterDisplayName());
         }
-        if (claim.role() != AttesterRole.UNKNOWN) {
-            headline.append(" [").append(claim.role().name().toLowerCase()).append(']');
-        }
         return headline.toString();
     }
 

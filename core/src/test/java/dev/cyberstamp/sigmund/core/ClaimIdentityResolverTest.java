@@ -91,7 +91,7 @@ class ClaimIdentityResolverTest {
         void aFailedSignatureIsNeverLookedUp() {
             TrustPolicy policy = policy(release, List.of(DIRECTORY));
             ClaimResult failed = new ClaimResult("openpgp", ClaimOutcome.FAILED, null, List.of(),
-                    null, AttesterRole.UNKNOWN, TrustRootRef.unknown(), evidence(), null,
+                    null, TrustRootRef.unknown(), evidence(), null,
                     ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");
 
             resolve(policy, failed);
@@ -159,7 +159,7 @@ class ClaimIdentityResolverTest {
     private static ClaimResult claim(String fingerprint) {
         return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
                 List.of(KeyCredential.openPgp(fingerprint)), "Anyone <" + ADDRESS + ">",
-                AttesterRole.UNKNOWN, TrustRootRef.unknown(), evidence(), null,
+                TrustRootRef.unknown(), evidence(), null,
                 ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");
     }
 
