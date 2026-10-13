@@ -48,8 +48,18 @@ final class IdentityEntryValidator {
         Set<String> names = entry.attributes().keySet();
         rejectUnknownAttributes(signer, names);
         List<IssuerKind> kinds = issuerKinds(entry, defaultIssuers);
-        if (kinds.stream().noneMatch(kind -> kind.asserts(names))) {
+        long assertingCount = kinds.stream().filter(kind -> kind.asserts(names)).count();
+        if (assertingCount == 0) {
             throw new PolicyConfigException(unassertableMessage(signer, entry, names));
+        }
+        if (entry.issuer() == null) {
+            long assertingKindCount = kinds.stream()
+                    .filter(kind -> kind.asserts(names))
+                    .distinct()
+                    .count();
+            if (assertingKindCount == 1 && assertingCount > 1) {
+                throw new PolicyConfigException(ambiguousMessage(signer, names));
+            }
         }
     }
 
@@ -86,6 +96,12 @@ final class IdentityEntryValidator {
         return "Signer '" + signer + "': no listed issuer can assert " + attributes
                 + "; add one to 'issuers' (" + candidateHint(names)
                 + ") or name an issuer on the entry";
+    }
+
+    private static String ambiguousMessage(String signer, Collection<String> names) {
+        String attributes = String.join(", ", new TreeSet<>(names));
+        return "Signer '" + signer + "': ambiguous — multiple listed issuers can assert "
+                + attributes + "; name the issuer inline on the entry";
     }
 
     private static String candidateHint(Collection<String> names) {

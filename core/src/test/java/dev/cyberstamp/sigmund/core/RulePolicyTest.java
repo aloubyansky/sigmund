@@ -82,4 +82,24 @@ class RulePolicyTest {
                 """);
         assertThat(config.signingConfig().signer()).isEqualTo("alice");
     }
+
+    @Test
+    void issuerlessEntryAmbiguousIsError() {
+        // two issuers of the same kind that can both assert the entry's attributes
+        var doc = parse("""
+                issuers: [https://a.example, https://b.example]   # two OIDC issuers
+                signers: { ci: { identities: [{ source-repository-uri: https://github.com/x/y }] } }
+                """);
+        assertThatThrownBy(() -> RulePolicy.compile(doc.trustPolicySpec(), doc.signers()))
+                .isInstanceOf(PolicyConfigException.class).hasMessageContaining("ambiguous");
+    }
+
+    @Test
+    void issuerlessEntryWithOneAssertingIssuerIsFine() {
+        var doc = parse("""
+                issuers: [keys.openpgp.org, https://token.actions.githubusercontent.com]
+                signers: { alice: "alice@x.io" }
+                """);
+        RulePolicy.compile(doc.trustPolicySpec(), doc.signers());   // no throw: only the directory asserts email
+    }
 }
