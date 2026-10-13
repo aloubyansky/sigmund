@@ -58,7 +58,7 @@ final class ClaimIdentityResolver {
      * @return the claims, with directory identities added where policy needs them
      */
     List<ClaimResult> resolve(ArtifactCoords coords, List<ClaimResult> claims) {
-        List<SignerIdentity> expected = policy.expectedSigners(coords);
+        List<SignerIdentity> expected = expectedSigners(coords);
         Set<String> needed = neededDirectories(expected);
         if (needed.isEmpty()) {
             return claims;
@@ -68,6 +68,25 @@ final class ClaimIdentityResolver {
             resolved.add(needsLookup(claim, expected) ? lookUp(claim, needed) : claim);
         }
         return resolved;
+    }
+
+    /**
+     * Collects the signers of the rule that applies to an artifact, flattening its requirement's
+     * clauses, so the resolver knows which directory-backed identities a lookup could satisfy.
+     *
+     * @param coords the artifact being resolved
+     * @return the expected signers, or an empty list when no rule applies
+     */
+    private List<SignerIdentity> expectedSigners(ArtifactCoords coords) {
+        Rule rule = policy.matchRule(coords);
+        if (rule == null) {
+            return List.of();
+        }
+        List<SignerIdentity> signers = new ArrayList<>();
+        for (Clause clause : rule.requirement().clauses()) {
+            signers.addAll(clause.signers());
+        }
+        return signers;
     }
 
     private Set<String> neededDirectories(List<SignerIdentity> signers) {

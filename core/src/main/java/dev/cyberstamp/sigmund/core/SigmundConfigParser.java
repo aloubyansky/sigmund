@@ -9,10 +9,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Parses {@code sigmund.yaml} configuration files into {@link SigmundConfig}.
@@ -27,7 +30,9 @@ import java.util.Map;
  * {@code issuer}, otherwise the top-level {@code issuers}, and the attributes it must
  * have attested</li>
  * </ul>
- * Identity entries are checked by {@link IdentityEntryValidator} once issuers are known.
+ * Identity entries are checked by {@link IdentityEntryValidator} when the policy is compiled on
+ * the verification path, not at parse time, so the signing path never fails on a
+ * verification-only semantic error.
  */
 class SigmundConfigParser {
 
@@ -73,26 +78,14 @@ class SigmundConfigParser {
         int version = root.has("version") ? root.get("version").asInt(1) : 1;
         SignersConfig signers = parseSigners(root.get("signers"));
         List<String> issuers = parseIssuers(root.get("issuers"));
-        IdentityEntryValidator.validate(signers, issuers);
         SigningConfig signingConfig = parseSigningConfig(root.get("signing"));
         ToolsConfig toolsConfig = parseToolsRegistry(root.get("tools"));
         DiscoveryConfig discoveryConfig = parseDiscoveryConfig(root.get("verification"));
 
         ArtifactSetsConfig artifactSets = parseArtifactGroups(root.get("artifact-sets"));
-        Map<String, List<String>> rawTrust = parseTrustSection(root.get("trust"));
-        Map<String, List<String>> expandedTrust = artifactSets.expandTrustMappings(rawTrust);
-        List<String> rawUnsigned = parseStringList(root.get("signature-optional"));
-        List<String> expandedUnsigned = artifactSets.expandPatterns(rawUnsigned);
-        ListedEvidencePolicy listedEvidence = parseListedEvidencePolicy(root);
-        UnlistedEvidencePolicy unlistedEvidence = parseUnlistedEvidencePolicy(root);
-        UntrustedPolicy untrustedPolicy = parseUntrustedPolicy(root);
+        TrustPolicySpec trustPolicySpec = parseTrustPolicySpec(root, artifactSets, issuers);
 
-        Map<String, List<SignerIdentity>> trustMappings = resolveTrustMappings(expandedTrust, signers);
-        TrustPolicy trustPolicy = new DefaultTrustPolicy(
-                trustMappings, expandedUnsigned, listedEvidence, unlistedEvidence, untrustedPolicy,
-                issuers);
-
-        return new SigmundConfig(version, signers, artifactSets, trustPolicy,
+        return new SigmundConfig(version, signers, artifactSets, trustPolicySpec,
                 signingConfig, toolsConfig, discoveryConfig);
     }
 
@@ -398,114 +391,203 @@ class SigmundConfigParser {
         return new ToolConfig(credentials, settings);
     }
 
-    // --- Trust ---
+    // --- Trust Policy (rules / defaults) ---
 
-    private static Map<String, List<String>> parseTrustSection(JsonNode node) {
+    /**
+     * Parses the {@code rules} and {@code defaults} sections into a raw {@link TrustPolicySpec}.
+     * <p>
+     * This is structural only: {@code match} entries are resolved against the artifact-set names or
+     * parsed as patterns, {@code requires} is normalized into a conjunction of disjunctions by
+     * signer id, and the enforcement and extra-claims settings are read. Signer references are not
+     * resolved and issuer assertability is not checked — those happen when the policy is compiled on
+     * the verification path. A parsed configuration is always {@code present}; only
+     * {@link TrustPolicySpec#EMPTY} (the absence of any configuration) is not.
+     *
+     * @param root the document root
+     * @param sets the parsed artifact-set registry, for {@code match} expansion
+     * @param issuers the canonical default issuers
+     * @return the raw trust policy spec
+     * @throws PolicyConfigException if a rule, requirement, pattern or enforcement setting is
+     *         structurally invalid
+     */
+    private static TrustPolicySpec parseTrustPolicySpec(JsonNode root, ArtifactSetsConfig sets,
+            List<String> issuers) {
+        JsonNode defaultsNode = root.get("defaults");
+        List<RuleSpec> rules = parseRules(root.get("rules"), sets);
+        ClaimSetMode extraClaims = parseExtraClaims(defaultsNode);
+        Map<ArtifactOutcome, EnforcementAction> defaults = parseDefaults(defaultsNode);
+        return new TrustPolicySpec(rules, extraClaims, defaults, issuers, true);
+    }
+
+    private static List<RuleSpec> parseRules(JsonNode node, ArtifactSetsConfig sets) {
+        if (node == null || node.isNull()) {
+            return List.of();
+        }
+        if (!node.isArray()) {
+            throw new PolicyConfigException("'rules' must be a list of rule objects");
+        }
+        List<RuleSpec> rules = new ArrayList<>();
+        int index = 0;
+        for (JsonNode ruleNode : node) {
+            rules.add(parseRule(ruleNode, sets, "rules[" + index + "]"));
+            index++;
+        }
+        return rules;
+    }
+
+    private static RuleSpec parseRule(JsonNode node, ArtifactSetsConfig sets, String location) {
+        if (!node.isObject()) {
+            throw new PolicyConfigException(location + " must be a rule object with 'match'");
+        }
+        List<ArtifactPattern> patterns = parseMatch(node.get("match"), sets, location);
+        List<Set<String>> clauseIds = parseRequires(node.get("requires"), location);
+        Map<ArtifactOutcome, EnforcementAction> enforcement = parseEnforcementOverrides(node, location);
+        return new RuleSpec(patterns, clauseIds, enforcement, location);
+    }
+
+    private static List<ArtifactPattern> parseMatch(JsonNode node, ArtifactSetsConfig sets,
+            String location) {
+        if (node == null || node.isNull()) {
+            throw new PolicyConfigException(location + ": a rule must declare 'match'");
+        }
+        List<String> entries = parseStringList(node);
+        if (entries.isEmpty()) {
+            throw new PolicyConfigException(
+                    location + ": 'match' must list at least one artifact-set name or pattern");
+        }
+        List<ArtifactPattern> patterns = new ArrayList<>();
+        for (String entry : entries) {
+            List<String> expanded = sets.get(entry);
+            if (expanded != null) {
+                for (String pattern : expanded) {
+                    patterns.add(ArtifactPattern.parse(pattern));
+                }
+            } else {
+                patterns.add(ArtifactPattern.parse(entry));
+            }
+        }
+        return patterns;
+    }
+
+    private static List<Set<String>> parseRequires(JsonNode node, String location) {
+        if (node == null || node.isNull()) {
+            return List.of();
+        }
+        if (!node.isArray()) {
+            throw new PolicyConfigException(location
+                    + ": 'requires' must be a list of clauses, not a scalar");
+        }
+        if (node.isEmpty()) {
+            throw new PolicyConfigException(location + ": 'requires' must not be empty; to tolerate"
+                    + " an artifact relax enforcement, e.g. 'on-no-claim: ignore'");
+        }
+        List<Set<String>> clauses = new ArrayList<>();
+        for (JsonNode clauseNode : node) {
+            clauses.add(parseClause(clauseNode, location));
+        }
+        return clauses;
+    }
+
+    private static Set<String> parseClause(JsonNode node, String location) {
+        if (node.isTextual()) {
+            return Set.of(node.asText());
+        }
+        if (node.isObject()) {
+            return parseAnyOfClause(node, location);
+        }
+        throw new PolicyConfigException(location
+                + ": a requirement clause must be a signer id or '{any-of: [...]}'");
+    }
+
+    private static Set<String> parseAnyOfClause(JsonNode node, String location) {
+        for (Map.Entry<String, JsonNode> field : node.properties()) {
+            if (!"any-of".equals(field.getKey())) {
+                throw new PolicyConfigException(location + ": unknown key '" + field.getKey()
+                        + "' in a requirement clause; expected a signer id or 'any-of'");
+            }
+        }
+        JsonNode anyOf = node.get("any-of");
+        if (anyOf == null || !anyOf.isArray() || anyOf.isEmpty()) {
+            throw new PolicyConfigException(location
+                    + ": 'any-of' must list at least one signer id");
+        }
+        Set<String> ids = new LinkedHashSet<>();
+        for (JsonNode element : anyOf) {
+            ids.add(element.asText());
+        }
+        return ids;
+    }
+
+    private static Map<ArtifactOutcome, EnforcementAction> parseEnforcementOverrides(JsonNode node,
+            String location) {
+        Map<ArtifactOutcome, EnforcementAction> enforcement = new EnumMap<>(ArtifactOutcome.class);
+        for (Map.Entry<String, JsonNode> field : node.properties()) {
+            String key = field.getKey();
+            if ("match".equals(key) || "requires".equals(key)) {
+                continue;
+            }
+            if (!key.startsWith("on-")) {
+                throw new PolicyConfigException(location + ": unknown key '" + key
+                        + "'; expected 'match', 'requires' or an 'on-*' enforcement override");
+            }
+            enforcement.put(outcomeForEnforcementKey(key, location),
+                    EnforcementAction.parse(field.getValue().asText()));
+        }
+        return enforcement;
+    }
+
+    private static ClaimSetMode parseExtraClaims(JsonNode defaultsNode) {
+        if (defaultsNode == null || defaultsNode.isNull()) {
+            return ClaimSetMode.ALL_CLAIMS;
+        }
+        String value = textField(defaultsNode, "extra-claims");
+        if (value == null) {
+            return ClaimSetMode.ALL_CLAIMS;
+        }
+        return switch (value.trim().toLowerCase()) {
+            case "reject" -> ClaimSetMode.ALL_CLAIMS;
+            case "ignore" -> ClaimSetMode.ANY_CLAIM;
+            default -> throw new PolicyConfigException("defaults: 'extra-claims' must be 'reject'"
+                    + " or 'ignore', not '" + value + "'");
+        };
+    }
+
+    private static Map<ArtifactOutcome, EnforcementAction> parseDefaults(JsonNode node) {
         if (node == null || node.isNull()) {
             return Map.of();
         }
-        Map<String, List<String>> result = new LinkedHashMap<>();
-        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-        while (fields.hasNext()) {
-            Map.Entry<String, JsonNode> entry = fields.next();
-            result.put(entry.getKey(), parseSignerRefs(entry.getKey(), entry.getValue()));
+        if (!node.isObject()) {
+            throw new PolicyConfigException("'defaults' must be a mapping");
         }
-        return result;
-    }
-
-    private static List<String> parseSignerRefs(String key, JsonNode node) {
-        if (node.isTextual()) {
-            return List.of(node.asText());
-        }
-        if (node.isArray()) {
-            List<String> refs = new ArrayList<>();
-            for (JsonNode el : node) {
-                refs.add(el.asText());
+        Map<ArtifactOutcome, EnforcementAction> defaults = new EnumMap<>(ArtifactOutcome.class);
+        for (Map.Entry<String, JsonNode> field : node.properties()) {
+            String key = field.getKey();
+            if ("extra-claims".equals(key)) {
+                continue;
             }
-            return Collections.unmodifiableList(refs);
-        }
-        throw new PolicyConfigException(
-                "Trust entry '" + key + "' must be a string or array of strings");
-    }
-
-    private static UntrustedPolicy parseUntrustedPolicy(JsonNode root) {
-        JsonNode policy = root.get("policy");
-        if (policy == null || policy.isNull()) {
-            return UntrustedPolicy.FAIL;
-        }
-        String value = textField(policy, "on-untrusted");
-        if (value == null || "fail".equalsIgnoreCase(value)) {
-            return UntrustedPolicy.FAIL;
-        }
-        if ("warn".equalsIgnoreCase(value)) {
-            return UntrustedPolicy.WARN;
-        }
-        throw new PolicyConfigException("Invalid on-untrusted value: '" + value + "' (must be 'fail' or 'warn')");
-    }
-
-    private static ListedEvidencePolicy parseListedEvidencePolicy(JsonNode root) {
-        JsonNode policy = root.get("policy");
-        if (policy == null || policy.isNull()) {
-            return ListedEvidencePolicy.ALL;
-        }
-        String value = textField(policy, "listed-evidence");
-        if (value == null || "all".equalsIgnoreCase(value)) {
-            return ListedEvidencePolicy.ALL;
-        }
-        if ("any".equalsIgnoreCase(value)) {
-            return ListedEvidencePolicy.ANY;
-        }
-        throw new PolicyConfigException("Invalid listed-evidence value: '" + value + "' (must be 'all' or 'any')");
-    }
-
-    private static UnlistedEvidencePolicy parseUnlistedEvidencePolicy(JsonNode root) {
-        JsonNode policy = root.get("policy");
-        if (policy == null || policy.isNull()) {
-            return UnlistedEvidencePolicy.IGNORE;
-        }
-        String value = textField(policy, "unlisted-evidence");
-        if (value == null || "ignore".equalsIgnoreCase(value)) {
-            return UnlistedEvidencePolicy.IGNORE;
-        }
-        if ("warn".equalsIgnoreCase(value)) {
-            return UnlistedEvidencePolicy.WARN;
-        }
-        if ("require".equalsIgnoreCase(value)) {
-            return UnlistedEvidencePolicy.REQUIRE;
-        }
-        throw new PolicyConfigException(
-                "Invalid unlisted-evidence value: '" + value + "' (must be 'ignore', 'warn', or 'require')");
-    }
-
-    // --- Trust Mapping Resolution ---
-
-    /**
-     * Resolves signer references in trust mappings to actual {@link SignerIdentity}
-     * instances using the given {@link SignersConfig} registry.
-     *
-     * @param rawTrust expanded trust mappings with signer name references
-     * @param signers the signer registry for resolving references
-     * @return resolved trust mappings with signer identities
-     * @throws PolicyConfigException if a referenced signer is not defined
-     */
-    private static Map<String, List<SignerIdentity>> resolveTrustMappings(
-            Map<String, List<String>> rawTrust,
-            SignersConfig signers) {
-        var result = new LinkedHashMap<String, List<SignerIdentity>>(rawTrust.size());
-        for (var entry : rawTrust.entrySet()) {
-            List<String> signerRefs = entry.getValue();
-            List<SignerIdentity> resolved = new ArrayList<>(signerRefs.size());
-            for (String ref : signerRefs) {
-                try {
-                    resolved.add(signers.resolve(ref));
-                } catch (PolicyConfigException e) {
-                    throw new PolicyConfigException(
-                            "Trust entry '" + entry.getKey() + "' references undefined signer '" + ref + "'");
-                }
+            if (!key.startsWith("on-")) {
+                throw new PolicyConfigException("defaults: unknown key '" + key
+                        + "'; expected 'extra-claims' or an 'on-*' enforcement default");
             }
-            result.put(entry.getKey(), List.copyOf(resolved));
+            defaults.put(outcomeForEnforcementKey(key, "defaults"),
+                    EnforcementAction.parse(field.getValue().asText()));
         }
-        return result;
+        return defaults;
+    }
+
+    private static ArtifactOutcome outcomeForEnforcementKey(String key, String location) {
+        return switch (key) {
+            case "on-unsatisfied" -> ArtifactOutcome.UNSATISFIED;
+            case "on-no-claim" -> ArtifactOutcome.NO_CLAIM;
+            case "on-indeterminate" -> ArtifactOutcome.INDETERMINATE;
+            case "on-not-configured" -> ArtifactOutcome.NOT_CONFIGURED;
+            case "on-failed" -> throw new PolicyConfigException(location
+                    + ": FAILED is always 'fail' and cannot be overridden; remove 'on-failed'");
+            case "on-satisfied" -> throw new PolicyConfigException(location
+                    + ": SATISFIED has no enforcement; remove 'on-satisfied'");
+            default -> throw new PolicyConfigException(location + ": unknown enforcement override '"
+                    + key + "'");
+        };
     }
 
     // --- Artifact Groups ---

@@ -26,12 +26,14 @@ public final class VerificationReport {
     private final Map<ArtifactOutcome, List<ArtifactResult>> byOutcome;
     private final Map<ArtifactOutcome, Integer> counts;
     private final TrustPolicy policy;
+    private final boolean present;
 
     private VerificationReport(Map<ArtifactOutcome, List<ArtifactResult>> byOutcome,
-            Map<ArtifactOutcome, Integer> counts, TrustPolicy policy) {
+            Map<ArtifactOutcome, Integer> counts, TrustPolicy policy, boolean present) {
         this.byOutcome = byOutcome;
         this.counts = counts;
         this.policy = policy;
+        this.present = present;
     }
 
     /**
@@ -39,9 +41,12 @@ public final class VerificationReport {
      *
      * @param results one result per artifact assessed
      * @param policy the policy the run applied, which decides what blocks
+     * @param present whether a trust policy was present, which governs the context-sensitive
+     *        {@link ArtifactOutcome#NOT_CONFIGURED} default
      * @return the report
      */
-    public static VerificationReport of(List<ArtifactResult> results, TrustPolicy policy) {
+    public static VerificationReport of(List<ArtifactResult> results, TrustPolicy policy,
+            boolean present) {
         Map<ArtifactOutcome, List<ArtifactResult>> grouped = new EnumMap<>(ArtifactOutcome.class);
         for (ArtifactResult result : results) {
             grouped.computeIfAbsent(result.outcome(), outcome -> new ArrayList<>()).add(result);
@@ -57,7 +62,7 @@ public final class VerificationReport {
             counts.put(outcome, group.size());
         });
         return new VerificationReport(Collections.unmodifiableMap(byOutcome),
-                Collections.unmodifiableMap(counts), policy);
+                Collections.unmodifiableMap(counts), policy, present);
     }
 
     /**
@@ -87,11 +92,12 @@ public final class VerificationReport {
      * Returns the artifacts whose outcome the policy does not tolerate.
      *
      * <p>
-     * {@link ArtifactOutcome#FAILED} always blocks: a signature that does not verify is an
-     * attack signal, not a coverage question, and no setting overrides it — including for an
-     * artifact the policy allows to carry no signature at all. Missing evidence blocks unless
-     * the policy tolerates it for that artifact, and an artifact no rule covers never blocks,
-     * because policy is silent about it rather than permissive.
+     * Each outcome's enforcement is resolved by
+     * {@link TrustPolicy#enforcementFor(ArtifactOutcome, MatchedRule, boolean)} from the rule that
+     * matched the artifact. {@link ArtifactOutcome#FAILED} always blocks: a signature that does not
+     * verify is an attack signal, not a coverage question, and no setting overrides it. When a
+     * policy is present every non-{@link ArtifactOutcome#SATISFIED} outcome blocks unless the matched
+     * rule or the defaults relax it; in zero-config only {@code FAILED} blocks.
      *
      * @return the blocking results, in the order they were assessed
      */
@@ -99,7 +105,7 @@ public final class VerificationReport {
         List<ArtifactResult> blocking = new ArrayList<>();
         byOutcome.forEach((outcome, results) -> {
             for (ArtifactResult result : results) {
-                if (blocks(outcome, result)) {
+                if (policy.enforcementFor(outcome, result.matchedRule(), present).blocks()) {
                     blocking.add(result);
                 }
             }
@@ -107,14 +113,13 @@ public final class VerificationReport {
         return List.copyOf(blocking);
     }
 
-    private boolean blocks(ArtifactOutcome outcome, ArtifactResult result) {
-        return switch (outcome) {
-            case FAILED -> true;
-            case UNSATISFIED, INDETERMINATE -> policy.onUntrusted() == UntrustedPolicy.FAIL;
-            case NO_CLAIM -> policy.onUntrusted() == UntrustedPolicy.FAIL
-                    && !policy.isUnsignedAllowed(result.subject().coords());
-            case SATISFIED, NOT_CONFIGURED -> false;
-        };
+    /**
+     * Returns whether any artifact's outcome blocks the build.
+     *
+     * @return {@code true} if at least one result blocks
+     */
+    public boolean blocks() {
+        return !blocking().isEmpty();
     }
 
     /**

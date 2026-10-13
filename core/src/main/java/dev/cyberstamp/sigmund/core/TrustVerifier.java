@@ -70,10 +70,14 @@ public class TrustVerifier {
         Instant verifiedAt = Instant.now();
         List<ClaimResult> claims = identityResolver.resolve(coords,
                 collectClaims(artifactFile, evidenceFiles));
-        OutcomeRollup.Result rollup = OutcomeRollup.derive(coords, claims, policy.requirements(),
+        Rule matched = policy.matchRule(coords);
+        RequirementEvaluator evaluator = matched == null ? null
+                : (requestedCoords, verifiedClaims) -> matched.requirement().evaluate(verifiedClaims);
+        OutcomeRollup.Result rollup = OutcomeRollup.derive(coords, claims, evaluator,
                 null, policy.claimSetMode());
         return new ArtifactResult(ArtifactSubject.of(coords, artifactFile), rollup.outcome(),
-                rollup.reason(), claims, verifiedAt);
+                rollup.reason(), matched == null ? null : matched.toMatchedRule(), claims,
+                verifiedAt);
     }
 
     /**

@@ -28,7 +28,8 @@ import java.util.Set;
  * SigningOutput output = signer.sign(artifact, outputDir);
  *
  * // Verify trust
- * TrustVerifier verifier = sigmund.verifier(config.trustPolicy());
+ * TrustVerifier verifier = sigmund.verifier(
+ *         RulePolicy.compile(config.trustPolicySpec(), config.signers()));
  * TrustResult result = verifier.assess(artifact, artifactFile, evidenceFiles);
  * }</pre>
  *
