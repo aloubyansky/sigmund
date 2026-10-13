@@ -75,6 +75,25 @@ class SigmundConfigParser {
     }
 
     private static SigmundConfig parseRoot(JsonNode root) {
+        // Detect v1 schema keys and provide migration guidance
+        if (root.has("trust")) {
+            throw new PolicyConfigException(
+                    "The 'trust' key is no longer supported; use 'rules' instead");
+        }
+        if (root.has("signature-optional")) {
+            throw new PolicyConfigException(
+                    "The 'signature-optional' key is no longer supported; use 'rules' with "
+                            + "enforcement overrides (e.g., 'on-no-claim: ignore') instead");
+        }
+        if (root.has("policy")) {
+            throw new PolicyConfigException(
+                    "The 'policy' key is no longer supported; use 'rules' instead");
+        }
+        if (root.has("artifacts")) {
+            throw new PolicyConfigException(
+                    "The 'artifacts' key is no longer supported; use 'artifact-sets' instead");
+        }
+
         int version = root.has("version") ? root.get("version").asInt(1) : 1;
         SignersConfig signers = parseSigners(root.get("signers"));
         List<String> issuers = parseIssuers(root.get("issuers"));

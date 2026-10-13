@@ -724,6 +724,34 @@ class SigmundConfigParserTest {
     }
 
     @Nested
+    class SchemaMigration {
+
+        @Test
+        void oldTrustSchemaRejectedWithGuidance() {
+            assertThatThrownBy(() -> parse("trust: { \"org.acme:*\": alice }"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("rules");
+        }
+
+        @Test
+        void oldArtifactsKeyRejectedWithGuidance() {
+            assertThatThrownBy(() -> parse("artifacts: { g: [\"com.acme.*\"] }"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("artifact-sets");
+        }
+
+        @Test
+        void oldSignatureOptionalRejectedWithGuidance() {
+            assertThatThrownBy(() -> parse("signature-optional: true"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("rules");
+        }
+
+        @Test
+        void oldPolicyKeyRejectedWithGuidance() {
+            assertThatThrownBy(() -> parse("policy: { enforce: true }"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("rules");
+        }
+    }
+
+    @Nested
     class FullConfig {
 
         @Test
