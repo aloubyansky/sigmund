@@ -26,8 +26,8 @@ assert yaml.contains("org.jspecify") : "Should have added jspecify trust entry"
 // Should not have duplicate section headers
 int signersCount = yaml.split("signers:").length - 1
 assert signersCount == 1 : "Should have exactly one signers: section, found ${signersCount}"
-int trustCount = yaml.split("trust:").length - 1
-assert trustCount == 1 : "Should have exactly one trust: section, found ${trustCount}"
+int rulesCount = yaml.split("rules:").length - 1
+assert rulesCount == 1 : "Should have exactly one rules: section, found ${rulesCount}"
 
 // Comments should be preserved
 assert yaml.contains("# Trust configuration for update test") : "Header comment should be preserved"

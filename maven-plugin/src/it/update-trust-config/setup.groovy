@@ -20,8 +20,9 @@ signers:
   gary-gregory:  # user ID on the key, unverified: Gary David Gregory (Code signing key) <ggregory@apache.org>
     pgp4: "2DB4F1EF0FA761ECC4EA935C86FDC7E2A11262CB"
 
-trust:
-  org.apache.commons:commons-lang3: gary-gregory
+rules:
+  - match: [org.apache.commons:commons-lang3]
+    requires: [gary-gregory]
 """
 println "Created partial sigmund.yaml (commons-lang3 only, with comments)"
 println "Created clean GNUPGHOME at ${gpghome}"
