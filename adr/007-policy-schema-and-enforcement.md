@@ -47,8 +47,6 @@ artifact, and what happens when it is not.
 ### Document shape
 
 ```yaml
-version: 2
-
 issuers:                      # ADR-006: default issuers for issuer-less identity entries
   - keys.openpgp.org          #   known name → directory (kind inferred by name)
   - https://token.actions.githubusercontent.com   #   https:// → OIDC
@@ -102,26 +100,42 @@ A rule is `match` plus `requires`, with optional per-rule enforcement overrides.
 
 - **`match`** entries are artifact-set names or inline GAV patterns. A `match`
   entry resolves as: a defined artifact-set name → expand to its patterns; else
-  a GAV-shaped pattern; else a config error naming the undefined set or the
-  malformed pattern. An artifact-set is a pure load-time label with no effect on
+  a bare word (no `.`, `:` or `*`) → a config error naming the undefined set,
+  suggesting the nearest defined one; else a GAV pattern, or a config error
+  naming the malformed pattern. A bare word reads equally as a set name and as a
+  one-word group, so a misspelled set would otherwise become a group matching
+  nothing; a one-word group is written `junit:*`. An artifact-set is a pure load-time label with no effect on
   matching — it expands to its patterns, and the matched artifact is scored by
-  the individual pattern that matched. The set name is retained only for the
-  matched-rule reference in the report.
+  the individual pattern that matched.
 - Rules match at GAV level only; classifier and extension are not policy
   dimensions (§3.2). A pattern with more than three coordinate segments is a
-  config error rather than silently matching nothing.
+  config error rather than silently matching nothing. A group ending in `.*` is
+  a dot-bounded subtree (`org.apache.*` covers `org.apache` and
+  `org.apache.maven`, not `org.apachex`); an artifact or version ending in `*`
+  is a plain prefix of everything before the `*`, dot included (`1.*` covers
+  `1.0`, not `10.0`).
 - **The catch-all `"*"`** is an explicitly permitted pattern — the
   lowest-specificity match for "everything no more-specific rule caught." With a
   catch-all present an artifact always matches some rule, so `NOT_CONFIGURED`
   cannot occur; the remainder is governed by the catch-all's `requires` and
-  enforcement. Bootstrap emits one.
+  enforcement. Bootstrap does not emit one: it lists the unsigned modules it
+  observed in a tolerant rule instead, so a dependency added later is
+  `NOT_CONFIGURED` until reviewed (see Consequences).
 - **Most specific rule wins**, by the existing specificity score. One rule
   applies — no merging across rules, so the matched rule fully explains the
   outcome. Two rules of identical specificity for the same target are a config
-  error, not a silent pick.
+  error, not a silent pick: any pattern pair from different rules with equal
+  specificity that shares a coordinate is rejected at load, the error naming a
+  coordinate both match. Overlap is decided exactly, component by component. The
+  check is conservative — a tie whose shared coordinates a more specific third
+  pattern already claims is still rejected — so a verdict never depends on file
+  order.
 - **The matched-rule reference** on the artifact result (ADR-005) carries the
-  rule's pattern (and set name where used) and its location in the file, so a
-  surprising verdict traces to the line that caused it.
+  pattern that matched — the most specific of the rule's patterns that match the
+  artifact, which is the one that decided the rule won — and the rule's location
+  in the file, so a surprising verdict traces to the line that caused it. The
+  artifact-set a pattern came from is not carried; the location already points
+  at the line naming it.
 
 ### Requirements
 
@@ -172,9 +186,16 @@ scope level; see "`by-scope` dropped" below.)
 | `INDETERMINATE` | fail | Configured-only; transient infra, relax with `on-indeterminate: warn` once measured to matter |
 | `NOT_CONFIGURED` | **fail if a policy is present, `ignore` in zero-config** | The only outcome spanning both worlds |
 
-The model is a single switch tied to **policy presence**:
+The model is a single switch tied to **policy presence**. A policy is present
+when the configuration declares `rules` or `defaults` — an explicit `rules: []`
+included. A `sigmund.yaml` that only configures signing, tools or signers
+declares no policy, and neither does a missing file at the default location; a
+missing file at an explicitly given location is an error, so a mistyped path
+cannot turn an enforcing build into an observing one. Because a misspelled
+`rules` key would otherwise fail open the same way, unknown top-level keys are
+errors. Whenever no policy is in force the run says so.
 
-- **Zero-config (no policy file loaded) observes.** The only outcomes that can
+- **Zero-config (no policy declared) observes.** The only outcomes that can
   occur are `NOT_CONFIGURED` (→ `ignore`) and `FAILED` (→ `fail`), so a build
   with no policy never fails except on a signature that does not
   cryptographically verify.
@@ -223,7 +244,7 @@ makes adding it later free.
 The parser is strict and validates at config-load time; errors name the file,
 the location and the fix. It checks:
 
-- unknown keys are errors;
+- unknown keys are errors, at the top level included;
 - signer references in `requires` resolve to defined signers;
 - no setting exists for `FAILED`;
 - `match` entries resolve to a defined artifact-set or a GAV-shaped pattern
@@ -289,9 +310,27 @@ for the document.
 the roll-up stays independent of schema details.
 
 **Bootstrap** (`generateTrustConfig`) emits `rules` with one clause per set —
-the observed signer, or `any-of` where a set was observed signed by several — a
-catch-all `"*"` with `on-no-claim: ignore` for the remainder, and `artifact-sets`
-for the observed groupings.
+the observed signer, or `any-of` where a set was observed signed by several —
+and one tolerant rule (`on-no-claim: ignore`, no `requires`) listing the
+unsigned modules it observed by `group:artifact`. It deliberately emits no
+catch-all: trust establishment is TOFU, so only changes from the snapshot are
+detected, and a dependency added later is such a change. Under the explicit
+list it is `NOT_CONFIGURED`, fails, and enters the policy through
+`updateTrustConfig` as a reviewable diff; under a catch-all an unsigned newcomer
+would pass silently.
+
+**`updateTrustConfig`** adds what the policy does not yet cover — an artifact no
+rule matches, or one matched only by a rule without `requires` (a catch-all or
+the tolerant rule). A module that starts being signed moves out of the tolerant
+rule's list into a requirement rule of its own. An artifact under a rule with
+`requires` is never rewritten: a signature from a signer that rule does not name
+is the change verification exists to catch, so it is listed for review. The
+updated file is parsed and compiled before it is written.
+
+**No schema `version` key.** Nothing reads one while the format has no adopters,
+and the removed v1 keys already fail with migration guidance. A `version` key is
+an error until the first breaking change after adoption gives it something to
+distinguish.
 
 **`AttesterRole` and `ClaimResult.role` are removed.** Nothing sets a role other
 than `UNKNOWN`, and without role-scoped clauses nothing reads one. They return

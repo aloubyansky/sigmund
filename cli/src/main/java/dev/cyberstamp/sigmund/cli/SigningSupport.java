@@ -1,6 +1,6 @@
 package dev.cyberstamp.sigmund.cli;
 
-import dev.cyberstamp.sigmund.core.DiscoveryConfig;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SigmundException;
@@ -24,7 +24,7 @@ final class SigningSupport {
         List<String> toolchain = config.signingConfig().toolchain();
         ToolsConfig toolsConfig = config.toolsConfig();
         List<String> toolNames = toolchain.isEmpty()
-                ? DiscoveryConfig.DEFAULT_TOOL_PRIORITY
+                ? VerificationConfig.DEFAULT_TOOL_PRIORITY
                 : toolchain;
 
         for (String toolName : toolNames) {

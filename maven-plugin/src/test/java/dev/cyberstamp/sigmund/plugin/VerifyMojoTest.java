@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ArtifactOutcome;
@@ -17,19 +18,90 @@ import dev.cyberstamp.sigmund.core.Evidence;
 import dev.cyberstamp.sigmund.core.EvidenceRef;
 import dev.cyberstamp.sigmund.core.KeyCredential;
 import dev.cyberstamp.sigmund.core.MatchedRule;
-import dev.cyberstamp.sigmund.core.RequirementEvaluator;
 import dev.cyberstamp.sigmund.core.Rule;
+import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
 import dev.cyberstamp.sigmund.core.TrustRootRef;
 import dev.cyberstamp.sigmund.core.VerificationReport;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.BiFunction;
+import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class VerifyMojoTest {
+
+    @Nested
+    class ConfigLoading {
+
+        @TempDir
+        Path basedir;
+
+        private final RecordingLog log = new RecordingLog();
+
+        private VerifyMojo mojoWithConfigAt(Path config) {
+            VerifyMojo mojo = new VerifyMojo();
+            mojo.setLog(log);
+            MavenProject project = new MavenProject();
+            project.setFile(basedir.resolve("pom.xml").toFile());
+            mojo.project = project;
+            mojo.trustConfigFile = config.toFile();
+            return mojo;
+        }
+
+        @Test
+        void missingConfigAtTheDefaultLocationIsZeroConfig() throws Exception {
+            VerifyMojo mojo = mojoWithConfigAt(basedir.resolve("sigmund.yaml"));
+
+            SigmundConfig config = mojo.loadAndValidateConfig();
+
+            assertThat(config.trustPolicySpec().present()).isFalse();
+            assertThat(log.lines).anyMatch(line -> line.contains("observing only"));
+        }
+
+        @Test
+        void missingConfigAtAnExplicitLocationIsError() {
+            VerifyMojo mojo = mojoWithConfigAt(basedir.resolve("policies/strict.yaml"));
+
+            assertThatThrownBy(mojo::loadAndValidateConfig)
+                    .isInstanceOf(MojoExecutionException.class)
+                    .hasMessageContaining("strict.yaml");
+        }
+
+        @Test
+        void configWithoutRulesOrDefaultsObserves() throws Exception {
+            Path file = basedir.resolve("sigmund.yaml");
+            Files.writeString(file, """
+                    signers: { alice: "alice@example.com" }
+                    signing: { signer: alice }
+                    """);
+            VerifyMojo mojo = mojoWithConfigAt(file);
+
+            SigmundConfig config = mojo.loadAndValidateConfig();
+
+            assertThat(config.trustPolicySpec().present()).isFalse();
+            assertThat(log.lines).anyMatch(line -> line.contains("observing only"));
+        }
+
+        @Test
+        void configWithRulesEnforces() throws Exception {
+            Path file = basedir.resolve("sigmund.yaml");
+            Files.writeString(file, "rules: []\n");
+            VerifyMojo mojo = mojoWithConfigAt(file);
+
+            SigmundConfig config = mojo.loadAndValidateConfig();
+
+            assertThat(config.trustPolicySpec().present()).isTrue();
+            assertThat(log.lines).noneMatch(line -> line.contains("observing only"));
+        }
+    }
 
     @Nested
     class PomVerificationTests {
@@ -91,11 +163,21 @@ class VerifyMojoTest {
         private static final String FP = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
 
         private VerificationReport reportOf(ArtifactOutcome outcome, ClaimResult... claims) {
-            ArtifactCoords coords = new ArtifactCoords("com.example", "lib", "", "jar", "1.0");
-            ArtifactResult result = new ArtifactResult(
+            return reportOf(outcome, EnforcementAction.FAIL, claims);
+        }
+
+        private VerificationReport reportOf(ArtifactOutcome outcome, EnforcementAction action,
+                ClaimResult... claims) {
+            return VerificationReport.of(List.of(resultFor("lib", outcome, null, claims)),
+                    actingAs(action), false);
+        }
+
+        private ArtifactResult resultFor(String name, ArtifactOutcome outcome,
+                MatchedRule matchedRule, ClaimResult... claims) {
+            ArtifactCoords coords = new ArtifactCoords("com.example", name, "", "jar", "1.0");
+            return new ArtifactResult(
                     new ArtifactSubject(coords, DigestSet.sha256(FP.toLowerCase())),
-                    outcome, null, null, List.of(claims), Instant.EPOCH);
-            return VerificationReport.of(List.of(result), permissivePolicy(), false);
+                    outcome, null, matchedRule, List.of(claims), Instant.EPOCH);
         }
 
         private ClaimResult verifiedClaim() {
@@ -174,22 +256,83 @@ class VerifyMojoTest {
             VerifyMojo mojo = new VerifyMojo();
             mojo.setLog(log);
 
-            mojo.reportResults(reportOf(ArtifactOutcome.NO_CLAIM));
+            mojo.reportResults(reportOf(ArtifactOutcome.NO_CLAIM, EnforcementAction.WARN));
 
             assertThat(log.lines).containsSubsequence(
-                    "warn: NO_CLAIM (1)", "warn:     com.example:lib:1.0");
+                    "warn: NO_CLAIM (1)", "warn:     com.example:lib:1.0 [warning]");
         }
 
-        private TrustPolicy permissivePolicy() {
+        @Test
+        void ignoredArtifactsAreCountedButListedOnlyAtDebug() {
+            RecordingLog log = new RecordingLog();
+            VerifyMojo mojo = new VerifyMojo();
+            mojo.setLog(log);
+
+            mojo.reportResults(reportOf(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE));
+
+            assertThat(log.lines).containsSubsequence(
+                    "info: NO_CLAIM (1) — ignored: 1 with no policy",
+                    "debug:     com.example:lib:1.0 [ignored]");
+        }
+
+        @Test
+        void ignoredArtifactsAreListedWhenDetailIsAskedFor() {
+            RecordingLog log = new RecordingLog();
+            VerifyMojo mojo = new VerifyMojo();
+            mojo.setLog(log);
+            mojo.detail = true;
+
+            mojo.reportResults(reportOf(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE));
+
+            assertThat(log.lines).contains("info:     com.example:lib:1.0 [ignored]");
+        }
+
+        @Test
+        void aBlockingOutcomeIsAnErrorWhateverItIs() {
+            RecordingLog log = new RecordingLog();
+            VerifyMojo mojo = new VerifyMojo();
+            mojo.setLog(log);
+
+            mojo.reportResults(reportOf(ArtifactOutcome.NOT_CONFIGURED, EnforcementAction.FAIL));
+
+            assertThat(log.lines).containsSubsequence(
+                    "error: NOT_CONFIGURED (1)", "error:     com.example:lib:1.0 [blocks]");
+        }
+
+        @Test
+        void aSectionMixingActionsIsHeadedAtItsMostSevereAndListsEachAtItsOwn() {
+            RecordingLog log = new RecordingLog();
+            VerifyMojo mojo = new VerifyMojo();
+            mojo.setLog(log);
+            MatchedRule strict = new MatchedRule("com.example:strict", "rules[0]", Map.of());
+            VerificationReport report = VerificationReport.of(List.of(
+                    resultFor("strict", ArtifactOutcome.NO_CLAIM, strict),
+                    resultFor("lenient", ArtifactOutcome.NO_CLAIM, null)),
+                    failingOnlyUnder(strict), false);
+
+            mojo.reportResults(report);
+
+            assertThat(log.lines).contains(
+                    "error: NO_CLAIM (2) — ignored: 1 with no policy",
+                    "error:     com.example:strict:1.0 [blocks]",
+                    "debug:     com.example:lenient:1.0 [ignored]");
+        }
+
+        private TrustPolicy actingAs(EnforcementAction action) {
+            return policyDeciding((outcome, matchedRule) -> action);
+        }
+
+        private TrustPolicy failingOnlyUnder(MatchedRule strict) {
+            return policyDeciding((outcome, matchedRule) -> strict.equals(matchedRule)
+                    ? EnforcementAction.FAIL : EnforcementAction.IGNORE);
+        }
+
+        private TrustPolicy policyDeciding(
+                BiFunction<ArtifactOutcome, MatchedRule, EnforcementAction> decision) {
             return new TrustPolicy() {
                 @Override
                 public Rule matchRule(ArtifactCoords coords) {
                     return null;
-                }
-
-                @Override
-                public RequirementEvaluator requirements() {
-                    return (coords, claims) -> null;
                 }
 
                 @Override
@@ -205,7 +348,7 @@ class VerifyMojoTest {
                 @Override
                 public EnforcementAction enforcementFor(ArtifactOutcome outcome,
                         MatchedRule matchedRule, boolean present) {
-                    return EnforcementAction.IGNORE;
+                    return decision.apply(outcome, matchedRule);
                 }
             };
         }

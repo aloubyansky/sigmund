@@ -11,14 +11,18 @@ import java.util.Map;
  * The compiler, {@link RulePolicy#compile}, resolves signers and builds compiled {@link Rule}
  * instances.
  * <p>
- * The {@link #present()} flag indicates whether a trust policy section was present in the YAML,
- * so that the absence of policy can be distinguished from an empty policy.
+ * The {@link #present()} flag records whether the configuration declares a policy — a
+ * {@code rules} or {@code defaults} section — so that the absence of policy can be told apart
+ * from an empty one. It is the single observe/enforce switch: with no policy, verification
+ * observes and only {@link ArtifactOutcome#FAILED} blocks; with one, every outcome other than
+ * {@link ArtifactOutcome#SATISFIED} blocks unless the policy relaxes it. A configuration that
+ * only sets up signing, tools or signers declares no policy.
  *
  * @param rules the policy rules in their raw parsed form
  * @param extraClaims how to handle verified claims that no requirement accepted
  * @param defaults default enforcement actions for artifact outcomes
  * @param issuers the list of trusted issuers (certificate authorities)
- * @param present whether a trust policy section was present in the YAML
+ * @param present whether the configuration declares a policy ({@code rules} or {@code defaults})
  */
 public record TrustPolicySpec(List<RuleSpec> rules, ClaimSetMode extraClaims,
         Map<ArtifactOutcome, EnforcementAction> defaults, List<String> issuers, boolean present) {
@@ -28,8 +32,8 @@ public record TrustPolicySpec(List<RuleSpec> rules, ClaimSetMode extraClaims,
      * <p>
      * Has no rules, default claim set mode, no defaults, no issuers, and {@code present = false}.
      */
-    public static final TrustPolicySpec EMPTY =
-            new TrustPolicySpec(List.of(), ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), false);
+    public static final TrustPolicySpec EMPTY = new TrustPolicySpec(List.of(), ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(),
+            false);
 
     /**
      * Creates a trust policy spec with defensive copies.

@@ -2,7 +2,7 @@ package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.CredentialParser;
-import dev.cyberstamp.sigmund.core.DiscoveryConfig;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SignerInspectionReport;
@@ -89,8 +89,8 @@ public class InspectSignerMojo extends AbstractSigmundMojo {
 
     private Sigmund createSigmund() throws MojoExecutionException {
         SigmundConfig config = loadConfig();
-        DiscoveryConfig discoveryConfig = resolveDiscoveryConfig(
-                config.discoveryConfig(), resolveSigners, keyservers, null);
-        return buildSigmund(discoveryConfig, mergeToolOverrides(config.toolsConfig()));
+        VerificationConfig verificationConfig = resolveVerificationConfig(
+                config.verificationConfig(), resolveSigners, keyservers, null);
+        return buildSigmund(verificationConfig, mergeToolOverrides(config.toolsConfig()));
     }
 }

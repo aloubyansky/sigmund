@@ -152,13 +152,50 @@ class SigmundConfigParserTest {
         }
 
         @Test
-        void unclassifiableIssuerInTheListThrows() {
-            assertThatThrownBy(() -> parse("""
+        void unclassifiableIssuersDoNotStopTheSigningPath() {
+            var config = parse("""
                     issuers:
                       - keyserver.ubuntu.com
-                    """))
+                    signers:
+                      alice:
+                        identities:
+                          - issuer: oidc.example
+                            email: alice@example.com
+                    signing:
+                      signer: alice
+                    """);
+
+            assertThat(config.signingConfig().signer()).isEqualTo("alice");
+            assertThat(config.signers().get("alice")).isNotNull();
+            assertThat(config.trustPolicySpec().issuers()).containsExactly("keyserver.ubuntu.com");
+        }
+
+        @Test
+        void unclassifiableIssuerInTheListFailsWhenTheVerifierLoads() {
+            var config = parse("""
+                    issuers:
+                      - keyserver.ubuntu.com
+                    """);
+
+            assertThatThrownBy(() -> RulePolicy.compile(config.trustPolicySpec(), config.signers()))
                     .isInstanceOf(PolicyConfigException.class)
-                    .hasMessageContaining("keyserver.ubuntu.com")
+                    .hasMessageContaining("Issuer 'keyserver.ubuntu.com' in 'issuers'")
+                    .hasMessageContaining("neither a known directory");
+        }
+
+        @Test
+        void unclassifiableInlineIssuerFailsWhenTheVerifierLoadsNamingTheSigner() {
+            var config = parse("""
+                    signers:
+                      alice:
+                        identities:
+                          - issuer: oidc.example
+                            email: alice@example.com
+                    """);
+
+            assertThatThrownBy(() -> RulePolicy.compile(config.trustPolicySpec(), config.signers()))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("Issuer 'oidc.example' in signer 'alice'")
                     .hasMessageContaining("neither a known directory");
         }
 
@@ -542,6 +579,109 @@ class SigmundConfigParserTest {
         }
 
         @Test
+        void signingOnlyConfigIsNotAPolicy() {
+            var doc = parse("""
+                    signers: { alice: "alice@example.com" }
+                    signing: { signer: alice }
+                    """).trustPolicySpec();
+            assertThat(doc.present()).isFalse();
+        }
+
+        @Test
+        void emptyRulesIsAPolicy() {
+            assertThat(parse("rules: []").trustPolicySpec().present()).isTrue();
+        }
+
+        @Test
+        void defaultsAloneIsAPolicy() {
+            assertThat(parse("defaults: { on-no-claim: warn }").trustPolicySpec().present())
+                    .isTrue();
+        }
+
+        @Test
+        void misspelledArtifactSetIsErrorSuggestingTheNearestSet() {
+            assertThatThrownBy(() -> parse("""
+                    artifact-sets:
+                      apache-stack: [org.apache.maven.*]
+                    rules:
+                      - match: [apache-stak]
+                        requires: [alice]
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("rules[0]")
+                    .hasMessageContaining("'apache-stak'")
+                    .hasMessageContaining("did you mean 'apache-stack'");
+        }
+
+        @Test
+        void undefinedArtifactSetIsErrorExplainingTheSingleWordGroupForm() {
+            assertThatThrownBy(() -> parse("rules: [{ match: [junit], requires: [alice] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("not a defined artifact-set")
+                    .hasMessageContaining("'junit:*'");
+        }
+
+        @Test
+        void singleWordGroupIsWrittenWithAnArtifactWildcard() {
+            var doc = parse("rules: [{ match: [\"junit:*\"], requires: [alice] }]")
+                    .trustPolicySpec();
+            assertThat(doc.rules().get(0).patterns())
+                    .containsExactly(ArtifactPattern.parse("junit:*"));
+        }
+
+        @Test
+        void dottedGroupIsAPatternNotASetReference() {
+            var doc = parse("rules: [{ match: [com.acme], requires: [alice] }]")
+                    .trustPolicySpec();
+            assertThat(doc.rules().get(0).patterns())
+                    .containsExactly(ArtifactPattern.parse("com.acme"));
+        }
+
+        @Test
+        void anyOfEntryThatIsAMappingIsError() {
+            assertThatThrownBy(() -> parse(
+                    "rules: [{ match: [\"*\"], requires: [{any-of: [alice, {name: bob}]}] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("rules[0]")
+                    .hasMessageContaining("must be signer ids")
+                    .hasMessageContaining("mapping");
+        }
+
+        @Test
+        void nestedAnyOfIsErrorNamingTheShape() {
+            assertThatThrownBy(() -> parse(
+                    "rules: [{ match: [\"*\"], requires: [{any-of: [alice, {any-of: [bob]}]}] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("nested 'any-of' is not supported");
+        }
+
+        @Test
+        void nullAnyOfEntryIsError() {
+            assertThatThrownBy(() -> parse(
+                    "rules: [{ match: [\"*\"], requires: [{any-of: [alice, ~]}] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("must be signer ids");
+        }
+
+        @Test
+        void blankSignerReferenceIsError() {
+            assertThatThrownBy(() -> parse("rules: [{ match: [\"*\"], requires: [\"\"] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("blank");
+            assertThatThrownBy(() -> parse(
+                    "rules: [{ match: [\"*\"], requires: [{any-of: [\" \"]}] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("blank");
+        }
+
+        @Test
+        void numericSignerIdIsAReference() {
+            var doc = parse("rules: [{ match: [\"*\"], requires: [{any-of: [123]}] }]")
+                    .trustPolicySpec();
+            assertThat(doc.rules().get(0).clauseIds()).containsExactly(Set.of("123"));
+        }
+
+        @Test
         void emptyRequiresIsError() {
             assertThatThrownBy(() -> parse("rules: [{ match: [\"*\"], requires: [] }]"))
                     .isInstanceOf(PolicyConfigException.class).hasMessageContaining("requires");
@@ -637,7 +777,7 @@ class SigmundConfigParserTest {
 
         @Test
         void noSigningSection() {
-            var config = parse("version: 1");
+            var config = parse("");
             assertThat(config.signingConfig()).isEqualTo(SigningConfig.DEFAULT);
         }
     }
@@ -654,7 +794,7 @@ class SigmundConfigParserTest {
                       keyservers:
                         - "hkps://keys.openpgp.org"
                     """);
-            var dc = config.discoveryConfig();
+            var dc = config.verificationConfig();
             assertThat(dc.resolveSigners()).isTrue();
             assertThat(dc.importToKeyring()).isFalse();
             assertThat(dc.keyservers()).isEqualTo(List.of("hkps://keys.openpgp.org"));
@@ -666,7 +806,7 @@ class SigmundConfigParserTest {
                     verification:
                       toolchain: [sq, gpg]
                     """);
-            assertThat(config.discoveryConfig().toolchain()).isEqualTo(List.of("sq", "gpg"));
+            assertThat(config.verificationConfig().toolchain()).isEqualTo(List.of("sq", "gpg"));
         }
 
         @Test
@@ -675,7 +815,7 @@ class SigmundConfigParserTest {
                     verification:
                       toolchain: gpg
                     """);
-            assertThat(config.discoveryConfig().toolchain()).isEqualTo(List.of("gpg"));
+            assertThat(config.verificationConfig().toolchain()).isEqualTo(List.of("gpg"));
         }
 
         @Test
@@ -684,14 +824,14 @@ class SigmundConfigParserTest {
                     verification:
                       resolve-signers: true
                     """);
-            assertThat(config.discoveryConfig().toolchain()).isNull();
-            assertThat(config.discoveryConfig().effectiveToolchain()).isEqualTo(DiscoveryConfig.DEFAULT_TOOL_PRIORITY);
+            assertThat(config.verificationConfig().toolchain()).isNull();
+            assertThat(config.verificationConfig().effectiveToolchain()).isEqualTo(VerificationConfig.DEFAULT_TOOL_PRIORITY);
         }
 
         @Test
         void noVerificationSection() {
-            var config = parse("version: 1");
-            assertThat(config.discoveryConfig()).isEqualTo(DiscoveryConfig.DEFAULT);
+            var config = parse("");
+            assertThat(config.verificationConfig()).isEqualTo(VerificationConfig.DEFAULT);
         }
     }
 
@@ -718,7 +858,7 @@ class SigmundConfigParserTest {
 
         @Test
         void noToolsSection() {
-            var config = parse("version: 1");
+            var config = parse("");
             assertThat(config.toolsConfig().isEmpty()).isTrue();
         }
     }
@@ -745,9 +885,40 @@ class SigmundConfigParserTest {
         }
 
         @Test
+        void versionKeyRejectedWithGuidance() {
+            assertThatThrownBy(() -> parse("version: 2"))
+                    .isInstanceOf(PolicyConfigException.class).hasMessageContaining("remove it");
+        }
+
+        @Test
         void oldPolicyKeyRejectedWithGuidance() {
             assertThatThrownBy(() -> parse("policy: { enforce: true }"))
                     .isInstanceOf(PolicyConfigException.class).hasMessageContaining("rules");
+        }
+    }
+
+    @Nested
+    class TopLevelKeys {
+
+        @Test
+        void unknownTopLevelKeyIsErrorSuggestingTheNearestKey() {
+            assertThatThrownBy(() -> parse("rule: [{ match: [\"*\"], requires: [a] }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("'rule'")
+                    .hasMessageContaining("did you mean 'rules'");
+        }
+
+        @Test
+        void unknownTopLevelKeyFarFromAnyKnownKeyListsTheKnownKeys() {
+            assertThatThrownBy(() -> parse("frobnicate: true"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("'frobnicate'")
+                    .hasMessageContaining("artifact-sets");
+        }
+
+        @Test
+        void emptyDocumentIsZeroConfig() {
+            assertThat(parse("").trustPolicySpec().present()).isFalse();
         }
     }
 
@@ -757,7 +928,6 @@ class SigmundConfigParserTest {
         @Test
         void parsesCompleteConfig() {
             var config = parse("""
-                    version: 1
                     issuers: [keys.openpgp.org]
                     signers:
                       alice:
@@ -781,13 +951,12 @@ class SigmundConfigParserTest {
                       keyservers:
                         - "hkps://keys.openpgp.org"
                     """);
-            assertThat(config.version()).isEqualTo(1);
             assertThat(config.signers().names().size()).isEqualTo(2);
             assertThat(config.signingConfig().signer()).isEqualTo("alice");
             assertThat(config.trustPolicySpec().rules()).hasSize(2);
             assertThat(config.trustPolicySpec().extraClaims()).isEqualTo(ClaimSetMode.ANY_CLAIM);
             assertThat(config.trustPolicySpec().present()).isTrue();
-            assertThat(config.discoveryConfig().resolveSigners()).isTrue();
+            assertThat(config.verificationConfig().resolveSigners()).isTrue();
 
             TrustPolicy policy = RulePolicy.compile(config.trustPolicySpec(), config.signers());
             assertThat(policy.matchRule(artifact("org.example", "lib", "1.0")).requirement()

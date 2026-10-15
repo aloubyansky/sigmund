@@ -1,7 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -86,15 +85,31 @@ public final class RulePolicy implements TrustPolicy {
         return signer;
     }
 
+    /**
+     * Rejects two rules that could select the same artifact with equal specificity, since
+     * matching would then have no principled winner.
+     * <p>
+     * Every pattern of one rule is checked against every pattern of each later rule: a pair with
+     * equal specificity that shares a coordinate is a tie. This is conservative — a tie whose
+     * shared coordinates are all claimed by a more specific third pattern is still rejected — so
+     * that a policy never depends on file order.
+     */
     private static void rejectSpecificityTies(List<Rule> rules) {
-        Map<ArtifactPattern, String> seen = new LinkedHashMap<>();
-        for (Rule rule : rules) {
-            for (ArtifactPattern pattern : rule.patterns()) {
-                String prior = seen.putIfAbsent(pattern, rule.location());
-                if (prior != null) {
-                    throw new PolicyConfigException("Two rules tie on specificity for pattern '"
-                            + pattern + "' (" + prior + " and " + rule.location()
-                            + "); make one more specific or merge them");
+        for (int i = 0; i < rules.size(); i++) {
+            for (int j = i + 1; j < rules.size(); j++) {
+                rejectTie(rules.get(i), rules.get(j));
+            }
+        }
+    }
+
+    private static void rejectTie(Rule first, Rule second) {
+        for (ArtifactPattern a : first.patterns()) {
+            for (ArtifactPattern b : second.patterns()) {
+                if (a.specificity() == b.specificity() && a.overlaps(b)) {
+                    throw new PolicyConfigException("Rules tie on specificity: " + first.location()
+                            + " '" + a + "' and " + second.location() + " '" + b
+                            + "' both match " + a.commonCoordinate(b)
+                            + "; make one more specific or merge them");
                 }
             }
         }
@@ -115,14 +130,6 @@ public final class RulePolicy implements TrustPolicy {
             }
         }
         return best;
-    }
-
-    @Override
-    public RequirementEvaluator requirements() {
-        return (coords, verifiedClaims) -> {
-            Rule rule = matchRule(coords);
-            return rule == null ? null : rule.requirement().evaluate(verifiedClaims);
-        };
     }
 
     @Override

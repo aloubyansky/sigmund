@@ -3,7 +3,7 @@ package dev.cyberstamp.sigmund.plugin;
 import dev.cyberstamp.sigmund.core.Algorithms;
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ClaimOutcome;
-import dev.cyberstamp.sigmund.core.DiscoveryConfig;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.FileSignatureReport;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
 import dev.cyberstamp.sigmund.core.KeyImporter;
@@ -90,7 +90,7 @@ class SignatureInspector implements AutoCloseable {
         SignatureInspector build() throws MojoExecutionException {
             if (sigmund == null) {
                 sigmund = Sigmund.builder()
-                        .discoveryConfig(new DiscoveryConfig(true, false, List.of(), null))
+                        .verificationConfig(new VerificationConfig(true, false, List.of(), null))
                         .toolsConfig(SequoiaHomeResolver.toolsConfigOverrides(sqHome))
                         .build();
             }

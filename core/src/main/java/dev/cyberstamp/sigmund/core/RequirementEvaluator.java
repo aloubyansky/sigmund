@@ -14,15 +14,13 @@ import java.util.List;
 public interface RequirementEvaluator {
 
     /**
-     * Evaluates the verified claims found for an artifact.
+     * Evaluates the verified claims found for an artifact against the requirement of the rule
+     * that matched it.
      *
-     * @param coords the artifact being evaluated, which is what selects the applicable rule;
-     *        rules match at GAV level, so the coordinate rather than the digest-bearing
-     *        subject is what a requirement needs
      * @param verifiedClaims the claims that verified
-     * @return the evaluation, or {@code null} when no requirement applies to this artifact
+     * @return the evaluation
      */
-    Evaluation evaluate(ArtifactCoords coords, List<ClaimResult> verifiedClaims);
+    Evaluation evaluate(List<ClaimResult> verifiedClaims);
 
     /**
      * The result of evaluating requirements.

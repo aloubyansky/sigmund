@@ -32,15 +32,14 @@ final class OutcomeRollup {
     /**
      * Derives the outcome for one artifact.
      *
-     * @param coords the artifact being evaluated, which selects the applicable rule
      * @param claims every claim found for the artifact, in the order they were parsed
-     * @param evaluator decides whether the verified claims satisfy the applicable rule
-     * @param requiredKind the claim kind a rule demands, by format name, or {@code null}
+     * @param evaluator the requirement of the rule that matched the artifact, or {@code null}
+     *        when no rule did
      * @param mode what to do with claims beyond those that satisfied the requirements
      * @return the outcome and, where one applies, the reason it could not be decided
      */
-    public static Result derive(ArtifactCoords coords, List<ClaimResult> claims,
-            RequirementEvaluator evaluator, String requiredKind, ClaimSetMode mode) {
+    public static Result derive(List<ClaimResult> claims, RequirementEvaluator evaluator,
+            ClaimSetMode mode) {
         List<ClaimResult> found = claims == null ? List.of() : claims;
 
         // One pass: a failed claim ends it, an unsupported one is set aside before
@@ -74,14 +73,9 @@ final class OutcomeRollup {
 
         // no rule applies to this artifact
         RequirementEvaluator.Evaluation evaluation = evaluator == null ? null
-                : evaluator.evaluate(coords, verified == null ? List.of() : verified);
+                : evaluator.evaluate(verified == null ? List.of() : verified);
         if (evaluation == null) {
             return new Result(ArtifactOutcome.NOT_CONFIGURED, null);
-        }
-
-        // the rule demanded a claim kind that nothing installed could check
-        if (requiredKind != null && anySetAside && !evaluation.satisfied()) {
-            return indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
         }
 
         // requirements met, subject to what the claim-set mode says about the rest

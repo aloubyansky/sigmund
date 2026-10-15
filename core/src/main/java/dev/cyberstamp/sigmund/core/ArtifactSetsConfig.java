@@ -2,6 +2,7 @@ package dev.cyberstamp.sigmund.core;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Read-only registry of named artifact pattern groups, parsed from the
@@ -36,6 +37,15 @@ public class ArtifactSetsConfig {
      */
     public List<String> get(String groupName) {
         return groups.get(groupName);
+    }
+
+    /**
+     * Returns the names of the defined groups.
+     *
+     * @return the group names
+     */
+    public Set<String> names() {
+        return groups.keySet();
     }
 
     /**

@@ -13,7 +13,7 @@ class RequirementTest {
 
     @Test
     void conjunctionRequiresAllClauses() {
-        var req = requirement(clause("alice"), clause("ci-a", "ci-b"));   // alice AND (ci-a OR ci-b)
+        var req = requirement(clause("alice"), clause("ci-a", "ci-b")); // alice AND (ci-a OR ci-b)
         assertThat(req.evaluate(List.of(claimFrom("alice"))).satisfied()).isFalse();
         assertThat(req.evaluate(List.of(claimFrom("alice"), claimFrom("ci-b"))).satisfied()).isTrue();
     }
@@ -23,7 +23,7 @@ class RequirementTest {
         var req = requirement(clause("alice"));
         var ev = req.evaluate(List.of(claimFrom("alice"), claimFrom("mallory")));
         assertThat(ev.satisfied()).isTrue();
-        assertThat(ev.unaccepted()).hasSize(1);   // mallory → roll-up applies extra-claims
+        assertThat(ev.unaccepted()).hasSize(1); // mallory → roll-up applies extra-claims
     }
 
     @Test
@@ -37,7 +37,7 @@ class RequirementTest {
 
     @Test
     void singleClauseWithMultipleSigners() {
-        var req = requirement(clause("alice", "bob"));   // alice OR bob
+        var req = requirement(clause("alice", "bob")); // alice OR bob
         assertThat(req.evaluate(List.of(claimFrom("alice"))).satisfied()).isTrue();
         assertThat(req.evaluate(List.of(claimFrom("bob"))).satisfied()).isTrue();
         assertThat(req.evaluate(List.of(claimFrom("mallory"))).satisfied()).isFalse();
@@ -48,12 +48,12 @@ class RequirementTest {
         var req = requirement(clause("alice"), clause("alice", "bob"));
         var ev = req.evaluate(List.of(claimFrom("alice")));
         assertThat(ev.satisfied()).isTrue();
-        assertThat(ev.accepted()).hasSize(1);   // alice appears in both clauses but counted once
+        assertThat(ev.accepted()).hasSize(1); // alice appears in both clauses but counted once
     }
 
     @Test
     void emptyRequirementNotVacuouslySatisfied() {
-        var req = new Requirement(List.of(), List.of());   // catch-all with no clauses
+        var req = new Requirement(List.of(), List.of()); // catch-all with no clauses
         var ev = req.evaluate(List.of());
         assertThat(ev.satisfied()).isFalse();
         assertThat(ev.accepted()).isEmpty();

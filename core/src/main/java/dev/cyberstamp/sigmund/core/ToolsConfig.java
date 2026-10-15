@@ -15,11 +15,11 @@ import java.util.Set;
  * <p>
  * Tool configurations provide per-tool overrides for credential types and
  * tool-specific settings (e.g., cipher suite, key formats). These are combined
- * with operational settings from {@link DiscoveryConfig} during tool initialization.
+ * with operational settings from {@link VerificationConfig} during tool initialization.
  *
  * @see ToolConfig
  * @see SigmundConfig
- * @see DiscoveryConfig
+ * @see VerificationConfig
  */
 public class ToolsConfig {
 

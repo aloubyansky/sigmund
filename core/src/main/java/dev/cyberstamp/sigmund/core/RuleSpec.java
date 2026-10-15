@@ -33,9 +33,10 @@ public record RuleSpec(List<ArtifactPattern> patterns, List<Set<String>> clauseI
      */
     public RuleSpec {
         patterns = patterns == null ? List.of() : List.copyOf(patterns);
-        clauseIds = clauseIds == null ? List.of() : List.copyOf(clauseIds.stream()
-                .<Set<String>>map(set -> set == null ? Set.of() : Set.copyOf(set))
-                .toList());
+        clauseIds = clauseIds == null ? List.of()
+                : List.copyOf(clauseIds.stream()
+                        .<Set<String>> map(set -> set == null ? Set.of() : Set.copyOf(set))
+                        .toList());
         enforcement = enforcement == null ? Map.of() : Map.copyOf(enforcement);
     }
 }

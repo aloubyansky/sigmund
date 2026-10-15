@@ -19,7 +19,8 @@ import java.util.List;
  * @param clauses the clauses that must all be satisfied
  * @param defaultIssuers the issuers trusted for identity credentials that do not name their own
  */
-public record Requirement(List<Clause> clauses, List<String> defaultIssuers) {
+public record Requirement(List<Clause> clauses, List<String> defaultIssuers)
+        implements RequirementEvaluator {
 
     /**
      * Creates a requirement with defensive copies.
@@ -44,6 +45,7 @@ public record Requirement(List<Clause> clauses, List<String> defaultIssuers) {
      * @param verifiedClaims the claims that verified for the artifact
      * @return the evaluation result indicating whether the requirement was satisfied
      */
+    @Override
     public RequirementEvaluator.Evaluation evaluate(List<ClaimResult> verifiedClaims) {
         if (verifiedClaims == null) {
             verifiedClaims = List.of();

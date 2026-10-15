@@ -10,7 +10,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -31,9 +30,10 @@ import java.util.Set;
  * {@code issuer}, otherwise the top-level {@code issuers}, and the attributes it must
  * have attested</li>
  * </ul>
- * Identity entries are checked by {@link IdentityEntryValidator} when the policy is compiled on
- * the verification path, not at parse time, so the signing path never fails on a
- * verification-only semantic error.
+ * Identity entries and issuers are checked by {@link IdentityEntryValidator} when the policy is
+ * compiled on the verification path, not at parse time, so the signing path never fails on a
+ * verification-only semantic error. The parser only normalizes issuer names it recognizes and
+ * keeps any other as written.
  */
 class SigmundConfigParser {
 
@@ -89,23 +89,51 @@ class SigmundConfigParser {
             throw new PolicyConfigException(
                     "The 'policy' key is no longer supported; use 'rules' instead");
         }
+        if (root.has("version")) {
+            throw new PolicyConfigException(
+                    "The 'version' key is no longer supported; remove it");
+        }
         if (root.has("artifacts")) {
             throw new PolicyConfigException(
                     "The 'artifacts' key is no longer supported; use 'artifact-sets' instead");
         }
 
-        int version = root.has("version") ? root.get("version").asInt(1) : 1;
+        rejectUnknownTopLevelKeys(root);
+
         SignersConfig signers = parseSigners(root.get("signers"));
         List<String> issuers = parseIssuers(root.get("issuers"));
         SigningConfig signingConfig = parseSigningConfig(root.get("signing"));
         ToolsConfig toolsConfig = parseToolsRegistry(root.get("tools"));
-        DiscoveryConfig discoveryConfig = parseDiscoveryConfig(root.get("verification"));
+        VerificationConfig verificationConfig = parseVerificationConfig(root.get("verification"));
 
         ArtifactSetsConfig artifactSets = parseArtifactGroups(root.get("artifact-sets"));
         TrustPolicySpec trustPolicySpec = parseTrustPolicySpec(root, artifactSets, issuers);
 
-        return new SigmundConfig(version, signers, artifactSets, trustPolicySpec,
-                signingConfig, toolsConfig, discoveryConfig);
+        return new SigmundConfig(signers, artifactSets, trustPolicySpec,
+                signingConfig, toolsConfig, verificationConfig);
+    }
+
+    private static final List<String> TOP_LEVEL_KEYS = List.of("issuers", "signers",
+            "signing", "tools", "verification", "artifact-sets", "rules", "defaults");
+
+    /**
+     * Rejects top-level keys the schema does not define.
+     * <p>
+     * An ignored key would silently drop what the author wrote, and for the policy sections that
+     * fails open: a misspelled {@code rules} would leave a file with no policy, which observes
+     * rather than enforces.
+     */
+    private static void rejectUnknownTopLevelKeys(JsonNode root) {
+        for (Map.Entry<String, JsonNode> field : root.properties()) {
+            String key = field.getKey();
+            if (!TOP_LEVEL_KEYS.contains(key)) {
+                String suggestion = NearestName.among(key, TOP_LEVEL_KEYS);
+                throw new PolicyConfigException("Unknown top-level key '" + key + "'"
+                        + (suggestion == null
+                                ? "; expected one of " + String.join(", ", TOP_LEVEL_KEYS)
+                                : " — did you mean '" + suggestion + "'?"));
+            }
+        }
     }
 
     // --- Issuers ---
@@ -113,21 +141,12 @@ class SigmundConfigParser {
     private static List<String> parseIssuers(JsonNode node) {
         List<String> issuers = new ArrayList<>();
         for (String name : parseStringList(node)) {
-            String canonical = canonicalIssuer(name, "'issuers'");
+            String canonical = IssuerKind.canonicalName(name);
             if (!issuers.contains(canonical)) {
                 issuers.add(canonical);
             }
         }
         return List.copyOf(issuers);
-    }
-
-    private static String canonicalIssuer(String name, String where) {
-        if (IssuerKind.of(name) == null) {
-            throw new PolicyConfigException("Issuer '" + name + "' in " + where
-                    + " is neither a known directory (" + IssuerKind.KEYS_OPENPGP_ORG
-                    + ") nor an https:// OIDC issuer URL");
-        }
-        return IssuerKind.canonicalName(name);
     }
 
     // --- Signers ---
@@ -137,9 +156,7 @@ class SigmundConfigParser {
             return SignersConfig.EMPTY;
         }
         Map<String, SignerIdentity> result = new LinkedHashMap<>();
-        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-        while (fields.hasNext()) {
-            Map.Entry<String, JsonNode> entry = fields.next();
+        for (Map.Entry<String, JsonNode> entry : node.properties()) {
             result.put(entry.getKey(), parseSigner(entry.getKey(), entry.getValue()));
         }
         return new SignersConfig(result);
@@ -307,7 +324,7 @@ class SigmundConfigParser {
                 throw new PolicyConfigException("Signer '" + signerId
                         + "': each identity must be a map of an optional 'issuer' and attributes");
             }
-            creds.add(identity(signerId, inlineIssuer(signerId, entry), attributesOf(entry)));
+            creds.add(identity(signerId, inlineIssuer(entry), attributesOf(entry)));
         }
     }
 
@@ -321,11 +338,9 @@ class SigmundConfigParser {
         return attributes;
     }
 
-    private static String inlineIssuer(String signerId, JsonNode entry) {
+    private static String inlineIssuer(JsonNode entry) {
         String issuer = textField(entry, ISSUER);
-        return issuer == null
-                ? null
-                : canonicalIssuer(issuer, "signer '" + signerId + "'");
+        return issuer == null ? null : IssuerKind.canonicalName(issuer);
     }
 
     private static IdentityCredential identity(String signerId, String issuer,
@@ -381,9 +396,7 @@ class SigmundConfigParser {
             return ToolsConfig.EMPTY;
         }
         Map<String, ToolConfig> result = new LinkedHashMap<>();
-        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-        while (fields.hasNext()) {
-            Map.Entry<String, JsonNode> entry = fields.next();
+        for (Map.Entry<String, JsonNode> entry : node.properties()) {
             result.put(entry.getKey(), parseToolConfig(entry.getValue()));
         }
         return new ToolsConfig(result);
@@ -400,9 +413,7 @@ class SigmundConfigParser {
         }
 
         Map<String, String> settings = new LinkedHashMap<>();
-        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-        while (fields.hasNext()) {
-            Map.Entry<String, JsonNode> entry = fields.next();
+        for (Map.Entry<String, JsonNode> entry : node.properties()) {
             if (!"credentials".equals(entry.getKey()) && entry.getValue().isValueNode()) {
                 settings.put(entry.getKey(), entry.getValue().asText());
             }
@@ -419,8 +430,9 @@ class SigmundConfigParser {
      * parsed as patterns, {@code requires} is normalized into a conjunction of disjunctions by
      * signer id, and the enforcement and extra-claims settings are read. Signer references are not
      * resolved and issuer assertability is not checked — those happen when the policy is compiled on
-     * the verification path. A parsed configuration is always {@code present}; only
-     * {@link TrustPolicySpec#EMPTY} (the absence of any configuration) is not.
+     * the verification path. The policy is {@code present} when the document declares
+     * {@code rules} or {@code defaults}; a file that only configures signing, tools or signers
+     * is zero-config for verification, which observes rather than enforces.
      *
      * @param root the document root
      * @param sets the parsed artifact-set registry, for {@code match} expansion
@@ -435,7 +447,8 @@ class SigmundConfigParser {
         List<RuleSpec> rules = parseRules(root.get("rules"), sets);
         ClaimSetMode extraClaims = parseExtraClaims(defaultsNode);
         Map<ArtifactOutcome, EnforcementAction> defaults = parseDefaults(defaultsNode);
-        return new TrustPolicySpec(rules, extraClaims, defaults, issuers, true);
+        boolean present = root.has("rules") || root.has("defaults");
+        return new TrustPolicySpec(rules, extraClaims, defaults, issuers, present);
     }
 
     private static List<RuleSpec> parseRules(JsonNode node, ArtifactSetsConfig sets) {
@@ -481,11 +494,33 @@ class SigmundConfigParser {
                 for (String pattern : expanded) {
                     patterns.add(ArtifactPattern.parse(pattern));
                 }
+            } else if (isBareWord(entry)) {
+                throw new PolicyConfigException(undefinedSetMessage(entry, sets, location));
             } else {
                 patterns.add(ArtifactPattern.parse(entry));
             }
         }
         return patterns;
+    }
+
+    /**
+     * Indicates whether a {@code match} entry can only be an artifact-set reference.
+     * <p>
+     * A word with no {@code .}, {@code :} or {@code *} reads equally as a set name and as a
+     * one-word group, so a misspelled set would silently become a group pattern matching nothing.
+     * Such a word is therefore always a set reference, and a one-word group is written with an
+     * artifact wildcard, {@code junit:*}.
+     */
+    private static boolean isBareWord(String entry) {
+        return entry.indexOf('.') < 0 && entry.indexOf(':') < 0 && entry.indexOf('*') < 0;
+    }
+
+    private static String undefinedSetMessage(String entry, ArtifactSetsConfig sets,
+            String location) {
+        String suggestion = NearestName.among(entry, sets.names());
+        return location + ": '" + entry + "' is not a defined artifact-set"
+                + (suggestion == null ? "" : " — did you mean '" + suggestion + "'?")
+                + "; to match a one-word group, write '" + entry + ":*'";
     }
 
     private static List<Set<String>> parseRequires(JsonNode node, String location) {
@@ -509,7 +544,7 @@ class SigmundConfigParser {
 
     private static Set<String> parseClause(JsonNode node, String location) {
         if (node.isTextual()) {
-            return Set.of(node.asText());
+            return Set.of(signerReference(node, location));
         }
         if (node.isObject()) {
             return parseAnyOfClause(node, location);
@@ -532,9 +567,44 @@ class SigmundConfigParser {
         }
         Set<String> ids = new LinkedHashSet<>();
         for (JsonNode element : anyOf) {
-            ids.add(element.asText());
+            ids.add(anyOfEntry(element, location));
         }
         return ids;
+    }
+
+    /**
+     * Reads one {@code any-of} entry. A requirement is a conjunction of disjunctions, so an entry
+     * is a signer id and nothing deeper: a mapping or a nested {@code any-of} has no meaning.
+     */
+    private static String anyOfEntry(JsonNode element, String location) {
+        if (element.isObject() && element.has("any-of")) {
+            throw new PolicyConfigException(location
+                    + ": nested 'any-of' is not supported; list the signers in one 'any-of'");
+        }
+        if (!element.isValueNode() || element.isNull()) {
+            throw new PolicyConfigException(location + ": 'any-of' entries must be signer ids; found "
+                    + describe(element));
+        }
+        return signerReference(element, location);
+    }
+
+    private static String signerReference(JsonNode node, String location) {
+        String id = node.asText();
+        if (id.isBlank()) {
+            throw new PolicyConfigException(location
+                    + ": a signer reference must not be blank");
+        }
+        return id;
+    }
+
+    private static String describe(JsonNode node) {
+        if (node.isObject()) {
+            return "a mapping";
+        }
+        if (node.isArray()) {
+            return "a list";
+        }
+        return node.isNull() ? "an empty value" : "'" + node.asText() + "'";
     }
 
     private static Map<ArtifactOutcome, EnforcementAction> parseEnforcementOverrides(JsonNode node,
@@ -621,35 +691,33 @@ class SigmundConfigParser {
             return Map.of();
         }
         Map<String, List<String>> result = new LinkedHashMap<>();
-        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-        while (fields.hasNext()) {
-            Map.Entry<String, JsonNode> entry = fields.next();
+        for (Map.Entry<String, JsonNode> entry : node.properties()) {
             result.put(entry.getKey(), parseStringList(entry.getValue()));
         }
         return result;
     }
 
-    // --- Discovery ---
+    // --- Verification ---
 
     /**
-     * Parses the {@code discovery} section into a {@link DiscoveryConfig}.
+     * Parses the {@code verification} section into a {@link VerificationConfig}.
      * <p>
      * Contains operational concerns: key fetching behavior, keyserver URLs,
      * and the verification toolchain priority.
      *
-     * @param node the {@code discovery} YAML node, or {@code null}
-     * @return the parsed discovery configuration
+     * @param node the {@code verification} YAML node, or {@code null}
+     * @return the parsed verification configuration
      */
-    private static DiscoveryConfig parseDiscoveryConfig(JsonNode node) {
+    private static VerificationConfig parseVerificationConfig(JsonNode node) {
         if (node == null || node.isNull()) {
-            return DiscoveryConfig.DEFAULT;
+            return VerificationConfig.DEFAULT;
         }
         boolean resolveSigners = boolOrDefault(node, "resolve-signers", true);
         boolean importToKeyring = boolOrDefault(node, "import-to-keyring", false);
         List<String> keyservers = parseStringList(node.get("keyservers"));
         JsonNode tcNode = node.get("toolchain");
         List<String> toolchain = (tcNode != null && !tcNode.isNull()) ? parseStringList(tcNode) : null;
-        return new DiscoveryConfig(resolveSigners, importToKeyring, keyservers, toolchain);
+        return new VerificationConfig(resolveSigners, importToKeyring, keyservers, toolchain);
     }
 
     // --- Utilities ---

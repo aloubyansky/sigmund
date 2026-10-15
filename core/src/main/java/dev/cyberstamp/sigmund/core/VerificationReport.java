@@ -7,6 +7,7 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * What a verification run found, grouped for reporting, and which of it blocks the build.
@@ -105,12 +106,99 @@ public final class VerificationReport {
         List<ArtifactResult> blocking = new ArrayList<>();
         byOutcome.forEach((outcome, results) -> {
             for (ArtifactResult result : results) {
-                if (policy.enforcementFor(outcome, result.matchedRule(), present).blocks()) {
+                if (enforcement(result).blocks()) {
                     blocking.add(result);
                 }
             }
         });
         return List.copyOf(blocking);
+    }
+
+    /**
+     * Returns what the policy does about one artifact's outcome.
+     *
+     * <p>
+     * Resolved here, once, so that every insertion point treats the same result alike: a goal
+     * logging an ignored outcome as a warning while an extension stayed silent about it would
+     * be two verifiers disagreeing.
+     *
+     * @param result a result of this run
+     * @return the enforcement action for the result's outcome under the rule that matched it
+     */
+    public EnforcementAction enforcement(ArtifactResult result) {
+        return policy.enforcementFor(result.outcome(), result.matchedRule(), present);
+    }
+
+    /**
+     * Returns the heading for one outcome's section: the outcome, how many artifacts reached it,
+     * and how many of those the policy chose to ignore, by where that choice was made.
+     *
+     * <p>
+     * Ignored artifacts are counted rather than dropped. Ignoring decides that an outcome does
+     * not act on the build; it does not make the outcome untrue, and a run in which most
+     * artifacts carried no claim must not read as one with full coverage (§2.1). Each source of
+     * the decision — a rule's own override, the policy {@code defaults}, or the absence of a
+     * policy — is named with its count, so a large ignored share traces to the line that
+     * allowed it.
+     *
+     * @param outcome the outcome whose section is being headed
+     * @return the heading, such as {@code NO_CLAIM (390) — ignored: 387 by rules[4] '*'}
+     */
+    public String heading(ArtifactOutcome outcome) {
+        List<ArtifactResult> results = byOutcome.getOrDefault(outcome, List.of());
+        String heading = outcome + " (" + results.size() + ")";
+        if (outcome == ArtifactOutcome.SATISFIED) {
+            return heading;
+        }
+        Map<String, Integer> ignoredBySource = new LinkedHashMap<>();
+        for (ArtifactResult result : results) {
+            if (enforcement(result) == EnforcementAction.IGNORE) {
+                ignoredBySource.merge(actionSource(result), 1, Integer::sum);
+            }
+        }
+        if (ignoredBySource.isEmpty()) {
+            return heading;
+        }
+        return heading + " — ignored: " + ignoredBySource.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer> comparingByValue().reversed()
+                        .thenComparing(Map.Entry.comparingByKey()))
+                .map(entry -> entry.getValue() + " " + entry.getKey())
+                .collect(Collectors.joining(", "));
+    }
+
+    /**
+     * Returns one artifact's line: its coordinate, tagged with what its outcome does to the
+     * build unless it is {@link ArtifactOutcome#SATISFIED}.
+     *
+     * <p>
+     * The tag repeats what a build tool's log level already shows, because a log read as plain
+     * text — in a CI artifact, a ticket, a diff — has lost those levels.
+     *
+     * @param result a result of this run
+     * @return the line, such as {@code org.example:lib:1.0 [blocks]}
+     */
+    public String describe(ArtifactResult result) {
+        String coords = result.subject().coords().toString();
+        if (result.outcome() == ArtifactOutcome.SATISFIED) {
+            return coords;
+        }
+        return coords + switch (enforcement(result)) {
+            case FAIL -> " [blocks]";
+            case WARN -> " [warning]";
+            case IGNORE -> " [ignored]";
+        };
+    }
+
+    /**
+     * Names where an artifact's enforcement action was decided: the matched rule when it
+     * overrides this outcome, otherwise the policy defaults, or no policy at all.
+     */
+    private String actionSource(ArtifactResult result) {
+        MatchedRule rule = result.matchedRule();
+        if (rule != null && rule.enforcement().containsKey(result.outcome())) {
+            return "by " + rule.location() + " '" + rule.pattern() + "'";
+        }
+        return present ? "by defaults" : "with no policy";
     }
 
     /**

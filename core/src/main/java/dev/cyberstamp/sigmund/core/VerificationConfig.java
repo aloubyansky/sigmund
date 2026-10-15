@@ -3,11 +3,12 @@ package dev.cyberstamp.sigmund.core;
 import java.util.List;
 
 /**
- * Configuration for signature discovery and verification operations,
- * parsed from the {@code discovery} section of {@code sigmund.yaml}.
+ * How verification runs, parsed from the {@code verification} section of {@code sigmund.yaml}.
  * <p>
- * Contains operational concerns: key fetching behavior, keyserver URLs,
- * and the verification toolchain. Per-tool settings live in {@link ToolsConfig}.
+ * Contains operational concerns: key fetching behavior, keyserver URLs, and the verification
+ * toolchain. These configure how claims are checked, never what policy requires, so widening
+ * them changes what can be seen, not what is accepted. Per-tool settings live in
+ * {@link ToolsConfig}.
  *
  * @param resolveSigners whether tools should fetch missing keys to resolve signer identities
  * @param importToKeyring whether to persist fetched keys into the tool's keyring
@@ -16,7 +17,7 @@ import java.util.List;
  * @see ToolsConfig
  * @see SigmundConfig
  */
-public record DiscoveryConfig(
+public record VerificationConfig(
         boolean resolveSigners,
         boolean importToKeyring,
         List<String> keyservers,
@@ -28,14 +29,14 @@ public record DiscoveryConfig(
     /** Default tool priority order. */
     public static final List<String> DEFAULT_TOOL_PRIORITY = List.of("bc", "sq", "gpg");
 
-    /** Default discovery configuration. */
-    public static final DiscoveryConfig DEFAULT = new DiscoveryConfig(
+    /** Default verification configuration. */
+    public static final VerificationConfig DEFAULT = new VerificationConfig(
             true, false, List.of(DEFAULT_KEYSERVER), null);
 
     /**
-     * Creates a discovery config with defensive copies.
+     * Creates a verification config with defensive copies.
      */
-    public DiscoveryConfig {
+    public VerificationConfig {
         keyservers = keyservers != null && !keyservers.isEmpty()
                 ? List.copyOf(keyservers)
                 : List.of(DEFAULT_KEYSERVER);

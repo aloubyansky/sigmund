@@ -14,14 +14,14 @@ import java.util.TreeSet;
  * leave an entry accepting more than intended, and an attribute nobody asserts would leave a
  * signer that silently never matches. So both are errors that name the signer and the fix:
  * <ul>
+ * <li>an issuer — listed, or named on an entry — that is neither a known directory nor an
+ * {@code https://} OIDC issuer URL, since its kind, and so what it can assert, is unknown;</li>
  * <li>an attribute no issuer kind asserts, with the nearest known name suggested;</li>
  * <li>an entry none of its issuers can assert — its own issuer if it names one, otherwise the
  * listed default issuers — naming the kind of issuer to add.</li>
  * </ul>
  */
 final class IdentityEntryValidator {
-
-    private static final int MAX_SUGGESTION_DISTANCE = 3;
 
     private IdentityEntryValidator() {
     }
@@ -34,6 +34,7 @@ final class IdentityEntryValidator {
      * @throws PolicyConfigException if an entry cannot be satisfied
      */
     static void validate(SignersConfig signers, List<String> defaultIssuers) {
+        rejectUnclassifiableIssuers(signers, defaultIssuers);
         for (String name : signers.names()) {
             for (Credential credential : signers.get(name).credentials()) {
                 if (credential instanceof IdentityCredential identity) {
@@ -63,11 +64,37 @@ final class IdentityEntryValidator {
         }
     }
 
+    /**
+     * Rejects issuers whose kind cannot be told from their name. Runs before anything asks an
+     * issuer what it can assert, which presumes a kind.
+     */
+    private static void rejectUnclassifiableIssuers(SignersConfig signers,
+            List<String> defaultIssuers) {
+        for (String issuer : defaultIssuers) {
+            requireClassifiable(issuer, "'issuers'");
+        }
+        for (String name : signers.names()) {
+            for (Credential credential : signers.get(name).credentials()) {
+                if (credential instanceof IdentityCredential identity && identity.issuer() != null) {
+                    requireClassifiable(identity.issuer(), "signer '" + name + "'");
+                }
+            }
+        }
+    }
+
+    private static void requireClassifiable(String issuer, String where) {
+        if (IssuerKind.of(issuer) == null) {
+            throw new PolicyConfigException("Issuer '" + issuer + "' in " + where
+                    + " is neither a known directory (" + IssuerKind.KEYS_OPENPGP_ORG
+                    + ") nor an https:// OIDC issuer URL");
+        }
+    }
+
     private static void rejectUnknownAttributes(String signer, Collection<String> names) {
         Set<String> known = knownAttributes();
         for (String name : names) {
             if (!known.contains(name)) {
-                String suggestion = nearest(name, known);
+                String suggestion = NearestName.among(name, known);
                 throw new PolicyConfigException("Signer '" + signer + "': unknown attribute '"
                         + name + "'"
                         + (suggestion == null ? "; known: " + String.join(", ", known)
@@ -116,37 +143,5 @@ final class IdentityEntryValidator {
             known.addAll(kind.attributes());
         }
         return known;
-    }
-
-    private static String nearest(String name, Collection<String> candidates) {
-        String best = null;
-        int bestDistance = MAX_SUGGESTION_DISTANCE + 1;
-        for (String candidate : candidates) {
-            int distance = distance(name, candidate);
-            if (distance < bestDistance) {
-                best = candidate;
-                bestDistance = distance;
-            }
-        }
-        return best;
-    }
-
-    private static int distance(String a, String b) {
-        int[] previous = new int[b.length() + 1];
-        int[] current = new int[b.length() + 1];
-        for (int j = 0; j <= b.length(); j++) {
-            previous[j] = j;
-        }
-        for (int i = 1; i <= a.length(); i++) {
-            current[0] = i;
-            for (int j = 1; j <= b.length(); j++) {
-                int substitution = previous[j - 1] + (a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1);
-                current[j] = Math.min(substitution, Math.min(previous[j], current[j - 1]) + 1);
-            }
-            int[] swap = previous;
-            previous = current;
-            current = swap;
-        }
-        return previous[b.length()];
     }
 }

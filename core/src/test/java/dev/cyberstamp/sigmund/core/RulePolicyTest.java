@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.StringReader;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class RulePolicyTest {
 
@@ -56,6 +58,58 @@ class RulePolicyTest {
                 .isInstanceOf(PolicyConfigException.class).hasMessageContaining("specificity");
     }
 
+    @ParameterizedTest(name = "{0} ties with {1}")
+    @CsvSource({
+            "com.acme:*:1.0,   com.acme:lib,      com.acme:lib:1.0",
+            "com.acme.*:lib,   com.acme.*:*:1.0,  com.acme:lib:1.0",
+            "*:lib,            *:*:1.0,           *:lib:1.0"
+    })
+    void differentPatternsTyingOnASharedCoordinateAreErrorAtCompile(String a, String b,
+            String common) {
+        var doc = parse("""
+                signers: { a: "a@x.io" }
+                issuers: [keys.openpgp.org]
+                rules:
+                  - match: ["%s"]
+                    requires: [a]
+                  - match: ["%s"]
+                    requires: [a]
+                """.formatted(a, b));
+        assertThatThrownBy(() -> RulePolicy.compile(doc.trustPolicySpec(), doc.signers()))
+                .isInstanceOf(PolicyConfigException.class)
+                .hasMessageContaining("rules[0]")
+                .hasMessageContaining("rules[1]")
+                .hasMessageContaining(common);
+    }
+
+    @Test
+    void equalSpecificityWithoutASharedCoordinateCompiles() {
+        var doc = parse("""
+                signers: { a: "a@x.io" }
+                issuers: [keys.openpgp.org]
+                rules:
+                  - match: ["com.acme:a"]
+                    requires: [a]
+                  - match: ["com.acme:b"]
+                    requires: [a]
+                """);
+        var policy = RulePolicy.compile(doc.trustPolicySpec(), doc.signers());
+        assertThat(policy.matchRule(coords("com.acme", "b", "1")).location()).isEqualTo("rules[1]");
+    }
+
+    @Test
+    void patternsRepeatedWithinOneRuleCompile() {
+        var doc = parse("""
+                signers: { a: "a@x.io" }
+                issuers: [keys.openpgp.org]
+                rules:
+                  - match: ["com.acme:*:1.0", "com.acme:lib"]
+                    requires: [a]
+                """);
+        assertThat(RulePolicy.compile(doc.trustPolicySpec(), doc.signers())
+                .matchRule(coords("com.acme", "lib", "1.0"))).isNotNull();
+    }
+
     @Test
     void catchAllMatchesEverythingElse() {
         var doc = parse("""
@@ -100,6 +154,6 @@ class RulePolicyTest {
                 issuers: [keys.openpgp.org, https://token.actions.githubusercontent.com]
                 signers: { alice: "alice@x.io" }
                 """);
-        RulePolicy.compile(doc.trustPolicySpec(), doc.signers());   // no throw: only the directory asserts email
+        RulePolicy.compile(doc.trustPolicySpec(), doc.signers()); // no throw: only the directory asserts email
     }
 }

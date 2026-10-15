@@ -3,14 +3,18 @@ package dev.cyberstamp.sigmund.plugin;
 import dev.cyberstamp.sigmund.core.Algorithms;
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ArtifactPattern;
-import dev.cyberstamp.sigmund.core.DiscoveryConfig;
+import dev.cyberstamp.sigmund.core.Credential;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
 import dev.cyberstamp.sigmund.core.KeyCredential;
+import dev.cyberstamp.sigmund.core.MatchedRule;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
 import dev.cyberstamp.sigmund.core.PolicyConfigException;
+import dev.cyberstamp.sigmund.core.Rule;
 import dev.cyberstamp.sigmund.core.RulePolicy;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
+import dev.cyberstamp.sigmund.core.SignerIdentity;
 import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
 import dev.cyberstamp.sigmund.core.VerifyResult;
@@ -18,6 +22,7 @@ import dev.cyberstamp.sigmund.plugin.SignatureInspector.SignedArtifact;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.io.StringReader;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -29,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -83,9 +89,9 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         }
 
         SigmundConfig config = loadConfig();
-        DiscoveryConfig discoveryConfig = resolveDiscoveryConfig(
-                config != null ? config.discoveryConfig() : DiscoveryConfig.DEFAULT);
-        try (SignatureInspector inspector = buildInspector(discoveryConfig,
+        VerificationConfig verificationConfig = resolveVerificationConfig(
+                config != null ? config.verificationConfig() : VerificationConfig.DEFAULT);
+        try (SignatureInspector inspector = buildInspector(verificationConfig,
                 mergeToolOverrides(config != null ? config.toolsConfig()
                         : dev.cyberstamp.sigmund.core.ToolsConfig.EMPTY))) {
 
@@ -433,7 +439,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             }
         }
 
-        dropSignersWithoutCredentials(artifactSigners, signersByKey);
+        dropSignersWithoutCredentials(List.of(artifactSigners), signersByKey);
         Map<String, List<String>> trustPatterns = TrustPatternCollapse.collapse(artifactSigners);
 
         try (PrintWriter w = new PrintWriter(Files.newBufferedWriter(configFile.toPath()))) {
@@ -451,115 +457,300 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
     }
 
     /**
-     * Updates an existing config by parsing it, finding artifacts not yet
-     * configured, and appending their signers and trust entries.
+     * Updates an existing config from the inspection results, adding what it does not cover yet
+     * and listing what only a person should change.
+     *
+     * <p>
+     * An artifact is a candidate when no rule matches it or the rule that does names no signer —
+     * a catch-all, or the rule that tolerated it unsigned. An unsigned candidate with no rule
+     * joins the tolerant rule; a signed one gets a requirement on the signers that signed it, and
+     * when the tolerant rule lists its module it is moved out of that list, since the identical
+     * pattern in two rules would tie. An artifact under a rule with requirements is never
+     * rewritten: a signature from a signer that rule does not name is exactly the change
+     * verification exists to catch, so it is listed for review instead. The updated text is
+     * parsed and compiled before it is written, and nothing is written if it would not load.
+     *
+     * @param results the inspection results
+     * @param configFile the config to update in place
+     * @throws MojoExecutionException when the config is missing, does not load, or would not
+     *         load once updated
      */
-    private void updateExistingTrustConfig(List<SignedArtifact> results, File configFile)
+    void updateExistingTrustConfig(List<SignedArtifact> results, File configFile)
             throws MojoExecutionException {
         if (!configFile.exists()) {
             throw new MojoExecutionException(
                     "Config file not found: " + configFile.getAbsolutePath()
                             + ". Use -Dsigmund.generateTrustConfig to create one first.");
         }
+        List<String> lines = readConfigLines(configFile);
+        SigmundConfig existing = loadUpdatable(configFile.getPath(), lines);
+        TrustPolicy trustPolicy = compileUpdatable(configFile.getPath(), existing);
 
-        SigmundConfig existing;
-        try {
-            existing = SigmundConfig.parse(configFile.toPath());
-        } catch (PolicyConfigException e) {
-            throw new MojoExecutionException("Failed to parse config: " + configFile, e);
-        }
+        UpdatePlan plan = new UpdatePlan(existing);
+        groupByArtifact(results).forEach((coords, entries) -> plan.consider(coords, entries,
+                trustPolicy.matchRule(coords), trustPolicy.issuers()));
+        plan.moveOutOfTolerantRules(lines);
+        dropSignersWithoutCredentials(
+                List.of(plan.newArtifactSigners, plan.movedArtifactSigners), plan.newSigners);
 
-        TrustPolicy trustPolicy = RulePolicy.compile(existing.trustPolicySpec(), existing.signers());
-
-        Map<ArtifactCoords, List<SignedArtifact>> byArtifact = new HashMap<>();
-        for (SignedArtifact r : results) {
-            byArtifact.computeIfAbsent(r.coords(), k -> new ArrayList<>(2)).add(r);
-        }
-
-        Map<String, SignerInfo> newSigners = new LinkedHashMap<>();
-        Map<String, Set<String>> newArtifactSigners = new LinkedHashMap<>();
-        List<String> newUnsigned = new ArrayList<>();
-        int signerCounter = existing.signers().names().size();
-
-        for (var entry : byArtifact.entrySet()) {
-            ArtifactCoords coords = entry.getKey();
-            List<SignedArtifact> sigEntries = entry.getValue();
-
-            if (trustPolicy.matchRule(coords) != null) {
-                continue;
-            }
-
-            boolean allUnsigned = sigEntries.stream()
-                    .noneMatch(SignedArtifact::hasAttributableClaim);
-            if (allUnsigned) {
-                newUnsigned.add(ArtifactPattern.forModule(coords).toString());
-                continue;
-            }
-
-            String strippedCoords = ArtifactPattern.forModule(coords).toString();
-            for (SignedArtifact sa : sigEntries) {
-                if (!sa.hasAttributableClaim()) {
-                    continue;
-                }
-                VerifyResult vr = sa.verifyResult();
-                if (vr.signerIdentifier() == null) {
-                    continue;
-                }
-                String id = vr.signerIdentifier();
-                SignerInfo info = newSigners.get(id);
-                if (info == null) {
-                    signerCounter++;
-                    info = new SignerInfo(
-                            resolveUniqueSignerId(vr, signerCounter, newSigners, existing.signers().names()),
-                            vr);
-                    newSigners.put(id, info);
-                } else {
-                    info.merge(vr);
-                }
-                newArtifactSigners.computeIfAbsent(strippedCoords, k -> new LinkedHashSet<>())
-                        .add(info.id);
-            }
-        }
-
-        if (newSigners.isEmpty() && newUnsigned.isEmpty()) {
+        if (plan.isEmpty()) {
+            logReview(plan.review);
             getLog().info("Trust configuration is already up to date.");
             return;
         }
 
-        Map<String, List<String>> newTrustPatterns = TrustPatternCollapse.collapse(newArtifactSigners);
+        spliceRules(lines, plan.newTrustPatterns(), plan.newUnsigned);
+        spliceSigners(lines, plan.referencedSigners());
+        compileUpdatable(configFile.getPath() + " (as updated)",
+                loadUpdatable(configFile.getPath() + " (as updated)", lines));
+        writeConfigLines(configFile, lines);
 
-        spliceIntoConfigFile(configFile, newSigners, newTrustPatterns, newUnsigned);
-
+        logReview(plan.review);
         getLog().info("");
         getLog().info("Trust configuration updated: " + configFile.getPath());
         getLog().info("Review changes with: git diff " + configFile.getName());
     }
 
-    /**
-     * Splices new entries into the existing config file by inserting lines at the
-     * end of each section. Preserves all existing content including comments and
-     * formatting.
-     */
-    private void spliceIntoConfigFile(File configFile,
-            Map<String, SignerInfo> newSigners,
-            Map<String, List<String>> newTrustPatterns,
-            List<String> newUnsigned) throws MojoExecutionException {
-        List<String> lines;
+    private static Map<ArtifactCoords, List<SignedArtifact>> groupByArtifact(
+            List<SignedArtifact> results) {
+        Map<ArtifactCoords, List<SignedArtifact>> byArtifact = new LinkedHashMap<>();
+        for (SignedArtifact r : results) {
+            byArtifact.computeIfAbsent(r.coords(), k -> new ArrayList<>(2)).add(r);
+        }
+        return byArtifact;
+    }
+
+    private static List<String> readConfigLines(File configFile) throws MojoExecutionException {
         try {
-            lines = new ArrayList<>(Files.readAllLines(configFile.toPath()));
+            return new ArrayList<>(Files.readAllLines(configFile.toPath()));
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to read trust config: " + configFile, e);
         }
+    }
 
-        spliceRules(lines, newTrustPatterns, newUnsigned);
-        spliceSigners(lines, newSigners);
-
+    private static void writeConfigLines(File configFile, List<String> lines)
+            throws MojoExecutionException {
         try {
             Files.write(configFile.toPath(), lines);
         } catch (IOException e) {
-            throw new MojoExecutionException(
-                    "Failed to update trust config: " + configFile, e);
+            throw new MojoExecutionException("Failed to update trust config: " + configFile, e);
         }
+    }
+
+    private static SigmundConfig loadUpdatable(String source, List<String> lines)
+            throws MojoExecutionException {
+        try {
+            return SigmundConfig.parse(source, new StringReader(String.join("\n", lines)));
+        } catch (PolicyConfigException e) {
+            throw new MojoExecutionException("Failed to parse config " + source + ": "
+                    + e.getMessage(), e);
+        }
+    }
+
+    private static TrustPolicy compileUpdatable(String source, SigmundConfig config)
+            throws MojoExecutionException {
+        try {
+            return RulePolicy.compile(config.trustPolicySpec(), config.signers());
+        } catch (PolicyConfigException e) {
+            throw new MojoExecutionException("Config " + source + " does not load: "
+                    + e.getMessage(), e);
+        }
+    }
+
+    private void logReview(List<String> review) {
+        if (review.isEmpty()) {
+            return;
+        }
+        getLog().warn("");
+        getLog().warn("Needs review (" + review.size() + "), left unchanged:");
+        review.forEach(line -> getLog().warn("  " + line));
+    }
+
+    /**
+     * What one update adds to a config, and what it leaves for a person to decide.
+     */
+    private final class UpdatePlan {
+
+        final Map<String, SignerInfo> newSigners = new LinkedHashMap<>();
+        final Map<String, Set<String>> newArtifactSigners = new LinkedHashMap<>();
+        final Map<String, Set<String>> movedArtifactSigners = new LinkedHashMap<>();
+        final List<String> newUnsigned = new ArrayList<>();
+        final List<String> review = new ArrayList<>();
+        private final Map<Integer, Set<String>> leavingTolerantRule = new TreeMap<>(
+                Comparator.reverseOrder());
+        private final Map<Integer, String> tolerantRuleNames = new HashMap<>();
+        private final SigmundConfig existing;
+        private int signerCounter;
+
+        UpdatePlan(SigmundConfig existing) {
+            this.existing = existing;
+            this.signerCounter = existing.signers().names().size();
+        }
+
+        void consider(ArtifactCoords coords, List<SignedArtifact> entries, Rule rule,
+                List<String> issuers) {
+            String module = ArtifactPattern.forModule(coords).toString();
+            if (rule != null && !rule.requirement().clauses().isEmpty()) {
+                reviewUnnamedSigner(coords, module, entries, rule, issuers);
+                return;
+            }
+            if (entries.stream().noneMatch(SignedArtifact::hasAttributableClaim)) {
+                if (rule == null) {
+                    newUnsigned.add(module);
+                }
+                return;
+            }
+            if (rule == null) {
+                recordSigners(entries, module, newArtifactSigners);
+                return;
+            }
+            recordSigners(entries, module, movedArtifactSigners);
+            if (rule.patterns().contains(ArtifactPattern.parse(module))) {
+                int index = RuleListEditor.ruleIndex(rule.location());
+                leavingTolerantRule.computeIfAbsent(index, i -> new LinkedHashSet<>()).add(module);
+                tolerantRuleNames.put(index, rule.location());
+            }
+        }
+
+        private void reviewUnnamedSigner(ArtifactCoords coords, String module,
+                List<SignedArtifact> entries, Rule rule, List<String> issuers) {
+            List<Credential> proven = provenCredentials(entries);
+            if (proven.isEmpty() || namesAny(rule, proven, issuers)) {
+                return;
+            }
+            String signers = rule.requirement().clauses().stream()
+                    .flatMap(clause -> clause.signers().stream())
+                    .map(SignerIdentity::id)
+                    .distinct()
+                    .collect(Collectors.joining(", "));
+            String provenNames = proven.stream()
+                    .map(credential -> credential.type() + " " + credential.displayName())
+                    .collect(Collectors.joining(", "));
+            MatchedRule matched = rule.toMatchedRule(coords);
+            review.add(module + " — signed by " + provenNames + ", but " + matched.location()
+                    + " '" + matched.pattern() + "' requires [" + signers + "]");
+        }
+
+        private void recordSigners(List<SignedArtifact> entries, String module,
+                Map<String, Set<String>> target) {
+            for (SignedArtifact sa : entries) {
+                if (!sa.hasAttributableClaim() || sa.verifyResult().signerIdentifier() == null) {
+                    continue;
+                }
+                target.computeIfAbsent(module, k -> new LinkedHashSet<>())
+                        .add(signerIdFor(sa.verifyResult()));
+            }
+        }
+
+        /**
+         * Names the signer of a result: a signer the config already defines with the key or
+         * identity it proved, otherwise a new one, so that an update never defines the same
+         * signer twice.
+         */
+        private String signerIdFor(VerifyResult vr) {
+            String existingId = existingSignerProving(provenCredentials(vr));
+            if (existingId != null) {
+                return existingId;
+            }
+            String key = vr.signerIdentifier();
+            SignerInfo info = newSigners.get(key);
+            if (info == null) {
+                signerCounter++;
+                info = new SignerInfo(resolveUniqueSignerId(vr, signerCounter, newSigners,
+                        existing.signers().names()), vr);
+                newSigners.put(key, info);
+            } else {
+                info.merge(vr);
+            }
+            return info.id;
+        }
+
+        private String existingSignerProving(List<Credential> proven) {
+            for (String id : existing.signers().names()) {
+                for (Credential expected : existing.signers().get(id).credentials()) {
+                    if (proven.stream().anyMatch(expected::matches)) {
+                        return id;
+                    }
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Moves modules that started being signed out of the rules that tolerated them unsigned.
+         * A rule whose list cannot be edited is left as written, and its modules are listed for
+         * review instead of gaining a requirement that would tie with it.
+         */
+        void moveOutOfTolerantRules(List<String> lines) {
+            leavingTolerantRule.forEach((index, modules) -> {
+                if (!RuleListEditor.removeFromMatch(lines, index, modules)) {
+                    for (String module : modules) {
+                        movedArtifactSigners.remove(module);
+                        review.add(module + " — now signed, but listed in "
+                                + tolerantRuleNames.get(index)
+                                + ", which update cannot edit; move it out of that rule by hand");
+                    }
+                }
+            });
+        }
+
+        Map<String, List<String>> newTrustPatterns() {
+            Map<String, List<String>> patterns = new LinkedHashMap<>(
+                    TrustPatternCollapse.collapse(newArtifactSigners));
+            movedArtifactSigners.forEach((module, ids) -> patterns.put(module, List.copyOf(ids)));
+            return patterns;
+        }
+
+        Map<String, SignerInfo> referencedSigners() {
+            Set<String> referenced = new HashSet<>();
+            newArtifactSigners.values().forEach(referenced::addAll);
+            movedArtifactSigners.values().forEach(referenced::addAll);
+            Map<String, SignerInfo> signers = new LinkedHashMap<>(newSigners);
+            signers.values().removeIf(info -> !referenced.contains(info.id));
+            return signers;
+        }
+
+        boolean isEmpty() {
+            return newArtifactSigners.isEmpty() && movedArtifactSigners.isEmpty()
+                    && newUnsigned.isEmpty();
+        }
+    }
+
+    private static boolean namesAny(Rule rule, List<Credential> proven, List<String> issuers) {
+        return rule.requirement().clauses().stream()
+                .flatMap(clause -> clause.signers().stream())
+                .flatMap(signer -> signer.credentials().stream())
+                .anyMatch(expected -> proven.stream().anyMatch(credential ->
+                        expected instanceof IdentityCredential identity
+                                ? identity.matches(credential, issuers)
+                                : expected.matches(credential)));
+    }
+
+    private static List<Credential> provenCredentials(List<SignedArtifact> entries) {
+        List<Credential> proven = new ArrayList<>();
+        for (SignedArtifact sa : entries) {
+            if (sa.isVerified()) {
+                proven.addAll(provenCredentials(sa.verifyResult()));
+            }
+        }
+        return proven;
+    }
+
+    /**
+     * The credentials a verified result proves, as bootstrap would record them: the full
+     * fingerprint of an OpenPGP key, or the identity in a Sigstore certificate.
+     */
+    private static List<Credential> provenCredentials(VerifyResult vr) {
+        if (vr instanceof OpenPgpVerifyResult opvr) {
+            String fingerprint = SignerInfo.fullFingerprint(opvr);
+            return fingerprint == null ? List.of() : List.of(new KeyCredential(
+                    opvr.version() >= 6 ? Credential.TYPE_OPENPGP_V6 : Credential.TYPE_OPENPGP_V4,
+                    fingerprint));
+        }
+        if (vr instanceof SigstoreVerifyResult svr && svr.identity() != null) {
+            return List.of(svr.identity());
+        }
+        return List.of();
     }
 
     /**
@@ -709,7 +900,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
      * from the trust mappings, so the generated config never names a signer it does not
      * define. Their artifacts are left without a mapping and are reported as not configured.
      */
-    private void dropSignersWithoutCredentials(Map<String, Set<String>> artifactSigners,
+    private void dropSignersWithoutCredentials(List<Map<String, Set<String>>> artifactSignerMaps,
             Map<String, SignerInfo> signersByKey) {
         Set<String> usable = new HashSet<>();
         for (SignerInfo info : signersByKey.values()) {
@@ -717,11 +908,13 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
                 usable.add(info.id);
             } else {
                 getLog().warn("Signer " + info.id + " proved no full fingerprint or verified "
-                        + "identity and is left out of the generated config");
+                        + "identity and is left out of the config");
             }
         }
-        artifactSigners.values().forEach(ids -> ids.retainAll(usable));
-        artifactSigners.values().removeIf(Set::isEmpty);
+        for (Map<String, Set<String>> artifactSigners : artifactSignerMaps) {
+            artifactSigners.values().forEach(ids -> ids.retainAll(usable));
+            artifactSigners.values().removeIf(Set::isEmpty);
+        }
     }
 
     private static void appendSignerYaml(SignerInfo info, String indent, Consumer<String> out) {

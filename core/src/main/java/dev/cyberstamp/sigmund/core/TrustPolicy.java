@@ -8,8 +8,8 @@ import java.util.List;
  * <p>
  * The trust policy is the identity-first model's answer to "who do I trust for this artifact?"
  * rather than "does this signature verify?" It selects the most specific {@link Rule} for an
- * artifact, exposes a {@link RequirementEvaluator} that the shared roll-up consults, and maps
- * each {@link ArtifactOutcome} to an {@link EnforcementAction}.
+ * artifact, whose {@link Requirement} the shared roll-up evaluates, and maps each
+ * {@link ArtifactOutcome} to an {@link EnforcementAction}.
  * <p>
  * Declared as an interface to allow pluggable policy sources beyond YAML — for example, OPA, a
  * database, or hardcoded configuration. The default implementation, {@link RulePolicy}, is
@@ -39,17 +39,6 @@ public interface TrustPolicy {
      * @return the matched rule, or {@code null} if no rule applies
      */
     Rule matchRule(ArtifactCoords coords);
-
-    /**
-     * Returns the evaluator the shared roll-up consults to decide whether an artifact's verified
-     * claims satisfy the rule that applies to it.
-     * <p>
-     * The evaluator matches the applicable rule by coordinate; when no rule applies it returns
-     * {@code null}, which the roll-up reads as {@link ArtifactOutcome#NOT_CONFIGURED}.
-     *
-     * @return the requirement evaluator for this policy
-     */
-    RequirementEvaluator requirements();
 
     /**
      * Returns what to do with verified claims beyond those the applicable rule's requirements

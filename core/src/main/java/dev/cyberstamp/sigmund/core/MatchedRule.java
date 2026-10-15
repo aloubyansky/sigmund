@@ -5,18 +5,19 @@ import java.util.Map;
 /**
  * The policy rule that applies to a given artifact, represented by its pattern and enforcement.
  * <p>
- * When several rules match an artifact, the most specific wins. This record holds the selected
- * rule's pattern text (for error messages and audit logs), its location in the policy file
- * (for traceability), and its enforcement overrides.
+ * When several rules match an artifact, the most specific wins. This record holds the pattern
+ * of the selected rule that matched the artifact (for reports and audit logs), the rule's
+ * location in the policy file (for traceability), and its enforcement overrides.
  * <p>
- * The pattern text is the first pattern from the rule's pattern list (which may contain
- * several patterns that all matched the artifact).
+ * Where several of the rule's patterns match — an artifact-set expands to many — the pattern
+ * named is the most specific of them, the one that decided the rule won. The artifact-set a
+ * pattern came from is not recorded: the location already points at the line naming it.
  *
  * @param pattern the artifact pattern text that matched, from the rule's pattern list
  * @param location the rule's location in the policy file, for diagnostic messages
  * @param enforcement the enforcement action overrides for artifact outcomes
  *
- * @see Rule#toMatchedRule()
+ * @see Rule#toMatchedRule(ArtifactCoords)
  */
 public record MatchedRule(String pattern, String location,
         Map<ArtifactOutcome, EnforcementAction> enforcement) {

@@ -13,15 +13,18 @@ assert log.contains("org.apache.commons:commons-lang3:3.14.0") : "Should list co
 assert log.contains("org.jspecify:jspecify:1.0.0") : "Should list jspecify"
 assert !log.contains("UNSIGNED") || log.contains("Signer: UNKNOWN") || log.contains("Signer: NOT VERIFIED") : "jspecify should not be fully identified"
 
-// The update should still have modified the trust config
-assert log.contains("Trust configuration updated") : "Should log config update"
+// jspecify's signer proves only a key ID, no full fingerprint or verified identity, so the
+// update must leave it out rather than write a rule naming a signer the file never defines —
+// such a config would not load. With nothing usable to add, the file is left as it was.
+assert log.contains("proved no full fingerprint or verified identity and is left out of the config") : "Should leave out the unidentifiable signer"
+assert log.contains("Trust configuration is already up to date") : "Should report nothing to add"
 
 // The config should have the original signer plus an entry for jspecify
 File trustConfig = new File(basedir, "sigmund.yaml")
 assert trustConfig.exists()
 String yaml = trustConfig.text
 assert yaml.contains("gary-gregory") : "Should still have original signer"
-assert yaml.contains("org.jspecify") : "Should have added jspecify trust entry"
+assert !yaml.contains("signer-2") : "Must not reference a signer it does not define"
 
 // Should not have duplicate section headers
 int signersCount = yaml.split("signers:").length - 1
@@ -45,4 +48,4 @@ assert !topLevelKeys.contains("artifacts") : "Updated config must not emit the r
 assert yaml.contains("# Trust configuration for update test") : "Header comment should be preserved"
 assert yaml.contains("# Gary Gregory signs commons-lang3") : "Inline comment should be preserved"
 
-println "SUCCESS: updated sigmund.yaml stays on the rules schema (no v1 keys), preserved comments, and reported UNKNOWN for jspecify"
+println "SUCCESS: sigmund.yaml stays loadable on the rules schema (no v1 keys), keeps its comments, and leaves out the unidentifiable jspecify signer"

@@ -1,7 +1,7 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.ConfigLoader;
-import dev.cyberstamp.sigmund.core.DiscoveryConfig;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.ToolConfig;
@@ -75,20 +75,20 @@ abstract class AbstractSigmundMojo extends AbstractMojo {
     }
 
     /**
-     * Merges file-based {@link DiscoveryConfig} with Maven property overrides.
+     * Merges file-based {@link VerificationConfig} with Maven property overrides.
      *
      * <p>
      * Each parameter, when non-null, takes precedence over the file configuration.
      * If signer resolution is enabled but no keyservers are configured, the
-     * {@link DiscoveryConfig#DEFAULT_KEYSERVER default keyserver} is used.
+     * {@link VerificationConfig#DEFAULT_KEYSERVER default keyserver} is used.
      *
-     * @param fileConfig base discovery configuration from the config file
+     * @param fileConfig base verification configuration from the config file
      * @param resolveSigners override for signer resolution, or {@code null} to use file config
      * @param keyservers comma-separated keyserver list override, or {@code null} to use file config
      * @param importToKeyring override for key import behavior, or {@code null} to use file config
-     * @return the resolved discovery configuration
+     * @return the resolved verification configuration
      */
-    protected DiscoveryConfig resolveDiscoveryConfig(DiscoveryConfig fileConfig,
+    protected VerificationConfig resolveVerificationConfig(VerificationConfig fileConfig,
             Boolean resolveSigners, String keyservers, Boolean importToKeyring) {
         if (keyservers == null) {
             keyservers = System.getProperty("sigmund.keyserver");
@@ -100,12 +100,12 @@ abstract class AbstractSigmundMojo extends AbstractMojo {
                 ? resolveSigners
                 : (keyservers != null || fileConfig.resolveSigners());
         if (effectiveResolve && effectiveKeyservers.isEmpty()) {
-            effectiveKeyservers = List.of(DiscoveryConfig.DEFAULT_KEYSERVER);
+            effectiveKeyservers = List.of(VerificationConfig.DEFAULT_KEYSERVER);
         }
         boolean effectiveImport = importToKeyring != null
                 ? importToKeyring
                 : fileConfig.importToKeyring();
-        return new DiscoveryConfig(
+        return new VerificationConfig(
                 effectiveResolve, effectiveImport,
                 effectiveKeyservers, fileConfig.toolchain());
     }
@@ -148,15 +148,15 @@ abstract class AbstractSigmundMojo extends AbstractMojo {
     }
 
     /**
-     * Builds a {@link Sigmund} instance with the given discovery and tools configurations.
+     * Builds a {@link Sigmund} instance with the given verification and tools configurations.
      *
-     * @param discoveryConfig the resolved discovery configuration
+     * @param verificationConfig the resolved verification configuration
      * @param toolsConfig the resolved tools configuration
      * @return a configured Sigmund instance
      */
-    protected Sigmund buildSigmund(DiscoveryConfig discoveryConfig, ToolsConfig toolsConfig) {
+    protected Sigmund buildSigmund(VerificationConfig verificationConfig, ToolsConfig toolsConfig) {
         return Sigmund.builder()
-                .discoveryConfig(discoveryConfig)
+                .verificationConfig(verificationConfig)
                 .toolsConfig(toolsConfig)
                 .build();
     }

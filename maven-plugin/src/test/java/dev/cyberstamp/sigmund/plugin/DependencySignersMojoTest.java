@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.maven.plugin.MojoExecutionException;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -309,6 +310,161 @@ class DependencySignersMojoTest {
             DependencySignersMojo mojo = new DependencySignersMojo();
             mojo.setLog(new RecordingLog());
             mojo.writeTrustConfigYaml(results, configFile.toFile());
+        }
+    }
+
+    @Nested
+    class UpdatingAConfig {
+
+        private static final String OTHER_FP = "0123456789ABCDEF0123456789ABCDEF01234567";
+
+        private final ArtifactCoords lib = ArtifactCoords.parse("com.example:lib:1.0");
+        private final ArtifactCoords util = ArtifactCoords.parse("com.example:util:1.0");
+
+        private final RecordingLog log = new RecordingLog();
+
+        private SignedArtifact signedBy(ArtifactCoords coords, String fingerprint) {
+            return new SignedArtifact(coords, "central",
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "User <user@example.com>",
+                            "RSA", 4, fingerprint.substring(24), fingerprint),
+                    null, null);
+        }
+
+        private Path configWith(Path dir, String yaml) throws Exception {
+            Path file = dir.resolve("sigmund.yaml");
+            Files.writeString(file, yaml);
+            return file;
+        }
+
+        private TrustPolicy update(Path file, SignedArtifact... results) throws Exception {
+            DependencySignersMojo mojo = new DependencySignersMojo();
+            mojo.setLog(log);
+            mojo.updateExistingTrustConfig(List.of(results), file.toFile());
+            SigmundConfig config = SigmundConfig.parse(file);
+            return RulePolicy.compile(config.trustPolicySpec(), config.signers());
+        }
+
+        @Test
+        void aCatchAllDoesNotHideANewlySignedModule(@TempDir Path dir) throws Exception {
+            Path file = configWith(dir, """
+                    rules:
+                      - match: ["*"]
+                        on-no-claim: ignore
+                    """);
+
+            TrustPolicy policy = update(file, signedBy(lib, FULL_FP));
+
+            assertThat(policy.matchRule(lib).requirement().clauses()).hasSize(1);
+            assertThat(policy.matchRule(util).location()).isEqualTo("rules[0]");
+        }
+
+        @Test
+        void aModuleThatStartedSigningMovesOutOfTheTolerantRule(@TempDir Path dir)
+                throws Exception {
+            Path file = configWith(dir, """
+                    rules:
+                      - match: [com.example:lib, com.example:util]
+                        on-no-claim: ignore
+                    """);
+
+            TrustPolicy policy = update(file, signedBy(lib, FULL_FP),
+                    SignedArtifact.noClaim(util, "central"));
+
+            assertThat(policy.matchRule(lib).requirement().clauses()).hasSize(1);
+            assertThat(policy.matchRule(util).requirement().clauses()).isEmpty();
+            assertThat(Files.readString(file)).contains("- match: [com.example:util]");
+        }
+
+        @Test
+        void theLastModuleLeavingTheTolerantRuleTakesTheRuleWithIt(@TempDir Path dir)
+                throws Exception {
+            Path file = configWith(dir, """
+                    rules:
+                      - match: [com.example:lib]
+                        on-no-claim: ignore
+                    """);
+
+            TrustPolicy policy = update(file, signedBy(lib, FULL_FP));
+
+            assertThat(policy.matchRule(lib).requirement().clauses()).hasSize(1);
+            assertThat(Files.readString(file)).doesNotContain("on-no-claim");
+        }
+
+        @Test
+        void aHandWrittenTolerantRuleIsLeftForReview(@TempDir Path dir) throws Exception {
+            String yaml = """
+                    rules:
+                      - match:
+                          - com.example:lib
+                        on-no-claim: ignore
+                    """;
+            Path file = configWith(dir, yaml);
+
+            update(file, signedBy(lib, FULL_FP));
+
+            assertThat(Files.readString(file)).isEqualTo(yaml);
+            assertThat(log.lines).anyMatch(line -> line.contains("Needs review"))
+                    .anyMatch(line -> line.contains("com.example:lib")
+                            && line.contains("rules[0]"));
+        }
+
+        @Test
+        void aSignerChangeUnderARequirementIsReportedNotRewritten(@TempDir Path dir)
+                throws Exception {
+            String yaml = """
+                    signers:
+                      alice:
+                        pgp4: "%s"
+
+                    rules:
+                      - match: [com.example:lib]
+                        requires: [alice]
+                    """.formatted(FULL_FP);
+            Path file = configWith(dir, yaml);
+
+            update(file, signedBy(lib, OTHER_FP));
+
+            assertThat(Files.readString(file)).isEqualTo(yaml);
+            assertThat(log.lines).anyMatch(line -> line.contains("Needs review"))
+                    .anyMatch(line -> line.contains("com.example:lib")
+                            && line.contains(OTHER_FP)
+                            && line.contains("rules[0] 'com.example:lib' requires [alice]"));
+        }
+
+        @Test
+        void aSignatureFromANamedSignerNeedsNoReview(@TempDir Path dir) throws Exception {
+            Path file = configWith(dir, """
+                    signers:
+                      alice:
+                        pgp4: "%s"
+
+                    rules:
+                      - match: [com.example:lib]
+                        requires: [alice]
+                    """.formatted(FULL_FP));
+
+            update(file, signedBy(lib, FULL_FP));
+
+            assertThat(log.lines).noneMatch(line -> line.contains("Needs review"))
+                    .anyMatch(line -> line.contains("already up to date"));
+        }
+
+        @Test
+        void anUpdateThatWouldNotLoadIsNotWritten(@TempDir Path dir) throws Exception {
+            String yaml = """
+                    rules:
+                      - match: ["com.example:*:1.0"]
+                        on-no-claim: ignore
+                    """;
+            Path file = configWith(dir, yaml);
+            DependencySignersMojo mojo = new DependencySignersMojo();
+            mojo.setLog(log);
+
+            assertThatThrownBy(() -> mojo.updateExistingTrustConfig(
+                    List.of(signedBy(lib, FULL_FP)), file.toFile()))
+                    .isInstanceOf(MojoExecutionException.class)
+                    .hasMessageContaining("tie on specificity");
+            assertThat(Files.readString(file)).isEqualTo(yaml);
         }
     }
 

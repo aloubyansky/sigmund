@@ -62,41 +62,44 @@ public record Rule(List<ArtifactPattern> patterns, Requirement requirement,
      * <p>
      * When several rules match an artifact, the most specific wins. This method returns
      * the specificity of the best (most specific) matching pattern.
-     * <p>
-     * If no pattern matches, the specificity is zero (though such a rule should not have
-     * been selected in the first place).
      *
      * @param coords the artifact coordinates
      * @return the best matching pattern's specificity, or 0 if no pattern matches
      * @see ArtifactPattern#specificity()
      */
     public int specificity(ArtifactCoords coords) {
-        if (coords == null || patterns.isEmpty()) {
-            return 0;
-        }
-        int best = 0;
-        for (ArtifactPattern pattern : patterns) {
-            if (pattern.matches(coords)) {
-                int score = pattern.specificity();
-                if (score > best) {
-                    best = score;
-                }
-            }
-        }
-        return best;
+        ArtifactPattern best = bestPattern(coords);
+        return best == null ? 0 : best.specificity();
     }
 
     /**
-     * Converts this rule to a {@link MatchedRule} for reporting and enforcement lookups.
+     * Converts this rule to the {@link MatchedRule} recorded on an artifact's result.
      * <p>
-     * The matched rule holds the first pattern's text (for error messages), the location,
-     * and the enforcement overrides. The first pattern is representative since all patterns
-     * in a rule share the same requirement and enforcement.
+     * The pattern named is the one that matched the artifact — the most specific of the rule's
+     * patterns that do, which is also the one that decided this rule won — rather than the first
+     * one written, so that a rule listing an artifact-set reports the entry that actually applied.
      *
-     * @return the matched rule derived from this rule
+     * @param coords the artifact the rule matched
+     * @return the matched rule naming the pattern that applied
      */
-    public MatchedRule toMatchedRule() {
-        String patternText = patterns.isEmpty() ? "" : patterns.get(0).toString();
+    public MatchedRule toMatchedRule(ArtifactCoords coords) {
+        ArtifactPattern best = bestPattern(coords);
+        String patternText = best != null ? best.toString()
+                : patterns.isEmpty() ? "" : patterns.get(0).toString();
         return new MatchedRule(patternText, location, enforcement);
+    }
+
+    private ArtifactPattern bestPattern(ArtifactCoords coords) {
+        if (coords == null) {
+            return null;
+        }
+        ArtifactPattern best = null;
+        for (ArtifactPattern pattern : patterns) {
+            if (pattern.matches(coords)
+                    && (best == null || pattern.specificity() > best.specificity())) {
+                best = pattern;
+            }
+        }
+        return best;
     }
 }

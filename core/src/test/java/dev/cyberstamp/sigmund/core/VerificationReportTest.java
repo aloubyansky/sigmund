@@ -54,6 +54,115 @@ class VerificationReportTest {
     }
 
     @Nested
+    class EnforcementInTheReport {
+
+        private static MatchedRule matched(TrustPolicy policy, String name) {
+            ArtifactCoords coords = new ArtifactCoords("org.example", name, "", "jar", "1.0");
+            return policy.matchRule(coords).toMatchedRule(coords);
+        }
+
+        private static TrustPolicy ignoringByRuleAndByDefaults() {
+            var spec = new TrustPolicySpec(List.of(
+                    new RuleSpec(List.of(ArtifactPattern.parse("org.example:a")), List.of(),
+                            Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE),
+                            "rules[0]"),
+                    new RuleSpec(List.of(ArtifactPattern.parse("org.example:*")), List.of(),
+                            Map.of(), "rules[1]")),
+                    ClaimSetMode.ALL_CLAIMS,
+                    Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), List.of(), true);
+            return RulePolicy.compile(spec, SignersConfig.EMPTY);
+        }
+
+        @Test
+        void eachResultCarriesTheActionThePolicyResolvesForIt() {
+            TrustPolicy policy = catchAllIgnore();
+            ArtifactResult tolerated = result("x", ArtifactOutcome.NO_CLAIM, null,
+                    matched(policy, "x"));
+            ArtifactResult broken = result("y", ArtifactOutcome.FAILED, null, matched(policy, "y"));
+            VerificationReport report = reportFor(policy, true, List.of(tolerated, broken));
+
+            assertThat(report.enforcement(tolerated)).isEqualTo(EnforcementAction.IGNORE);
+            assertThat(report.enforcement(broken)).isEqualTo(EnforcementAction.FAIL);
+        }
+
+        @Test
+        void headingCountsAnOutcomeNothingIgnored() {
+            VerificationReport report = reportFor(requiring("org.example:*", "a"), true,
+                    List.of(result("a", ArtifactOutcome.NO_CLAIM, null)));
+
+            assertThat(report.heading(ArtifactOutcome.NO_CLAIM)).isEqualTo("NO_CLAIM (1)");
+        }
+
+        @Test
+        void headingNamesTheRuleThatIgnoredArtifacts() {
+            TrustPolicy policy = catchAllIgnore();
+            VerificationReport report = reportFor(policy, true, List.of(
+                    result("x", ArtifactOutcome.NO_CLAIM, null, matched(policy, "x")),
+                    result("y", ArtifactOutcome.NO_CLAIM, null, matched(policy, "y"))));
+
+            assertThat(report.heading(ArtifactOutcome.NO_CLAIM))
+                    .isEqualTo("NO_CLAIM (2) — ignored: 2 by rules[0] '*'");
+        }
+
+        @Test
+        void headingSplitsIgnoredArtifactsByWhereTheActionCameFrom() {
+            TrustPolicy policy = ignoringByRuleAndByDefaults();
+            VerificationReport report = reportFor(policy, true, List.of(
+                    result("a", ArtifactOutcome.NO_CLAIM, null, matched(policy, "a")),
+                    result("b", ArtifactOutcome.NO_CLAIM, null, matched(policy, "b")),
+                    result("c", ArtifactOutcome.NO_CLAIM, null, matched(policy, "c"))));
+
+            assertThat(report.heading(ArtifactOutcome.NO_CLAIM)).isEqualTo(
+                    "NO_CLAIM (3) — ignored: 2 by defaults, 1 by rules[0] 'org.example:a'");
+        }
+
+        @Test
+        void headingSaysWhenNothingIsEnforcedForLackOfAPolicy() {
+            VerificationReport report = reportFor(RulePolicy.EMPTY, false,
+                    List.of(result("a", ArtifactOutcome.NOT_CONFIGURED, null)));
+
+            assertThat(report.heading(ArtifactOutcome.NOT_CONFIGURED))
+                    .isEqualTo("NOT_CONFIGURED (1) — ignored: 1 with no policy");
+        }
+
+        @Test
+        void headingOfSatisfiedArtifactsMentionsNoEnforcement() {
+            VerificationReport report = reportFor(RulePolicy.EMPTY, false,
+                    List.of(result("a", ArtifactOutcome.SATISFIED, null)));
+
+            assertThat(report.heading(ArtifactOutcome.SATISFIED)).isEqualTo("SATISFIED (1)");
+        }
+
+        @Test
+        void artifactLineIsTaggedWithWhatItsOutcomeDoes() {
+            TrustPolicy policy = catchAllIgnore();
+            ArtifactResult blocking = result("a", ArtifactOutcome.FAILED, null, matched(policy, "a"));
+            ArtifactResult ignored = result("b", ArtifactOutcome.NO_CLAIM, null, matched(policy, "b"));
+            ArtifactResult satisfied = result("c", ArtifactOutcome.SATISFIED, null,
+                    matched(policy, "c"));
+            VerificationReport report = reportFor(policy, true,
+                    List.of(blocking, ignored, satisfied));
+
+            assertThat(report.describe(blocking)).isEqualTo("org.example:a:1.0 [blocks]");
+            assertThat(report.describe(ignored)).isEqualTo("org.example:b:1.0 [ignored]");
+            assertThat(report.describe(satisfied)).isEqualTo("org.example:c:1.0");
+        }
+
+        @Test
+        void artifactLineIsTaggedAsAWarningWhenTheRuleWarns() {
+            var spec = new TrustPolicySpec(List.of(new RuleSpec(
+                    List.of(ArtifactPattern.parse("*")), List.of(),
+                    Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.WARN), "rules[0]")),
+                    ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
+            TrustPolicy policy = RulePolicy.compile(spec, SignersConfig.EMPTY);
+            ArtifactResult warned = result("a", ArtifactOutcome.NO_CLAIM, null, matched(policy, "a"));
+
+            assertThat(reportFor(policy, true, List.of(warned)).describe(warned))
+                    .isEqualTo("org.example:a:1.0 [warning]");
+        }
+    }
+
+    @Nested
     class AttesterGrouping {
 
         private static final EvidenceRef REF = new EvidenceRef(Path.of("lib-1.0.jar.asc"),
@@ -319,8 +428,8 @@ class VerificationReportTest {
         @Test
         void anUnsatisfiedArtifactBlocksWhenPolicyPresent() {
             TrustPolicy policy = requiring("org.example:*", "a");
-            MatchedRule mr = policy.matchRule(
-                    new ArtifactCoords("org.example", "a", "", "jar", "1.0")).toMatchedRule();
+            ArtifactCoords coords = new ArtifactCoords("org.example", "a", "", "jar", "1.0");
+            MatchedRule mr = policy.matchRule(coords).toMatchedRule(coords);
 
             assertThat(reportFor(policy, true,
                     List.of(result("a", ArtifactOutcome.UNSATISFIED, null, mr))).blocks()).isTrue();
@@ -329,8 +438,8 @@ class VerificationReportTest {
         @Test
         void catchAllIgnoreToleratesUnsigned() {
             TrustPolicy policy = catchAllIgnore();
-            MatchedRule mr = policy.matchRule(
-                    new ArtifactCoords("org.other", "x", "", "jar", "1")).toMatchedRule();
+            ArtifactCoords coords = new ArtifactCoords("org.other", "x", "", "jar", "1");
+            MatchedRule mr = policy.matchRule(coords).toMatchedRule(coords);
 
             assertThat(reportFor(policy, true,
                     List.of(result("x", ArtifactOutcome.NO_CLAIM, null, mr))).blocks()).isFalse();
@@ -341,8 +450,8 @@ class VerificationReportTest {
             // the point of verifying rather than skipping: policy tolerates missing evidence,
             // not evidence that fails
             TrustPolicy policy = catchAllIgnore();
-            MatchedRule mr = policy.matchRule(
-                    new ArtifactCoords("org.other", "x", "", "jar", "1")).toMatchedRule();
+            ArtifactCoords coords = new ArtifactCoords("org.other", "x", "", "jar", "1");
+            MatchedRule mr = policy.matchRule(coords).toMatchedRule(coords);
 
             assertThat(reportFor(policy, true,
                     List.of(result("x", ArtifactOutcome.FAILED, null, mr))).blocks()).isTrue();

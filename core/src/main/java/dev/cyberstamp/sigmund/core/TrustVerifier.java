@@ -13,19 +13,28 @@ import java.util.List;
  *
  * <h2>Assessment flow</h2>
  * <ol>
- * <li><strong>Resolve policy</strong> — look up expected signers. Empty list → NOT_CONFIGURED.</li>
- * <li><strong>Check unsigned</strong> — if unsigned-ok and no evidence → TRUSTED.</li>
- * <li><strong>Verify evidence</strong> — each provider verifies matching files → EvidenceResults.</li>
- * <li><strong>Match identity</strong> — check credential bag overlap between signers and evidence.</li>
- * <li><strong>Apply policy</strong> — produce verdict based on matches and policy settings.</li>
+ * <li><strong>Verify evidence</strong> — every evidence file is read once and each provider that
+ * handles it verifies its claims, so a {@link ClaimResult} is recorded for every claim found,
+ * whether or not it ends up mattering.</li>
+ * <li><strong>Resolve identities</strong> — where the matched rule names a directory-backed
+ * identity, the directory is asked about the keys the claims proved.</li>
+ * <li><strong>Match the rule</strong> — the most specific {@link Rule} for the artifact is
+ * selected once and recorded on the result as a {@link MatchedRule}.</li>
+ * <li><strong>Roll up</strong> — the shared roll-up evaluates the rule's {@link Requirement}
+ * over the verified claims and derives the {@link ArtifactOutcome}; no rule means
+ * {@link ArtifactOutcome#NOT_CONFIGURED}.</li>
  * </ol>
+ * What the outcome does to the build is not decided here: enforcement is resolved from the
+ * recorded rule by {@link VerificationReport}, so that observing and enforcing runs report the
+ * same results.
  *
  * <h2>Usage</h2>
  *
  * <pre>{@code
- * TrustVerifier verifier = sigmund.verifier(trustPolicy);
- * TrustResult result = verifier.assess(artifact, artifactFile, evidenceFiles);
- * if (result.verdict() == TrustVerdict.TRUSTED) { ... }
+ * TrustVerifier verifier = sigmund.verifier(
+ *         RulePolicy.compile(config.trustPolicySpec(), config.signers()));
+ * ArtifactResult result = verifier.assess(coords, artifactFile, evidenceFiles);
+ * if (result.outcome() == ArtifactOutcome.SATISFIED) { ... }
  * }</pre>
  *
  * @see ArtifactResult
@@ -71,12 +80,10 @@ public class TrustVerifier {
         List<ClaimResult> claims = identityResolver.resolve(coords,
                 collectClaims(artifactFile, evidenceFiles));
         Rule matched = policy.matchRule(coords);
-        RequirementEvaluator evaluator = matched == null ? null
-                : (requestedCoords, verifiedClaims) -> matched.requirement().evaluate(verifiedClaims);
-        OutcomeRollup.Result rollup = OutcomeRollup.derive(coords, claims, evaluator,
-                null, policy.claimSetMode());
+        OutcomeRollup.Result rollup = OutcomeRollup.derive(claims,
+                matched == null ? null : matched.requirement(), policy.claimSetMode());
         return new ArtifactResult(ArtifactSubject.of(coords, artifactFile), rollup.outcome(),
-                rollup.reason(), matched == null ? null : matched.toMatchedRule(), claims,
+                rollup.reason(), matched == null ? null : matched.toMatchedRule(coords), claims,
                 verifiedAt);
     }
 

@@ -152,8 +152,8 @@ class ClaimIdentityResolverTest {
     private static boolean satisfied(TrustPolicy policy, List<ClaimResult> claims) {
         List<ClaimResult> verified = claims.stream()
                 .filter(c -> c.outcome() == ClaimOutcome.VERIFIED).toList();
-        RequirementEvaluator.Evaluation evaluation = policy.requirements().evaluate(COORDS, verified);
-        return evaluation != null && evaluation.satisfied();
+        Rule rule = policy.matchRule(COORDS);
+        return rule != null && rule.requirement().evaluate(verified).satisfied();
     }
 
     private static ClaimResult claim(String fingerprint) {
