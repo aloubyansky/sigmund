@@ -4,7 +4,6 @@ import dev.cyberstamp.sigmund.core.Algorithms;
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ArtifactPattern;
 import dev.cyberstamp.sigmund.core.Credential;
-import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
 import dev.cyberstamp.sigmund.core.KeyCredential;
@@ -17,6 +16,7 @@ import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SignerIdentity;
 import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.VerifyResult;
 import dev.cyberstamp.sigmund.plugin.SignatureInspector.SignedArtifact;
 import java.io.File;
@@ -720,10 +720,9 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         return rule.requirement().clauses().stream()
                 .flatMap(clause -> clause.signers().stream())
                 .flatMap(signer -> signer.credentials().stream())
-                .anyMatch(expected -> proven.stream().anyMatch(credential ->
-                        expected instanceof IdentityCredential identity
-                                ? identity.matches(credential, issuers)
-                                : expected.matches(credential)));
+                .anyMatch(expected -> proven.stream().anyMatch(credential -> expected instanceof IdentityCredential identity
+                        ? identity.matches(credential, issuers)
+                        : expected.matches(credential)));
     }
 
     private static List<Credential> provenCredentials(List<SignedArtifact> entries) {
@@ -743,9 +742,10 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
     private static List<Credential> provenCredentials(VerifyResult vr) {
         if (vr instanceof OpenPgpVerifyResult opvr) {
             String fingerprint = SignerInfo.fullFingerprint(opvr);
-            return fingerprint == null ? List.of() : List.of(new KeyCredential(
-                    opvr.version() >= 6 ? Credential.TYPE_OPENPGP_V6 : Credential.TYPE_OPENPGP_V4,
-                    fingerprint));
+            return fingerprint == null ? List.of()
+                    : List.of(new KeyCredential(
+                            opvr.version() >= 6 ? Credential.TYPE_OPENPGP_V6 : Credential.TYPE_OPENPGP_V4,
+                            fingerprint));
         }
         if (vr instanceof SigstoreVerifyResult svr && svr.identity() != null) {
             return List.of(svr.identity());

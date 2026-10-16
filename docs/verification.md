@@ -19,6 +19,7 @@ This guide covers how to verify artifact signatures using Sigmund. Signature ver
   - [How Routing Works](#how-routing-works)
   - [Tool Capabilities](#tool-capabilities)
   - [Outcomes and reasons](#outcomes-and-reasons)
+  - [Accepted algorithms](#accepted-algorithms)
 - [Sigstore Verification](#sigstore-verification)
   - [Auto-Detection](#auto-detection)
   - [Identity Extraction](#identity-extraction)
@@ -211,7 +212,9 @@ BC verifies with Bouncy Castle's high-level OpenPGP API, which judges a signatur
 Each verification tool returns one of three outcomes:
 
 - **`VERIFIED`** — the signature is valid
-- **`FAILED`** — the signature is invalid: a tampered artifact or the wrong signature
+- **`FAILED`** — the signature must not be trusted: the artifact's bytes do not match it
+  (tampering, or the wrong signature), or the key that made it had already expired when it
+  signed, or was revoked — as compromised, at any time; for another reason, before it signed
 - **`INDETERMINATE`** — nothing was established either way, with a reason saying why
 
 Keeping "could not check" apart from "checked and rejected" is the point of the
@@ -219,15 +222,54 @@ third outcome: only `FAILED` is an attack signal. The reasons are:
 
 | Reason | Meaning | Transient |
 |--------|---------|-----------|
-| `KEY_UNAVAILABLE` | The signing key is in no keyring and could not be fetched | yes |
+| `KEY_UNAVAILABLE` | The signing key is in no keyring and could not be fetched, or the copy found cannot be used — such as a certificate served without the self-signatures that bind the key | yes |
 | `TRUST_ROOT_UNAVAILABLE` | Sigstore TUF metadata missing or too stale | yes |
 | `DISCOVERY_UNAVAILABLE` | Evidence might exist but the source could not be queried | yes |
 | `TOOL_UNAVAILABLE` | The verification tool could not be run, or broke while running | yes |
-| `UNSUPPORTED_ALGORITHM` | No installed tool can check this signature | no |
+| `UNSUPPORTED_ALGORITHM` | No installed tool can check this signature, or it uses an algorithm Sigmund does not accept (see below) | no |
 | `EVIDENCE_MALFORMED` | The signature or bundle could not be parsed | no |
 
 A transient reason may resolve on a later run; a permanent one will not without
 installing different tooling or fixing the evidence.
+
+A tool declining to *use a key* is never reported as `FAILED`. A correct signature by a key
+whose certificate lacks its binding self-signatures is `KEY_UNAVAILABLE`: keys.openpgp.org,
+for example, serves a key without its user IDs — and so without the self-signatures on them —
+until its owner verifies an address, and a fuller copy from another keyserver may resolve it.
+A key bound only with an algorithm Sigmund does not accept is `UNSUPPORTED_ALGORITHM`.
+
+### Accepted algorithms
+
+Every backend accepts the same algorithms, so the verdict for an artifact does not depend on
+which tool answered, or on the machine it ran on. The set is fixed in Sigmund, not
+configurable. On top of each tool's current defaults, Sigmund accepts what artifacts in Maven
+repositories have long been signed with:
+
+| Accepted | Why |
+|---|---|
+| SHA-1 and RIPEMD-160 document signatures | Older releases are signed this way |
+| SHA-1 and RIPEMD-160 self-signatures, at any date | Many active release keys are still bound by SHA-1 self-signatures. The practical attack on SHA-1 is a chosen-prefix collision, which needs the victim to sign data the attacker prepared; a self-signature is made by the key's owner over their own key, so it does not apply. GnuPG exempts self-signatures for the same reason, and Sigmund never relies on third-party certifications |
+| RSA and DSA keys from 1024 bits | Older release keys |
+
+A signature using anything weaker is `INDETERMINATE` with `UNSUPPORTED_ALGORITHM`, not
+`FAILED`.
+
+How each tool is made to apply it:
+
+- **Bouncy Castle** — Sigmund configures its verification policy in code.
+- **Sequoia (`sq`)** — Sigmund runs `sq` with `SEQUOIA_CRYPTO_POLICY` pointing at a policy file
+  it writes, which **replaces the host's system crypto policy** for those runs. On Fedora and
+  RHEL the system policy (`/etc/crypto-policies/back-ends/sequoia.config`) rejects SHA-1,
+  RIPEMD-160, RSA-1024 and DSA, so without the override a SHA-1-bound key such as many on Maven
+  Central would be rejected by `sq` alone. Your own `sq` use outside Sigmund is unaffected.
+- **GnuPG** — its defaults already accept the set; Sigmund passes no options. GnuPG does
+  reject a SHA-1 self-signature on an ECDSA P-256 key — for hash size rather than for SHA-1 —
+  where the other tools accept it; SHA-1-bound keys are in practice RSA or DSA keys from before
+  ECDSA was common.
+
+Each tool is also read by what it actually concluded rather than by its exit code: GnuPG exits
+0 for a good signature by a revoked key, so Sigmund reads its status lines, and Sequoia's report
+is read for whether it found a bad signature or a key it would not use.
 
 ## Sigstore Verification
 

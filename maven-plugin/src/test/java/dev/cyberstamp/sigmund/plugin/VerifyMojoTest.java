@@ -324,7 +324,8 @@ class VerifyMojoTest {
 
         private TrustPolicy failingOnlyUnder(MatchedRule strict) {
             return policyDeciding((outcome, matchedRule) -> strict.equals(matchedRule)
-                    ? EnforcementAction.FAIL : EnforcementAction.IGNORE);
+                    ? EnforcementAction.FAIL
+                    : EnforcementAction.IGNORE);
         }
 
         private TrustPolicy policyDeciding(

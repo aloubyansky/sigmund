@@ -2,11 +2,11 @@ package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.CredentialParser;
-import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.SignerInspectionReport;
 import dev.cyberstamp.sigmund.core.SignerInspectionReportFormatter;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;

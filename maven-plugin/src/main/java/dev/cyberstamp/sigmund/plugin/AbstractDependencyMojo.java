@@ -1,10 +1,10 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
-import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;

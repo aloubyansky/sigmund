@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -346,6 +347,104 @@ class SqRunnerTest {
 
             assertThat(root.kind()).isEqualTo(TrustRootRef.KIND_OPENPGP_CERT_D);
             assertThat(root.identifier()).isEqualTo("sq default store");
+        }
+    }
+
+    @Nested
+    class CryptoPolicy {
+
+        @Test
+        void sqRunsUnderSigmundsPolicyRatherThanTheHosts() throws Exception {
+            Map<String, String> env = SqRunner.envFor(null);
+
+            assertThat(env).doesNotContainKey("SEQUOIA_HOME");
+            assertThat(Files.readString(Path.of(env.get("SEQUOIA_CRYPTO_POLICY"))))
+                    .isEqualTo(VerificationAlgorithms.SEQUOIA_POLICY);
+        }
+
+        @Test
+        void anIsolatedHomeKeepsThePolicy(@TempDir Path home) {
+            Map<String, String> env = SqRunner.envFor(home);
+
+            assertThat(env).containsEntry("SEQUOIA_HOME", home.toString())
+                    .containsKey("SEQUOIA_CRYPTO_POLICY");
+        }
+    }
+
+    /**
+     * The verdict read from {@code sq verify}'s report, using the texts sq 1.4 prints — including
+     * the no-break space it puts between a count and its noun; the agreement tests run the same
+     * cases against the installed sq.
+     */
+    @Nested
+    class VerdictFromReport {
+
+        private static final String NOT_AUTHENTICATED =
+                "  Error: Verification failed: could not authenticate any signatures\n";
+
+        @Test
+        void anAuthenticatedSignatureVerifies() {
+            assertThat(SqRunner.verdict(0, "1\u00A0authenticated signature.\n"))
+                    .isEqualTo(ToolVerdict.verified());
+        }
+
+        @Test
+        void aManipulatedMessageFails() {
+            String stderr = "Error verifying signature made by ABCD:\n"
+                    + "  Error: Message has been manipulated\n"
+                    + "0\u00A0authenticated signatures, 1\u00A0bad signature.\n" + NOT_AUTHENTICATED;
+
+            assertThat(SqRunner.verdict(1, stderr))
+                    .isEqualTo(ToolVerdict.failed());
+        }
+
+        @Test
+        void aRevokedKeyFails() {
+            String stderr = "Signing key on ABCD is bad:\n"
+                    + "  Error: Invalid key: \"certificate is revoked\"\n"
+                    + "0\u00A0authenticated signatures, 1\u00A0bad key.\n" + NOT_AUTHENTICATED;
+
+            assertThat(SqRunner.verdict(1, stderr))
+                    .isEqualTo(ToolVerdict.failed());
+        }
+
+        @Test
+        void anExpiredKeyFails() {
+            String stderr = "Signing key on ABCD is bad:\n"
+                    + "  Error: The primary key is not live\n"
+                    + "because: Expired on 2026-10-07T19:00:00Z\n"
+                    + "0\u00A0authenticated signatures, 1\u00A0bad key.\n" + NOT_AUTHENTICATED;
+
+            assertThat(SqRunner.verdict(1, stderr))
+                    .isEqualTo(ToolVerdict.failed());
+        }
+
+        @Test
+        void anUnboundKeyIsNotAvailable() {
+            String stderr = "Signing key on ABCD is not bound:\n"
+                    + "  Error: No binding signature at time 2026-10-16T19:23:52Z\n"
+                    + "0\u00A0authenticated signatures, 1\u00A0bad key.\n" + NOT_AUTHENTICATED;
+
+            assertThat(SqRunner.verdict(1, stderr)).isEqualTo(
+                    ToolVerdict.indeterminate(IndeterminateReason.KEY_UNAVAILABLE));
+        }
+
+        @Test
+        void aKeyThePolicyRejectsIsAnUnsupportedAlgorithm() {
+            String stderr = "Signing key on ABCD is not bound:\n"
+                    + "  Error: No binding signature at time 2026-10-16T19:23:52Z\n"
+                    + "because: Policy rejected non-revocation signature (PositiveCertification)"
+                    + " requiring second pre-image resistance\n"
+                    + "because: SHA1 is not considered secure\n"
+                    + "0\u00A0authenticated signatures, 1\u00A0bad key.\n" + NOT_AUTHENTICATED;
+
+            assertThat(SqRunner.verdict(1, stderr)).isEqualTo(ToolVerdict.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM));
+        }
+
+        @Test
+        void aReportWithoutAVerdictIsTheToolsFailure() {
+            assertThat(SqRunner.verdict(2, "error: unexpected argument '--signer-file'\n"))
+                    .isEqualTo(ToolVerdict.indeterminate(IndeterminateReason.TOOL_UNAVAILABLE));
         }
     }
 }

@@ -20,7 +20,8 @@ import java.util.List;
  * @param defaultIssuers the issuers trusted for identity credentials that do not name their own
  */
 public record Requirement(List<Clause> clauses, List<String> defaultIssuers)
-        implements RequirementEvaluator {
+        implements
+            RequirementEvaluator {
 
     /**
      * Creates a requirement with defensive copies.

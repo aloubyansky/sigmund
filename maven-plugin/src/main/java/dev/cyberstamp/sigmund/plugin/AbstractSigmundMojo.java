@@ -1,11 +1,11 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.ConfigLoader;
-import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
 import dev.cyberstamp.sigmund.core.ToolConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import java.io.File;
 import java.util.HashMap;
 import java.util.List;

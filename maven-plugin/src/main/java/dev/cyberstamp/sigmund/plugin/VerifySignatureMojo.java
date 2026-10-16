@@ -1,9 +1,9 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.ClaimOutcome;
-import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SignatureVerificationReport;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import java.io.File;
 import java.util.Map;
 import org.apache.maven.plugin.MojoExecutionException;

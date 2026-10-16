@@ -296,6 +296,55 @@ detail, but they carry `ClaimOutcome` plus an `IndeterminateReason` instead of
 `UnverifiedResult` keeps its role for outcomes produced without a tool, and its
 invariant becomes "never `VERIFIED`".
 
+#### Key validity is not signature validity (revised 2026-10-16)
+
+A backend can decline a signature that is cryptographically correct, because it
+will not use the key that made it. Reporting that as `FAILED` turns a verifier
+decision into an attack signal that blocks every build, and since the toolchain
+decides which backend answers, it makes the verdict depend on an argument. Each
+backend therefore separates the two:
+
+| Situation | Outcome |
+|---|---|
+| The signature does not match the artifact's bytes | `FAILED` |
+| The key had expired when it signed, or was revoked — as compromised at any time, for another reason before it signed (§3.8) | `FAILED` |
+| The key's certificate carries no self-signature binding it — keys.openpgp.org serves such a certificate for an owner who never verified an address | `INDETERMINATE(KEY_UNAVAILABLE)` |
+| The verification policy rejects an algorithm the signature or its binding uses | `INDETERMINATE(UNSUPPORTED_ALGORITHM)` |
+| The tool threw, or produced no verdict | `INDETERMINATE(TOOL_UNAVAILABLE)` |
+
+Self-signatures that are present, use accepted algorithms and still do not bind
+the key are a broken or forged certificate, and stay `FAILED`.
+
+How each backend reaches these:
+
+- **Bouncy Castle** checks `isTestedCorrect()` before `isValid(policy)`, and
+  explains an invalid key from its revocation and expiry at the signature's time
+  and from the self-signatures it carries.
+- **GnuPG** is judged by its `--status-fd` lines, not its exit code: it exits 0
+  for a good signature by a revoked key (`REVKEYSIG`) or by a key that had
+  expired when it signed (`EXPKEYSIG` with a `KEYEXPIRED` time not after the
+  signature's), so an exit-code reading verified both.
+- **Sequoia** reports through text: its closing tally separates a *bad signature*
+  from a *bad key*, and the detail of a bad key says whether it was revoked,
+  expired, rejected by policy, or not bound.
+
+The algorithms accepted are defined once, in `VerificationAlgorithms`, and
+translated per backend: Bouncy Castle's `OpenPGPPolicy`, a Sequoia crypto policy
+passed through `SEQUOIA_CRYPTO_POLICY`, and GnuPG's defaults, which already
+match. On top of each backend's modern defaults they are: SHA-1 and RIPEMD-160
+document signatures; SHA-1 and RIPEMD-160 self-signatures at any date; RSA and
+DSA keys from 1024 bits. SHA-1 self-signatures are accepted without a cut-off
+because the practical attack on SHA-1, a chosen-prefix collision, needs the
+victim to sign attacker-prepared data, and a self-signature is made by the key's
+owner over their own key — GnuPG exempts them for the same reason, and Sigmund
+relies on no third-party certifications. The definition is not configurable: no
+one has asked for a different one, and since it changes what is accepted, a
+setting for it would belong in the policy file, not in arguments (§5.3). The
+Sigmund version recorded with a result pins it (§3.7).
+
+`KeyValidityAgreementTest` runs every row above through all three backends and
+requires one answer.
+
 `SignatureEvidenceAdapter` keeps its tool-selection behaviour — first tool that
 reaches a verdict wins, transient reasons trigger a key fetch and retry — but
 `EvidenceProvider.verify()` returns `List<ClaimResult>` rather than

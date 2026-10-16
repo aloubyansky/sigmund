@@ -73,6 +73,10 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     private static final Pattern INSPECT_ALGO_PATTERN = Pattern.compile("Public-key algo:\\s+(.+)");
     private static final Pattern INSPECT_USERID_PATTERN = Pattern.compile("UserID:\\s+(.+)");
     private static final String SEQUOIA_HOME = "SEQUOIA_HOME";
+    private static final String SEQUOIA_CRYPTO_POLICY = "SEQUOIA_CRYPTO_POLICY";
+    private static final Pattern BAD_SIGNATURES = Pattern.compile("\\b[1-9]\\d*\\h+bad\\h+signatures?\\b");
+    private static final Pattern BAD_KEYS = Pattern.compile("\\b[1-9]\\d*\\h+bad\\h+keys?\\b");
+    private static final Pattern KEY_NOT_LIVE = Pattern.compile("(?i)\\b(revoked|expired)\\b");
 
     private final String sqExecutable;
     private final Map<String, String> sqEnv;
@@ -305,14 +309,18 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
             throw new IllegalArgumentException("certFile cannot be null");
         }
 
-        String[] args = {
-                "verify",
+        return runVerifyCertFile(artifactFile, signatureFile, certFile).exitCode() == 0;
+    }
+
+    private CliTool.Result runVerifyCertFile(Path artifactFile, Path signatureFile, Path certFile) {
+        return runSq("verify",
                 "--signer-file", certFile.toString(),
                 "--signature-file", signatureFile.toString(),
-                artifactFile.toString()
-        };
+                artifactFile.toString());
+    }
 
-        return runSq(args).exitCode() == 0;
+    private static ToolVerdict verdict(CliTool.Result result) {
+        return verdict(result.exitCode(), result.stderr());
     }
 
     /**
@@ -792,9 +800,8 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
         try {
             sigFile = Files.createTempFile("sq-verify-", ".asc");
             Files.writeString(sigFile, armoredBlock);
-            boolean verified = verifyCertFile(artifactFile, sigFile, certFile);
-            return new OpenPgpVerifyResult(
-                    verified ? ClaimOutcome.VERIFIED : ClaimOutcome.FAILED, null,
+            ToolVerdict verdict = verdict(runVerifyCertFile(artifactFile, sigFile, certFile));
+            return new OpenPgpVerifyResult(verdict.outcome(), verdict.reason(),
                     userId, algorithm, version, fingerprint, fingerprint)
                     .withKeyFingerprints(fingerprint, primaryFingerprintOf(certFile, fingerprint));
         } catch (IOException e) {
@@ -835,15 +842,58 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     /**
      * Builds the environment map for sq commands from an optional Sequoia home directory.
      *
+     * <p>
+     * sq always runs under Sigmund's crypto policy ({@link VerificationAlgorithms}) through
+     * {@code SEQUOIA_CRYPTO_POLICY}, which replaces the host's system policy; otherwise which
+     * algorithms are accepted would depend on the machine sq runs on.
+     *
      * @param sequoiaHome the directory to use as {@code SEQUOIA_HOME}, or {@code null}
-     *        to inherit the current environment (letting sq use its own defaults)
-     * @return a single-entry map setting {@code SEQUOIA_HOME}, or an empty map when sq is
-     *         left to its own defaults — adding nothing to the inherited environment
+     *        to inherit the current environment (letting sq use its own store)
+     * @return the policy setting, plus {@code SEQUOIA_HOME} when a home is given
      */
     static Map<String, String> envFor(Path sequoiaHome) {
+        String policy = VerificationAlgorithms.sequoiaPolicyFile().toString();
         return sequoiaHome != null
-                ? Map.of(SEQUOIA_HOME, sequoiaHome.toString())
-                : Map.of();
+                ? Map.of(SEQUOIA_HOME, sequoiaHome.toString(), SEQUOIA_CRYPTO_POLICY, policy)
+                : Map.of(SEQUOIA_CRYPTO_POLICY, policy);
+    }
+
+    /**
+     * Reads the verdict of a {@code sq verify} run.
+     *
+     * <p>
+     * sq exits non-zero whenever it could not authenticate a signature, for reasons as
+     * different as tampered bytes and a key it will not use; its report's closing tally says
+     * which; sq separates its counts from their nouns with a no-break space, so any horizontal
+     * space is matched. Only a <em>bad signature</em> — the bytes do not match — or a key that was revoked
+     * or had expired is {@link ClaimOutcome#FAILED}. A <em>bad key</em> rejected by the crypto
+     * policy is {@link IndeterminateReason#UNSUPPORTED_ALGORITHM}; any other bad key, such as a
+     * certificate served without the self-signatures that bind it, is
+     * {@link IndeterminateReason#KEY_UNAVAILABLE}, since a fuller copy may resolve it. A report
+     * with no tally means sq itself did not run as expected.
+     *
+     * @param exitCode sq's exit code
+     * @param stderr sq's report
+     * @return the verdict
+     */
+    static ToolVerdict verdict(int exitCode, String stderr) {
+        if (exitCode == 0) {
+            return ToolVerdict.verified();
+        }
+        String report = stderr == null ? "" : stderr;
+        if (BAD_SIGNATURES.matcher(report).find()) {
+            return ToolVerdict.failed();
+        }
+        if (!BAD_KEYS.matcher(report).find()) {
+            return ToolVerdict.indeterminate(IndeterminateReason.TOOL_UNAVAILABLE);
+        }
+        if (KEY_NOT_LIVE.matcher(report).find()) {
+            return ToolVerdict.failed();
+        }
+        if (report.contains("Policy rejected")) {
+            return ToolVerdict.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
+        }
+        return ToolVerdict.indeterminate(IndeterminateReason.KEY_UNAVAILABLE);
     }
 
     private CliTool.Result runSq(String... args) {
