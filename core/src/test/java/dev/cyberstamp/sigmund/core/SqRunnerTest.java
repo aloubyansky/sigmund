@@ -379,8 +379,7 @@ class SqRunnerTest {
     @Nested
     class VerdictFromReport {
 
-        private static final String NOT_AUTHENTICATED =
-                "  Error: Verification failed: could not authenticate any signatures\n";
+        private static final String NOT_AUTHENTICATED = "  Error: Verification failed: could not authenticate any signatures\n";
 
         @Test
         void anAuthenticatedSignatureVerifies() {
@@ -438,7 +437,8 @@ class SqRunnerTest {
                     + "because: SHA1 is not considered secure\n"
                     + "0\u00A0authenticated signatures, 1\u00A0bad key.\n" + NOT_AUTHENTICATED;
 
-            assertThat(SqRunner.verdict(1, stderr)).isEqualTo(ToolVerdict.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM));
+            assertThat(SqRunner.verdict(1, stderr))
+                    .isEqualTo(ToolVerdict.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM));
         }
 
         @Test

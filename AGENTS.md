@@ -1,15 +1,25 @@
 # Agent Guidelines for Sigmund
 
-Guidelines for AI agents working on the sigmund codebase.
+Guidelines for AI agents working on the sigmund codebase. This file holds rules and
+conventions that do not follow from reading the code; for what the code is, read the code and
+the docs it points to rather than a summary here.
 
 ## Project Overview
 
-Sigmund is a Maven plugin and CLI for artifact signing, signature verification, and dependency trust enforcement. Multi-module Maven project: `core`, `cli`, `maven-plugin`, `sigstore` (in progress).
+Sigmund is a Maven plugin and CLI for artifact signing, signature verification, and dependency trust enforcement. Multi-module Maven project: `core`, `cli`, `maven-plugin`, `sigstore`.
+
+Where to look:
+
+- `docs/sigmund-verification-design-direction.md` — what verification is for and why (cited as §n)
+- `docs/sigmund-verification-roadmap.md` — what is done, what is next, and the decision log
+- `adr/` — decisions and the alternatives rejected
+- `docs/configuration.md` — the `sigmund.yaml` schema
+- `docs/architecture.md` — types and how they fit together
 
 ## Build and Test
 
 ```bash
-# Full build with integration tests
+# Full build with integration tests and strict javadoc
 mvn verify
 
 # Core module only
@@ -18,11 +28,25 @@ mvn test -pl core
 # Specific test class
 mvn test -pl core -Dtest="SigmundConfigParserTest"
 
-# Maven plugin tests
+# Maven plugin tests (install core first when it changed: mvn install -pl core -DskipTests)
 mvn test -pl maven-plugin
 ```
 
-Java 17 target. No JPMS module-info.
+Java 17 target. No JPMS module-info. The build formats sources; expect import order and line
+wrapping to change after `mvn verify`.
+
+## Working Rules
+
+- **No backward compatibility.** Sigmund has not been adopted. Replace types, config keys and
+  parameters outright — no aliases, deprecations or migration code. Design docs are edited in
+  place.
+- **Core uses repository concepts, never build-tool types.** Coordinates, layout and sidecar
+  conventions are fine in `core`; Maven plugin API, project model, resolver session and Gradle
+  API are not.
+- **Introduce types, options and vocabulary when code needs them**, not because a design
+  sketches them.
+- **Tests and docs ship with the change.** Update `docs/` and this file in the same change when
+  behaviour, schema or conventions move.
 
 ## Code Style
 
@@ -31,81 +55,64 @@ Java 17 target. No JPMS module-info.
 - **Detailed javadoc** on all public types and methods. Explain semantics, contracts, and relationships — not just `@param`/`@return`.
 - **No comments on implementation.** Code should be self-explanatory. Only comment non-obvious constraints or workarounds.
 - **Defensive copies** in records and constructors. Use `Map.copyOf()`, `List.copyOf()`, `LinkedHashMap` when insertion order matters.
+- **Narrow API.** Public only when something outside the package needs it.
+
+## Vocabulary
+
+- **Evidence** is the file carrying assertions — the `.asc`, the Sigstore bundle, a DSSE
+  envelope. A **claim** is a single verifiable assertion extracted from it; a hybrid `.asc` with
+  a classic and a PQC block is two claims. Never say "verification unit".
+- A **credential** is what a claim proves: key material (`KeyCredential`, full fingerprint) or an
+  identity asserted by an issuer the policy names (`IdentityCredential`). An OpenPGP user ID is
+  never a credential.
+- **Policy** is the `rules`/`defaults` part of `sigmund.yaml`; `verification` holds settings for
+  *how* verification runs, which can change what is seen but never what is accepted (§5.3).
+
+## Verification Invariants
+
+Rules the code relies on; breaking one is a defect even if tests pass.
+
+- **`FAILED` is the attack signal and is never overridable.** A claim is `FAILED` only when its
+  bytes do not match, or its key had expired when it signed or was revoked (compromise at any
+  time, otherwise before it signed). A key a tool will not use is `INDETERMINATE` with a reason
+  — never `FAILED` ([ADR-005](adr/005-verification-result-model.md)).
+- **Backends must agree.** The toolchain is an argument, so the outcome cannot depend on which
+  backend answered. Judge CLI tools by what they report (GnuPG status lines, `sq`'s tally), not by
+  exit codes. Accepted algorithms are defined once in `VerificationAlgorithms`.
+  `BackendAgreementTest` and `KeyValidityAgreementTest` enforce this.
+- **Enforcement never changes an outcome.** Outcomes come from the roll-up; whether they block is
+  resolved separately from the matched rule.
+- **A policy is present only when the file declares `rules` or `defaults`.** Without one,
+  verification observes: only `FAILED` blocks.
+- **Signing never compiles the policy.** The parser produces `TrustPolicySpec`; `RulePolicy.compile`
+  runs only on the verification path, so verification-only config errors cannot break signing.
 
 ## Architecture
 
-### Config Model
+**Layer 1 — Identity verification:** "Is this artifact from someone I trust?" via `TrustVerifier`, `EvidenceProvider`, `SignerIdentity`, `TrustPolicy`.
 
-Each top-level YAML section in `sigmund.yaml` maps 1:1 to a Java type:
-
-| YAML section | Java type |
-|---|---|
-| `signers` | `SignersConfig` |
-| `artifacts` | `ArtifactsConfig` |
-| `tools` | `ToolsConfig` |
-| `signing` | `SigningConfig` |
-| `discovery` | `DiscoveryConfig` |
-| `trust`/`unsigned`/`policy`/`issuers` | `TrustPolicy` |
-
-`SigmundConfig` is the top-level record holding all of these. `SigmundConfigParser` produces it from YAML.
-
-### Two-Layer Architecture
-
-**Layer 1 — Identity Verification:** "Is this artifact from someone I trust?" via `TrustVerifier`, `EvidenceProvider`, `SignerIdentity`, `TrustPolicy`.
-
-**Layer 2 — Signature Operations:** Cryptographic signing/verification via `SignatureTool`, `SignatureFormat`, `Claim`, `VerifyResult`.
+**Layer 2 — Signature operations:** cryptographic signing and verification via `SignatureTool`, `SignatureFormat`, `Claim`, `VerifyResult`.
 
 **Bridge:** `SignatureEvidenceAdapter` wraps a `SignatureFormat` and its tools into an `EvidenceProvider`.
 
-### Vocabulary: evidence and claim
-
-**Evidence** is the file carrying assertions — the `.asc`, the Sigstore bundle, a DSSE envelope. A **claim** is a single verifiable assertion extracted from it. One evidence file can carry several claims: a hybrid `.asc` with a classic and a PQC block is two claims. Evidence is located and parsed by an `EvidenceProvider`; the unit of verification is a `Claim`. Use both terms as defined — never "verification unit".
-
-### Key Abstractions
-
-- `SignatureTool` — core SPI for signing and verification (GPG, Sequoia, Bouncy Castle, Sigstore)
-- `SignatureToolFactory` — public, ServiceLoader-discoverable factory for tool construction
-- `SignatureFormat` — file format detection (`canHandle` with extension-first fast path), parsing, combining
-- `Credential` — sealed over `KeyCredential` (full fingerprint, proven by the signature) and `IdentityCredential` (issuer plus attested attributes). An OpenPGP user ID is never a credential; addresses come from a directory (`OpenPgpDirectory`) or a Fulcio certificate, and only from issuers the policy names
-- `Sigmund` — central facade, implements `AutoCloseable`
-- `Signer` — producer use case (signing)
-- `TrustVerifier` — consumer use case (trust assessment)
-
-### Sealed Hierarchies
-
 `Claim` and `VerifyResult` are sealed — adding a new format requires adding `permits` in core. This is deliberate: new formats are rare and warrant core review.
+
+## Common Patterns
+
+- **First-successful routing:** When matching credentials to tools, iterate in toolchain order, call `createSigning()`, first non-null result wins.
+- **Extension-first detection:** `SignatureFormat.canHandle()` checks file extension before reading content.
+- **`injectFetchSettings()`** is conditional — only inject OpenPGP key-fetching settings for OpenPGP tools.
+- **`isDefaultExclusiveSigner()`** — factory-level mechanism for zero-config CI (e.g., env-var-injected signing key).
 
 ## Testing
 
 - Write tests for every change. TDD where practical.
-- JUnit 6.1.2 with nested test classes organized by concern.
+- JUnit with nested test classes organized by concern.
 - Use `@TempDir` for file-system tests.
 - Mock tools for unit tests; integration tests use real tools when available.
 - Parser tests use inline YAML strings via `SigmundConfigParser.parse(source, reader)`.
-
-## Configuration
-
-Tool settings live in the top-level `tools` section. `signing.toolchain` and `discovery.toolchain` are simple name lists referencing tools by name.
-
-```yaml
-tools:
-  bc:
-    signing-fingerprint: "ABCD..."
-  sq:
-    cipher-suite: mldsa87-ed448
-
-signing:
-  signer: alice
-  toolchain: [bc, sq]
-
-discovery:
-  toolchain: [bc, sq]
-  resolve-signers: true
-```
-
-## Documentation
-
-Update docs in `docs/` whenever config schema or behavior changes. Key files: `configuration.md`, `signing.md`, `verification.md`, `trust-verification.md`.
+- When a test pins a CLI tool's output, use the tool's real output — including invisible
+  characters such as `sq`'s no-break spaces — captured from the installed version.
 
 ## Design Process
 
@@ -115,10 +122,3 @@ For non-trivial changes:
 3. Break implementation into tasks with clear boundaries
 4. Each task should be independently testable
 5. Review against spec after implementation
-
-## Common Patterns
-
-- **First-successful routing:** When matching credentials to tools, iterate in toolchain order, call `createSigning()`, first non-null result wins.
-- **Extension-first detection:** `SignatureFormat.canHandle()` checks file extension before reading content.
-- **`injectFetchSettings()`** is conditional — only inject OpenPGP key-fetching settings for OpenPGP tools.
-- **`isDefaultExclusiveSigner()`** — factory-level mechanism for zero-config CI (e.g., env-var-injected signing key).

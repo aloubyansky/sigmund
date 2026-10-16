@@ -312,7 +312,7 @@ Example `sigmund.yaml` for CLI usage:
 signing:
   toolchain: [sq, gpg]
 
-discovery:
+verification:
   toolchain: [bc, sq, gpg]
 
 tools:

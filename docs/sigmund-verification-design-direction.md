@@ -140,8 +140,8 @@ Two constraints apply whichever hook is used:
 - **Scope visibility.** A resolution request carries a request context that
   separates plugin from project resolution, but not the dependency scope
   (`compile`, `test`) the goal sees when it builds the graph. The extension can
-  reliably tell build tooling from project dependencies; finer per-scope
-  enforcement (§3.6) needs the graph.
+  reliably tell build tooling from project dependencies; choosing which
+  project scopes to verify (§3.6) needs the graph.
 
 **Resolver integration** — the upstream conversation. What it adds over an
 extension is mostly the difference between opt-in-per-project and default
@@ -294,9 +294,10 @@ earlier ones did not decide.
    result, excluded from evaluation. This happens before requirements are
    evaluated, because evaluation only ever sees claims that verified. It is the
    graceful degradation that makes hybrid `.asc` work: a verifier without PQC
-   support evaluates the classic block exactly as an older RPM system does. If
-   policy explicitly requires a claim of that kind, the requirement cannot be met
-   and the outcome is `INDETERMINATE` with `unsupported-algorithm`.
+   support evaluates the classic block exactly as an older RPM system does.
+   Policy names signers, not claim kinds, so it cannot demand the set-aside
+   claim; if it ever can, an unmet demand for an unsupported kind is
+   `INDETERMINATE` with `unsupported-algorithm`.
 3. **No requirement applies → `NOT_CONFIGURED`**, with the set-aside claims still
    recorded.
 4. **Requirements met → `SATISFIED`**, subject to the claim-set mode. Under the
@@ -371,7 +372,7 @@ problem. These must never collapse into one state.
 |---|---|---|
 | `SATISFIED` | Requirements met | nobody |
 | `UNSATISFIED` | Claim valid, identity or role does not match policy | policy owner |
-| `FAILED` | Cryptographic verification failed | security — the attack signal |
+| `FAILED` | The signature does not match the bytes, or its key had expired when it signed or was revoked (§3.8) | security — the attack signal |
 | `NO_CLAIM` | No evidence found | coverage decision, not an incident |
 | `INDETERMINATE` | Evidence present, verification could not complete | infrastructure |
 | `NOT_CONFIGURED` | No requirement applies | nobody |
@@ -383,7 +384,9 @@ exists: an artifact can be unsigned but attested, or signed but unattested.
 these differently:
 
 - `key-unavailable` — OpenPGP only; signer's key absent locally and keyserver
-  unreachable or lacking it. Transient.
+  unreachable or lacking it, or present without the self-signatures that bind
+  it — as a directory serves a key whose owner never verified an address.
+  Transient: a fuller copy may resolve it.
 - `trust-root-unavailable` — Sigstore; TUF metadata missing or too stale.
   Transient.
 - `discovery-unavailable` — evidence might exist but the source could not be
@@ -392,7 +395,11 @@ these differently:
   running. Transient. A tool that throws is one tool's failure, not the run's:
   the remaining tools still get their turn at the claim, and the exception is
   logged so the cause survives the reason code.
-- `unsupported-algorithm` — permanent.
+- `unsupported-algorithm` — no installed verifier can check the claim, or it
+  uses an algorithm Sigmund does not accept. Permanent. Which algorithms are
+  accepted is fixed in Sigmund and identical for every backend
+  ([ADR-005](../adr/005-verification-result-model.md)), so a verdict does not
+  depend on which tool answered or on the host's crypto policy.
 - `evidence-malformed` — permanent.
 
 Lumping transient and permanent reasons together makes a permanently
@@ -407,21 +414,24 @@ deterministically offline.
 ### 3.6 Enforcement
 
 Each non-`SATISFIED` outcome gets its own setting rather than a single
-strictness dial. `FAILED` is non-overridable by default — a signature that does
-not verify is not a coverage question.
+strictness dial: `fail`, `warn` or `ignore`, set per rule or in the policy's
+defaults ([ADR-007](../adr/007-policy-schema-and-enforcement.md)). `FAILED` is
+not overridable — a signature that does not verify is not a coverage question.
+Enforcement decides whether the build fails; it never changes an outcome.
 
-Scope matters. `compile` and `runtime` ship; `test` does not; plugin and
-extension dependencies execute during the build and deserve the strictest
-treatment, which is an argument the resolver-integration case can use directly.
-Scope granularity depends on the insertion point (§2): the goal knows `compile`,
-`runtime` and `test`; the extension reliably knows only build tooling versus
-project.
+The defaults turn on one switch: whether a policy is present. A build with no
+policy observes — it verifies and reports everything, and fails only on
+`FAILED`. A policy present enforces: every non-`SATISFIED` outcome fails unless
+the policy relaxes it, so coverage is a deliberate decision.
 
-Default posture for `INDETERMINATE`: fail for plugin/extension scope, warn
-elsewhere, with the bootstrap command populating the key store so a normal
-first run does not hit it. This is a product judgment
-about adoption, not a security one, and is worth revisiting with maintainer
-input.
+Scope matters, but it is not a policy dimension. `compile` and `runtime` ship;
+`test` does not; plugin and extension dependencies execute during the build and
+deserve the strictest treatment, which is an argument the resolver-integration
+case can use directly. Which scopes are verified is a goal parameter and, for
+the extension, a property of the request context (§2) — the "how" of §5.3 — so
+the goal and the extension apply identical enforcement and differ only in
+coverage. Stricter treatment for build tooling returns with the extension, in
+whatever shape fits then.
 
 ### 3.7 Offline verification and caching
 
@@ -889,7 +899,7 @@ forecloses nothing later. No adapters shipped.
   before citing, since a wrong characterization of someone else's project is
   costly in this audience. If the reason was that near-zero attestation
   coverage made any enforcing default fail everything, it is direct support for
-  per-scope `NO_CLAIM` settings and for shipping in observe mode first.
+  relaxing `NO_CLAIM` per rule and for shipping in observe mode first.
 - **Policy composition and inheritance.** Deliberately deferred. One
   authoritative config avoids defining merge semantics now. If org-plus-local
   composition is added later, the hard part is that "local may only add" is not
@@ -937,8 +947,9 @@ in the [verification roadmap](sigmund-verification-roadmap.md).
    as a third fitting case rather than as scaffolding for a hypothetical.
 2. **Policy as requirements** — key and issuer-bound identity credentials;
    conjunctive clauses of signers; bootstrap emitting the new schema.
-3. **Enforcement and run modes** — per-outcome, per-scope settings; observe
-   mode; argument surface split per §5.3; one policy at the reactor root.
+3. **Enforcement and run modes** — per-outcome settings, observing without a
+   policy; observe mode; argument surface split per §5.3; one policy at the
+   reactor root.
 4. **Keys and revocation** — persistent key store with its own freshness TTL
    (§3.7); revocation reason codes per §3.8; bootstrap populating the key store.
 5. **Maven core extension** — hook choice (§2); verification at resolution;
@@ -973,8 +984,8 @@ cross-ecosystem adapters.
 | Area | Decision |
 |---|---|
 | Result levels | Claim, artifact and run results; artifact outcome derived in a fixed order; any `FAILED` claim dominates; claims no verifier supports are set aside unless explicitly required |
-| Outcomes | Six-state vocabulary; `NO_CLAIM` replaces `UNSIGNED`; `INDETERMINATE` with transient/permanent reason codes |
-| Enforcement | Per-outcome and per-scope; `FAILED` non-overridable; strictest for plugin/extension scope |
+| Outcomes | Six-state vocabulary; `NO_CLAIM` replaces `UNSIGNED`; `INDETERMINATE` with transient/permanent reason codes; a key a verifier will not use is never `FAILED`; one accepted-algorithm set for every backend |
+| Enforcement | Per-outcome, per rule or in defaults; `FAILED` non-overridable; no policy observes, a policy present enforces; scope is what is verified, not how strictly — build-tooling strictness returns with the extension |
 | Offline and caching | Persistent key store gives offline determinism; `-o` key-store-only, never fail-open; result cache deferred as a performance optimization; policy digest over the raw policy file content, policy self-contained, Sigmund version recorded |
 | Threat model | Stated explicitly; TOFU named as a limitation; outcomes stable except hard revocation, policy change or verifier change; OpenPGP backdating named as residual risk |
 | Time | Three clocks; evaluation basis per claim kind; Sigstore basis inherited from `sigstore-java` |

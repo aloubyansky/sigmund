@@ -299,8 +299,9 @@ signers:
     email: "release@example.com"
     openpgp4: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
 
-trust:
-  "com.example.*": release-lead
+rules:
+  - match: ["com.example.*"]
+    requires: [release-lead]
 ```
 
 An artifact signed with OpenPGP satisfies `release-lead` by the pinned fingerprint, or by a newer key for which `keys.openpgp.org` has verified the address; one signed with Sigstore satisfies it by the address in a Google-issued certificate. A user ID on an OpenPGP key is never matched on its own.
@@ -310,7 +311,7 @@ An artifact signed with OpenPGP satisfies `release-lead` by the pinned fingerpri
 You can configure which tools are used and their order in `sigmund.yaml`:
 
 ```yaml
-discovery:
+verification:
   toolchain: [bc, sq, gpg]
 ```
 
@@ -326,7 +327,7 @@ The default toolchain is `[bc, sq, gpg]`:
 To prioritize Sequoia for PQC verification:
 
 ```yaml
-discovery:
+verification:
   toolchain: [sq, bc, gpg]
 ```
 
@@ -335,7 +336,7 @@ discovery:
 To use only GPG:
 
 ```yaml
-discovery:
+verification:
   toolchain: [gpg]
 ```
 
@@ -345,10 +346,10 @@ When verification is left undecided by `KEY_UNAVAILABLE`, Sigmund can automatica
 
 ### Key Fetching Configuration
 
-Key fetching is controlled by the `discovery` section in `sigmund.yaml`:
+Key fetching is controlled by the `verification` section in `sigmund.yaml`:
 
 ```yaml
-discovery:
+verification:
   resolve-signers: true
   import-to-keyring: false
   keyservers:
@@ -451,7 +452,7 @@ The signing key is not in any keyring. Solutions:
 
 1. **Enable automatic key fetching** (default):
    ```yaml
-   discovery:
+   verification:
      resolve-signers: true
    ```
 
@@ -474,7 +475,7 @@ This is expected when verifying hybrid signatures. GPG processes the v4 classica
 To verify the PQC signature, ensure Sequoia is installed and appears in the toolchain:
 
 ```yaml
-discovery:
+verification:
   toolchain: [bc, sq, gpg]
 ```
 

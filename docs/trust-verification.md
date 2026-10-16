@@ -10,14 +10,14 @@ This guide covers identity-based trust verification for Maven dependencies using
   - [How It Works](#how-it-works)
 - [The sigmund.yaml Trust Configuration](#the-sigmundyaml-trust-configuration)
   - [1. Signers](#1-signers)
-  - [2. Trust Mappings](#2-trust-mappings)
-  - [3. Signature-Optional Artifacts](#3-signature-optional-artifacts)
-  - [4. Policy Configuration](#4-policy-configuration)
-  - [5. Verification Configuration](#5-verification-configuration)
+  - [2. Rules](#2-rules)
+  - [3. Enforcement](#3-enforcement)
+  - [4. Verification Settings](#4-verification-settings)
 - [Complete Example](#complete-example)
 - [Running Trust Verification](#running-trust-verification)
   - [Example Output](#example-output)
   - [Outcomes](#outcomes)
+  - [How an Outcome Is Derived](#how-an-outcome-is-derived)
   - [Exit Codes](#exit-codes)
   - [Maven Properties](#maven-properties)
 - [Generating Trust Configuration](#generating-trust-configuration)
@@ -66,13 +66,13 @@ Sigmund's `verify` goal:
 1. Resolves your project's dependencies
 2. Downloads signature files (`.asc`) from Maven repositories
 3. Verifies each signature and extracts proven credentials
-4. Matches credentials against your `sigmund.yaml` trust mappings
+4. Finds the most specific rule in `sigmund.yaml` for each artifact and checks the proven credentials against what it requires
 5. Reports each artifact's outcome, grouped by outcome and then by attester
-6. Fails the build if untrusted artifacts are found (configurable)
+6. Fails the build for any outcome the policy does not tolerate
 
 ## The `sigmund.yaml` Trust Configuration
 
-Trust policies are defined in `sigmund.yaml` in your project root. The file has five main sections for trust verification:
+Trust policies are defined in `sigmund.yaml` in your project root. Trust verification uses four parts of it; [Configuration Reference](configuration.md) documents every key.
 
 ### 1. Signers
 
@@ -96,7 +96,7 @@ signers:
     email: "jane@example.com"
 ```
 
-The signer's ID (`jane`) is how trust mappings and reports refer to it.
+The signer's ID (`jane`) is how rules and reports refer to it.
 
 #### Credential Types
 
@@ -105,7 +105,7 @@ A signer carries key material, identities, or both:
 | Type | YAML Key | Description | Example |
 |------|----------|-------------|---------|
 | OpenPGP v4 | `pgp4` (alias: `openpgp4`) | 40-character v4 fingerprint | `4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12` |
-| OpenPGP v6 | `pgp6` (alias: `openpgp6`) | 64-character v6 fingerprint | `D62AAB339E45E5EA2FD036872B01D46A517A2991...` |
+| OpenPGP v6 | `pgp6` (alias: `openpgp6`) | 64-character v6 fingerprint | `D62AAB339E45E5EA2FD036872B01D46A517A2991EF8B8F67C32CF07A49CBDAA0` |
 | Email | `email` | Address vouched for by an issuer | `dev@example.com` |
 | Identities | `identities` | List of complete identities: an issuer and the attributes it attested | (see below) |
 
@@ -125,7 +125,7 @@ signers:
         build-config-uri: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/heads/main"
 ```
 
-`issuer` may be omitted to accept any issuer listed in `issuers`. Attribute names are checked at load, and a misspelling is an error suggesting the nearest known name. One signer may carry several identities, such as the same address vouched for by `keys.openpgp.org` and by an OIDC provider.
+`issuer` may be omitted to accept the issuer listed in `issuers` that can attest the entry — exactly one may; when two listed OIDC issuers could, name the issuer on the entry. Attribute names are checked at load, and a misspelling is an error suggesting the nearest known name. One signer may carry several identities, such as the same address vouched for by `keys.openpgp.org` and by an OIDC provider.
 
 **Multiple credentials per signer:**
 ```yaml
@@ -138,77 +138,114 @@ signers:
 
 When a signature is verified, Sigmund extracts the credentials it proves: the full fingerprints of the signing key and its primary key, the identity in a Sigstore certificate, and — only when a policy entry needs it and no pinned fingerprint already matched — the addresses a directory verified for the key. A signer matches if **any** of their configured credentials matches **any** proven credential.
 
-### 2. Trust Mappings
+### 2. Rules
 
-The `trust` section maps artifact patterns to signer IDs. Patterns support:
-- `groupId` (e.g., `io.quarkus`)
-- `groupId:artifactId` (e.g., `io.quarkus:quarkus-core`)
-- `groupId:artifactId:version` (e.g., `io.quarkus:quarkus-core:3.0.0`)
-
-**Wildcards** are supported:
-- `*` matches any single component
-- `org.apache.*` matches any groupId starting with `org.apache.`
-
-**Multiple signers** can be assigned to a pattern using an array:
-```yaml
-trust:
-  io.quarkus.*: [redhat, jboss-community]
-```
-
-**Pattern matching specificity:** When multiple patterns match an artifact, the most specific pattern wins:
-1. Exact matches score higher than wildcards
-2. More segments score higher than fewer segments
-3. Longer namespace prefixes score higher than shorter ones
-
-Example:
-```yaml
-trust:
-  # Most specific - exact artifactId match
-  io.quarkus:quarkus-core: core-team
-  
-  # Medium specificity - groupId wildcard
-  io.quarkus.*: quarkus-team
-  
-  # Least specific - full wildcard
-  "*": fallback-signer
-```
-
-For artifact `io.quarkus:quarkus-core:3.0.0`, the pattern `io.quarkus:quarkus-core` wins.
-
-### 3. Signature-Optional Artifacts
-
-The `signature-optional` section lists artifact patterns for which a signature is not required:
+The `rules` section says what each set of artifacts must satisfy. A rule has a `match` list of
+artifact patterns and a `requires` list of clauses:
 
 ```yaml
-signature-optional:
-  - com.internal.*
-  - org.example:test-utils
+signers:
+  apache:
+    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+  quarkus-team:
+    pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
+  redhat:
+    pgp4: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
+
+rules:
+  - match: ["org.apache.maven.*", "org.apache.commons.*"]
+    requires: [apache]
+  - match: ["io.quarkus.*"]
+    requires: [{any-of: [quarkus-team, redhat]}]
 ```
 
-Artifacts matching these patterns will not fail verification when unsigned. If a matching artifact happens to be signed, normal trust policy evaluation applies.
+**Clauses are all required; `any-of` accepts one of its signers.** `requires: [a, b]` needs a
+claim from `a` and one from `b` — "the publisher's key and our CI's workflow" is two clauses.
+`requires: [{any-of: [a, b]}]` needs either. A clause is satisfied by a verified claim that proves
+any of that signer's credentials.
 
-### 4. Policy Configuration
+**Patterns match the module, not the file.** A pattern names group, artifact and version —
+`io.quarkus`, `io.quarkus:quarkus-core`, `io.quarkus:quarkus-core:3.0.0` — and covers every file
+published under it. `io.quarkus.*` covers the group and every group below it; a trailing `*` on
+artifact or version is a plain prefix; `"*"` matches everything. See
+[Artifact Patterns](configuration.md#artifact-patterns).
 
-The `policy` section controls trust verification behavior:
+**The most specific rule wins, and only it applies:**
 
 ```yaml
-policy:
-  on-untrusted: fail       # or "warn"
-  listed-evidence: all     # or "any"
-  unlisted-evidence: ignore # "ignore", "warn", or "require"
+signers:
+  core-team:
+    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+  quarkus-team:
+    pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
+
+rules:
+  # Most specific - this artifact
+  - match: ["io.quarkus:quarkus-core"]
+    requires: [core-team]
+
+  # Less specific - the group and everything below it
+  - match: ["io.quarkus.*"]
+    requires: [quarkus-team]
+
+  # Least specific - everything else
+  - match: ["*"]
+    on-no-claim: warn
 ```
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `on-untrusted` | `fail` | Action when untrusted artifacts are found: `fail` (build fails) or `warn` (log warning only) |
-| `listed-evidence` | `all` | How to handle signatures from signers in your trust config: `all` (all must match expected signers) or `any` (at least one must match) |
-| `unlisted-evidence` | `ignore` | How to handle signatures from signers NOT in your trust config: `ignore` (skip them), `warn` (log warning), or `require` (fail if found) |
+For `io.quarkus:quarkus-core:3.0.0` the first rule applies, and only `core-team` is accepted for
+it. Two rules that could select the same artifact with equal specificity are rejected when the
+policy loads, so the outcome never depends on the order rules are written in.
 
-**Note:** The `on-untrusted` setting can be overridden with the `-Dsigmund.onUntrusted` Maven property.
+**Signers the rule does not name.** Once the requirements are met, a verified claim from a signer
+no clause names makes the artifact `UNSATISFIED` under the default `extra-claims: reject` — the
+rule's signers are taken as the complete list. Set `extra-claims: ignore` in
+[`defaults`](configuration.md#defaults) to let the requirements alone decide.
 
-### 5. Verification Configuration
+**Rules without `requires`.** A rule may require nothing, typically for artifacts known to be
+published unsigned. It still matches, so those artifacts are verified and reported:
 
-The `verification` section controls how Sigmund fetches signer information:
+```yaml
+rules:
+  - match: ["com.internal.*", "org.example:test-utils"]
+    on-no-claim: ignore
+```
+
+A signature that does appear on such an artifact must verify — `FAILED` is never tolerated. A
+signed one is `UNSATISFIED`, since its signer is one no clause names; give it a rule of its own,
+or add `on-unsatisfied: ignore` to tolerate it too.
+
+### 3. Enforcement
+
+What an outcome does to the build is set per rule (`on-…` keys) or for every rule in `defaults`,
+each `fail`, `warn` or `ignore`:
+
+```yaml
+signers:
+  apache:
+    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+
+rules:
+  - match: ["org.apache.*"]
+    requires: [apache]
+    on-indeterminate: warn
+
+defaults:
+  on-no-claim: warn
+```
+
+With a policy present, every outcome other than `SATISFIED` fails the build unless the policy
+relaxes it, and an artifact no rule matches (`NOT_CONFIGURED`) fails too. `FAILED` always fails,
+and a setting for it is an error. A file that declares no `rules` and no `defaults` is not a
+policy: verification only observes, failing on `FAILED` alone. See
+[Policy and Enforcement](configuration.md#policy-and-enforcement) for the full resolution order.
+
+These settings live only in `sigmund.yaml`. They change what is accepted, so they belong in the
+reviewed file and cannot be set from the command line.
+
+### 4. Verification Settings
+
+The `verification` section controls how Sigmund fetches what it needs, never what it accepts:
 
 ```yaml
 verification:
@@ -222,7 +259,7 @@ verification:
 |---------|---------|-------------|
 | `resolve-signers` | `true` | Fetch unknown keys from keyservers, and ask directories named in `issuers` for verified addresses |
 | `import-to-keyring` | `false` | Import fetched keys to the local keyring |
-| `keyservers` | `hkps://keys.openpgp.org` | List of keyservers for fetching GPG keys |
+| `keyservers` | `hkps://keys.openpgp.org` | List of keyservers for fetching OpenPGP keys |
 
 **Keyservers supply key material only.** The signature proves the key whoever served it, and a user ID a keyserver serves never becomes an identity, so adding a keyserver such as `keyserver.ubuntu.com` cannot widen what is accepted. Identities come only from `issuers`; `keys.openpgp.org` is both the default keyserver and the directory Sigmund can ask for verified addresses.
 
@@ -231,61 +268,61 @@ verification:
 Here's a full `sigmund.yaml` with all trust-related sections:
 
 ```yaml
-# Sigmund trust configuration
-# See: https://github.com/cyberstamp/sigmund/blob/main/docs/trust-verification.md
-
 # Issuers trusted to vouch for identities
 issuers:
   - keys.openpgp.org
 
-# Define trusted signers
+# Trusted signers
 signers:
   # Key already seen, plus an address for keys to come
   apache:
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
     email: "dev@maven.apache.org"
-  
+
   quarkus-team:
     pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
     email: "quarkus-dev@googlegroups.com"
-  
+
   # Minimal form: email string
   jackson-dev: "tatu@fasterxml.com"
-  
+
   # Multiple keys and an address
   alice:
-    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+    pgp4: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
     pgp6: "D62AAB339E45E5EA2FD036872B01D46A517A2991EF8B8F67C32CF07A49CBDAA0"
     email: "alice@example.com"
 
-# Map artifact patterns to trusted signers
-trust:
-  # Exact match
-  io.quarkus:quarkus-core: quarkus-team
-  
-  # Wildcard groupId
-  org.apache.maven.*: apache
-  org.apache.commons.*: apache
-  io.quarkus.*: quarkus-team
-  
-  # Multiple signers
-  com.example:shared-lib: [alice, jackson-dev]
-  
-  # Specific artifact
-  com.fasterxml.jackson.core:jackson-databind: jackson-dev
+# Named groups of patterns
+artifact-sets:
+  apache-stack:
+    - org.apache.maven.*
+    - org.apache.commons.*
 
-# Artifacts that do not require a signature
-signature-optional:
-  - com.internal.*
-  - org.example:legacy-lib
+# What each set of artifacts must satisfy
+rules:
+  - match: [apache-stack]
+    requires: [apache]
 
-# Trust policy settings
-policy:
-  on-untrusted: fail        # fail | warn
-  listed-evidence: all      # all | any
-  unlisted-evidence: ignore # ignore | warn | require
+  - match: ["io.quarkus.*"]
+    requires: [quarkus-team]
 
-# Verification settings
+  # Both must have signed
+  - match: ["com.example:shared-lib"]
+    requires: [alice, jackson-dev]
+
+  - match: ["com.fasterxml.jackson.core:jackson-databind"]
+    requires: [jackson-dev]
+
+  # Published unsigned
+  - match: ["com.internal.*", "org.example:legacy-lib"]
+    on-no-claim: ignore
+
+# Policy-wide settings
+defaults:
+  extra-claims: reject
+  on-indeterminate: warn
+
+# How verification runs
 verification:
   resolve-signers: true
   import-to-keyring: false
@@ -301,69 +338,84 @@ Use the `sigmund:verify` goal to verify that all dependencies are signed by trus
 mvn sigmund:verify
 ```
 
-The goal reads `sigmund.yaml` from your project root (configurable with `-Dsigmund.trustConfig`).
+The goal reads `sigmund.yaml` from your project root, or the file given with
+`-Dsigmund.trustConfig`. Without a file at the default location it runs without a policy and logs
+that it is observing only.
 
 ### Example Output
 
 ```
-SATISFIED (40)
-  openpgp VERIFIED by bc (RSA) - Apache Software Foundation
-    org.apache.commons:commons-lang3:3.12.0
-    org.apache.maven:maven-core:3.9.0
-  openpgp VERIFIED by sq (ML-DSA-87+Ed448) - Quarkus Team
-    io.quarkus:quarkus-arc:3.0.0
-    io.quarkus:quarkus-core:3.0.0
-
-UNSATISFIED (1)
-  openpgp VERIFIED by gpg (RSA) - Unknown <unknown@example.com>
-    com.other:tool:3.0
-
-NO_CLAIM (1)
-    org.wildfly.common:wildfly-common:2.0.1
+[INFO] SATISFIED (40)
+[INFO]   openpgp VERIFIED by bc (RSA) - Apache Software Foundation
+[INFO]     org.apache.commons:commons-lang3:3.12.0
+[INFO]     org.apache.maven:maven-core:3.9.0
+[INFO]   openpgp VERIFIED by sq (ML-DSA-87+Ed448) - Quarkus Team
+[INFO]     io.quarkus:quarkus-arc:3.0.0
+[INFO]     io.quarkus:quarkus-core:3.0.0
+[INFO]
+[ERROR] UNSATISFIED (1)
+[ERROR]   openpgp VERIFIED by gpg (RSA) - Unknown <unknown@example.com>
+[ERROR]     io.quarkus:quarkus-extra:3.0.0 [blocks]
+[INFO]
+[INFO] NO_CLAIM (3) — ignored: 3 by rules[4] 'com.internal.*'
 ```
 
-Results are grouped by outcome, and within an outcome by who attested them.
-Artifacts nothing attested carry no group header. Add `-Dsigmund.detail` for the
-credentials proven, the trust root, and the evidence each claim was read from.
+Results are grouped by outcome, and within an outcome by who attested them. Each artifact line
+says what its outcome does — `[blocks]`, `[warning]` or `[ignored]` — and is logged at that
+severity. Ignored artifacts are counted in their outcome's heading, with the rule or `defaults`
+that tolerated them, and listed only with `-Dsigmund.detail`. Detail also shows the credentials
+proven, the trust root, and the evidence each claim was read from.
 
 ### Outcomes
 
 | Outcome | Meaning |
 |---------|---------|
-| **SATISFIED** | The claims found meet what the policy requires of this artifact |
-| **UNSATISFIED** | Verification succeeded, but not by a signer the policy accepts |
-| **FAILED** | A signature did not verify — an attack signal, never tolerated |
+| **SATISFIED** | The claims found meet what the matched rule requires |
+| **UNSATISFIED** | Verification succeeded, but not by the signers the rule requires — or, under `extra-claims: reject`, also by one it does not name |
+| **FAILED** | A signature does not match the artifact, or its key was revoked or had expired when it signed — an attack signal, never tolerated |
 | **NO_CLAIM** | No evidence was found at all |
-| **INDETERMINATE** | Verification could not be decided; the reason says why (for example a key that could not be fetched) |
-| **NOT_CONFIGURED** | No rule in the policy applies to this artifact |
+| **INDETERMINATE** | Evidence was found but could not be checked; the reason says why — a key that could not be fetched or used, an algorithm Sigmund does not accept, a tool that did not run |
+| **NOT_CONFIGURED** | No rule matches this artifact |
 
-An artifact listed in `signature-optional` reaches `NO_CLAIM` like any other
-artifact without evidence; what the listing changes is whether that blocks.
+An artifact a rule tolerates reaches the same outcome as any other; what the rule changes is
+whether that blocks.
+
+### How an Outcome Is Derived
+
+An artifact may carry several claims — a hybrid `.asc` with a classic and a post-quantum
+signature is two. Its outcome follows from them in a fixed order:
+
+1. **Any claim `FAILED` → `FAILED`.** A valid signature alongside a failing one does not mask it.
+2. **Claims no installed tool supports are set aside.** A post-quantum block that only `sq` can
+   check is ignored when `sq` is not installed, so the classic block decides — and a block an
+   attacker appends gains nothing, since only claims that verified count.
+3. **No rule matches → `NOT_CONFIGURED`.**
+4. **The rule's requirements are met → `SATISFIED`.** Under the default `extra-claims: reject`,
+   only if no other verified claim comes from a signer the rule does not name (`UNSATISFIED`)
+   and every claim could be checked (`INDETERMINATE`).
+5. **Otherwise, in order:** a claim that could not be checked → `INDETERMINATE`, since it might
+   have satisfied the rule; a claim that verified but is not accepted → `UNSATISFIED`; only
+   set-aside claims → `INDETERMINATE` with `unsupported-algorithm`; nothing found → `NO_CLAIM`.
 
 ### Exit Codes
 
 | Exit Code | Condition |
 |-----------|-----------|
 | `0` | Nothing found blocks the build |
-| `1` | A blocking outcome was found: `FAILED` always, and `UNSATISFIED`, `INDETERMINATE` or an unlisted `NO_CLAIM` when `on-untrusted: fail` |
-
-When `on-untrusted: warn` is set, warnings are logged but the build succeeds.
-`FAILED` blocks regardless: a signature that does not verify is not a coverage
-question.
+| `1` | An outcome the policy does not tolerate: `FAILED` always, and any other outcome whose action is `fail` |
 
 ### Maven Properties
 
-These properties override settings from `sigmund.yaml`:
+These properties configure how verification runs; what it accepts comes only from `sigmund.yaml`:
 
 | Property | Default | Description |
 |----------|---------|-------------|
 | `sigmund.trustConfig` | `${project.basedir}/sigmund.yaml` | Path to the trust configuration file |
-| `sigmund.onUntrusted` | (from config) | Override policy: `fail` or `warn` |
-| `sigmund.listedEvidence` | (from config) | Override `listed-evidence` policy (`all` or `any`) |
-| `sigmund.resolveSigners` | `true` | Fetch unknown GPG keys from keyservers |
+| `sigmund.resolveSigners` | `true` | Fetch unknown keys from keyservers |
 | `sigmund.keyservers` | `hkps://keys.openpgp.org` | Comma-separated keyserver list (also accepts singular `sigmund.keyserver`) |
 | `sigmund.verifyPomFiles` | `false` | Also verify signatures on POM files |
 | `sigmund.includeTestDependencies` | `false` | Include test-scoped dependencies |
+| `sigmund.detail` | `false` | Show credentials, trust roots and evidence for each result, and list ignored artifacts |
 | `sigmund.skip` | `false` | Skip verification |
 
 ## Generating Trust Configuration
@@ -379,11 +431,14 @@ mvn sigmund:dependency-signers \
 This creates a `sigmund.yaml` in your project root by:
 1. Resolving all project dependencies
 2. Downloading and verifying their signatures
-3. Grouping artifacts by signer (based on proven credentials)
+3. Grouping artifacts by the signers whose credentials they proved
 4. Collapsing common groupId prefixes into wildcard patterns (e.g., `io.quarkus.*`)
-5. Listing artifacts with no signature in the `signature-optional` section
+5. Writing a requirement rule per group, and one rule tolerating the modules found without a signature
 
-The generated file can be used directly with `mvn sigmund:verify`.
+The generated file can be used directly with `mvn sigmund:verify`. It has no catch-all: a
+dependency added later matches no rule and fails as `NOT_CONFIGURED` until an update adds it.
+Trust established this way is trust on first use — the snapshot is accepted as it is, and only
+changes from it are detected — so review it before committing.
 
 ### Generated File Structure
 
@@ -391,18 +446,23 @@ The generated file can be used directly with `mvn sigmund:verify`.
 signers:
   alice-developer:  # user ID on the key, unverified: Alice Developer <alice@example.com>
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
-  
+
   signer-2:
     pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
 
-trust:
-  io.quarkus.*: alice-developer
-  org.apache.maven.*: signer-2
-  com.example:specific-lib: alice-developer
-
-signature-optional:
-  - com.internal.utils:helper-lib
+rules:
+  - match: [com.example:specific-lib]
+    requires: [alice-developer]
+  - match: [io.quarkus.*]
+    requires: [alice-developer]
+  - match: [org.apache.maven.*]
+    requires: [signer-2]
+  - match: [com.internal.utils:helper-lib]
+    on-no-claim: ignore
 ```
+
+An artifact observed with several signatures gets all their signers in `requires`, so each must
+keep signing it.
 
 **Tips:**
 - Review the generated file before committing — rename signer IDs to something meaningful; the comment shows the user ID each key carries, which is unverified and not used for matching
@@ -415,7 +475,7 @@ signature-optional:
 |----------|-------------|
 | `sigmund.generateTrustConfig` | Generate a new `sigmund.yaml`. Set to `true` for project root, or provide a file path. |
 | `sigmund.overwrite` | Allow overwriting an existing file (default: `false`) |
-| `sigmund.resolveSigners` | Fetch GPG keys from keyservers to resolve signer names and emails (recommended) |
+| `sigmund.resolveSigners` | Fetch keys from keyservers to resolve signer names and emails (recommended) |
 | `sigmund.keyservers` | Comma-separated keyserver list (default: `hkps://keys.openpgp.org`) |
 
 ## Updating Trust Configuration
@@ -428,19 +488,32 @@ mvn sigmund:dependency-signers \
   -Dsigmund.resolveSigners=true
 ```
 
-This appends new signers and artifact mappings to the end of each section while:
-- Preserving existing content, comments, and formatting
-- Skipping signers and artifacts already configured
-- Adding only newly discovered dependencies
+The update adds what the policy does not cover yet, preserving existing content, comments and
+formatting:
 
-After updating, review the changes with `git diff` to see what was added.
+- An artifact **no rule matches** gets a requirement rule for its signers, or a rule tolerating it
+  when it carries no signature.
+- An artifact matched only by a **rule without `requires`** — a catch-all, or the rule listing
+  unsigned modules — gets a requirement rule once it is signed. When it was listed by name among
+  the unsigned modules, it is moved out of that list, since the same pattern in two rules would
+  tie.
+- A signer the file already defines is reused when it proves the same key, rather than defined
+  again.
+
+It never rewrites what a **requirement** already covers. An artifact now signed by a key or
+identity its rule does not name is listed under **Needs review** instead: a changed signer is
+what verification exists to catch, and accepting it is your decision. So is a module to move out
+of a hand-written list update cannot safely edit. The result is parsed and checked before it is
+written; if it would not load, nothing is written and the goal fails with the reason.
+
+After updating, review the changes with `git diff`.
 
 ### Update Options
 
 | Property | Description |
 |----------|-------------|
 | `sigmund.updateTrustConfig` | Update an existing `sigmund.yaml`. Set to `true` for project root, or provide a file path. |
-| `sigmund.resolveSigners` | Fetch GPG keys from keyservers to resolve signer names and emails (recommended) |
+| `sigmund.resolveSigners` | Fetch keys from keyservers to resolve signer names and emails (recommended) |
 
 ## Recommended Workflow
 
@@ -457,7 +530,6 @@ Here's a complete workflow for setting up and maintaining trust verification:
 
 2. **Review and refine the generated `sigmund.yaml`:**
    - Rename signer IDs to meaningful names
-   - Add or adjust display names
    - Verify wildcard patterns match your intent
    - Remove or adjust signers you don't trust
 
@@ -491,7 +563,7 @@ Or configure it in your `pom.xml` to run automatically during the `validate` pha
 <build>
   <plugins>
     <plugin>
-      <groupId>dev.cyberstamp</groupId>
+      <groupId>dev.cyberstamp.sigmund</groupId>
       <artifactId>sigmund-maven-plugin</artifactId>
       <version>0.0.2</version>
       <executions>
@@ -517,7 +589,7 @@ When you add or upgrade dependencies:
      -Dsigmund.resolveSigners=true
    ```
 
-2. **Review the changes:**
+2. **Review the changes, and anything listed under Needs review:**
    ```bash
    git diff sigmund.yaml
    ```
@@ -535,69 +607,83 @@ When you add or upgrade dependencies:
 
 ### Handling Untrusted Dependencies
 
-When `mvn sigmund:verify` reports untrusted artifacts, you have several options:
+When `mvn sigmund:verify` reports artifacts it does not accept, you have several options:
 
-**Option 1: Add the signer to your trust config** (if you trust them):
+**Option 1: Add the signer** (if you trust them):
 ```yaml
 signers:
   new-signer:
-    pgp4: "<full-fingerprint-from-output>"
+    pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
 
-trust:
-  com.example.*: new-signer
+rules:
+  - match: ["com.example.*"]
+    requires: [new-signer]
 ```
 
-**Option 2: Allow the artifact to be unsigned** (if there's no signature):
+**Option 2: Tolerate a missing signature** (if the artifact is published unsigned):
 ```yaml
-signature-optional:
-  - com.example:artifact
+rules:
+  - match: ["com.example:artifact"]
+    on-no-claim: ignore
 ```
 
 **Option 3: Remove the dependency** (if you don't trust it or can replace it)
 
-**Option 4: Use `warn` mode temporarily** while you investigate:
-```bash
-mvn sigmund:verify -Dsigmund.onUntrusted=warn
+**Option 4: Warn instead of failing while you investigate** — relax the outcome in the policy,
+for that rule or in `defaults`, and restore it once resolved:
+```yaml
+defaults:
+  on-unsatisfied: warn
 ```
 
 ## Troubleshooting
 
-### "Trust config file not found"
+### "Config file not found"
 
-The default location is `${project.basedir}/sigmund.yaml`. Either create the file or specify a custom path:
-```bash
-mvn sigmund:verify -Dsigmund.trustConfig=/path/to/sigmund.yaml
-```
+The goal reports this only for a file given explicitly with `-Dsigmund.trustConfig`. Check the
+path; without the property, a missing `${project.basedir}/sigmund.yaml` just means verification
+runs without a policy.
 
-### "Signer not in trust config" for known signers
+### The build observes but never fails
+
+The log says the run is observing only: no file was found at the default location, or the file
+declares neither `rules` nor `defaults`. Only a file with a policy enforces.
+
+### An artifact is UNSATISFIED for a signer you trust
 
 This usually means:
-1. The signer's credentials changed (new GPG key)
-2. The artifact pattern doesn't match (check wildcard specificity)
-3. The signer ID in the trust mapping is misspelled
-
-Run `mvn sigmund:dependency-signers` to see the actual signer credentials, then compare with your config.
+1. The signer's credentials changed (a new key) — run `mvn sigmund:dependency-signers` to see the key that signed, and add its fingerprint
+2. A more specific rule matched than the one you expected — compare the artifact's coordinate with every rule whose pattern matches it; the most specific wins
+3. The artifact carries an extra signature from a signer the rule does not name, under `extra-claims: reject`
 
 ### "NO_CLAIM" for artifacts that should be signed
 
-The artifact might not have a `.asc` signature file in the repository. Check Maven Central or your artifact repository. If the artifact is legitimately unsigned, add it to the `signature-optional` section.
+The artifact might not have a `.asc` signature file in the repository. Check Maven Central or your artifact repository. If the artifact is legitimately unsigned, tolerate it with a rule and `on-no-claim: ignore`.
 
 ### Fingerprint mismatches
 
-Fingerprints are case-insensitive and can be specified with or without spaces. These are equivalent:
+Fingerprints are case-insensitive, and written as the full fingerprint without spaces. These are equivalent:
 - `4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12`
 - `4aee18f83afdeb23468b2e5a2d7baf3c1e9f5a12`
-- `4AEE 18F8 3AFD EB23 468B  2E5A 2D7B AF3C 1E9F 5A12`
 
-### "VERIFICATION_FAILED" results
+A fingerprint with spaces, or a 16-character key ID, is rejected when the file loads.
 
-This indicates a cryptographic signature verification failure — the signature is invalid or corrupt. This is different from "untrusted" (signature is valid but signer is unknown). Verify that:
+### "FAILED" results
+
+The signature does not match the artifact, or the key that made it was revoked or had expired
+when it signed. This is different from `UNSATISFIED`, where the signature is valid but the signer
+is not accepted. Verify that:
 1. The artifact and signature files match
 2. The artifact hasn't been tampered with
-3. The signature file is a valid OpenPGP armored signature
+3. The signing key has not been revoked — check the key on a keyserver
+
+A key a verification tool will not use — one served without its binding signatures, or bound with
+an algorithm Sigmund does not accept — is `INDETERMINATE`, never `FAILED`; see
+[Outcomes and reasons](verification.md#outcomes-and-reasons).
 
 ## See Also
 
+- [Configuration Reference](configuration.md) — every `sigmund.yaml` key
 - [Signature Verification](verification.md) — cryptographic signature verification without trust policies
 - [Signing Guide](signing.md) — signing your own artifacts
 - [Getting Started](getting-started.md) — installation and basic usage
