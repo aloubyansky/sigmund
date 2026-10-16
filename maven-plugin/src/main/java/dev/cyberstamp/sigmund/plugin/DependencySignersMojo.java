@@ -439,6 +439,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             }
         }
 
+        combineCoSigningKeys(signersByKey, List.of(artifactSigners));
         dropSignersWithoutCredentials(List.of(artifactSigners), signersByKey);
         Map<String, List<String>> trustPatterns = TrustPatternCollapse.collapse(artifactSigners);
 
@@ -490,6 +491,8 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         groupByArtifact(results).forEach((coords, entries) -> plan.consider(coords, entries,
                 trustPolicy.matchRule(coords), trustPolicy.issuers()));
         plan.moveOutOfTolerantRules(lines);
+        combineCoSigningKeys(plan.newSigners,
+                List.of(plan.newArtifactSigners, plan.movedArtifactSigners));
         dropSignersWithoutCredentials(
                 List.of(plan.newArtifactSigners, plan.movedArtifactSigners), plan.newSigners);
 
@@ -896,6 +899,56 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
     }
 
     /**
+     * Combines a publisher's classic and post-quantum keys into one signer.
+     *
+     * <p>
+     * Two keys are one publisher's when they carry the same user ID, one is a v4 and the other
+     * a v6 key, and they signed exactly the same artifacts — a hybrid {@code .asc} carries both
+     * signatures. As one signer, either key's signature satisfies its rule, so a verifier that
+     * cannot check the post-quantum signature still reaches a verdict on the classic one; every
+     * signature that is present must still verify. User IDs are unverified, so a matching one
+     * alone never combines keys: keys that sign different artifacts stay separate, or a stranger's
+     * key carrying the same address would be accepted wherever the publisher is. Keys that sign
+     * together under different user IDs are different parties, and stay separate signers that
+     * are all required.
+     *
+     * @param signersByKey the signers observed, keyed by signing key; combined ones are removed
+     * @param artifactSignerMaps module patterns mapped to the signer IDs that signed them,
+     *        rewritten to name the combined signer
+     */
+    private static void combineCoSigningKeys(Map<String, SignerInfo> signersByKey,
+            List<Map<String, Set<String>>> artifactSignerMaps) {
+        Map<String, Set<String>> modulesBySigner = new HashMap<>();
+        for (Map<String, Set<String>> artifactSigners : artifactSignerMaps) {
+            artifactSigners.forEach((module, ids) -> ids.forEach(id -> modulesBySigner
+                    .computeIfAbsent(id, k -> new HashSet<>()).add(module)));
+        }
+        List<SignerInfo> signers = new ArrayList<>(signersByKey.values());
+        for (SignerInfo kept : signers) {
+            for (SignerInfo other : signers) {
+                if (kept != other && signersByKey.containsValue(kept) && signersByKey.containsValue(other)
+                        && kept.complements(other)
+                        && Objects.equals(modulesBySigner.get(kept.id), modulesBySigner.get(other.id))) {
+                    kept.absorb(other);
+                    signersByKey.values().remove(other);
+                    renameSigner(artifactSignerMaps, other.id, kept.id);
+                }
+            }
+        }
+    }
+
+    private static void renameSigner(List<Map<String, Set<String>>> artifactSignerMaps,
+            String from, String to) {
+        for (Map<String, Set<String>> artifactSigners : artifactSignerMaps) {
+            for (Set<String> ids : artifactSigners.values()) {
+                if (ids.remove(from)) {
+                    ids.add(to);
+                }
+            }
+        }
+    }
+
+    /**
      * Removes signers that proved no usable credential — only a key ID, or only a user ID —
      * from the trust mappings, so the generated config never names a signer it does not
      * define. Their artifacts are left without a mapping and are reported as not configured.
@@ -1006,6 +1059,31 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
 
         boolean hasCredentials() {
             return pgp4Key != null || pgp6Key != null || emailIdentity != null;
+        }
+
+        /**
+         * Whether this and another signer are one publisher's classic and post-quantum keys:
+         * the same user ID, and one holding only a v4 key where the other holds only a v6 key.
+         */
+        boolean complements(SignerInfo other) {
+            boolean versionsComplement = pgp4Key != null && pgp6Key == null
+                    && other.pgp6Key != null && other.pgp4Key == null
+                    || pgp6Key != null && pgp4Key == null
+                            && other.pgp4Key != null && other.pgp6Key == null;
+            return userId != null && userId.equals(other.userId) && versionsComplement
+                    && emailIdentity == null && other.emailIdentity == null;
+        }
+
+        /**
+         * Takes over the key another signer holds, which {@link #complements} has checked.
+         */
+        void absorb(SignerInfo other) {
+            if (pgp4Key == null) {
+                pgp4Key = other.pgp4Key;
+            }
+            if (pgp6Key == null) {
+                pgp6Key = other.pgp6Key;
+            }
         }
 
         private static IdentityCredential emailOf(IdentityCredential identity) {

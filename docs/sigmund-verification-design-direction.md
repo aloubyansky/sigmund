@@ -295,9 +295,10 @@ earlier ones did not decide.
    evaluated, because evaluation only ever sees claims that verified. It is the
    graceful degradation that makes hybrid `.asc` work: a verifier without PQC
    support evaluates the classic block exactly as an older RPM system does.
-   Policy names signers, not claim kinds, so it cannot demand the set-aside
-   claim; if it ever can, an unmet demand for an unsupported kind is
-   `INDETERMINATE` with `unsupported-algorithm`.
+   If the requirement is unmet only for signers a set-aside claim names — its
+   packet names the key that made it, though nothing proves it — the outcome is
+   `INDETERMINATE` with `unsupported-algorithm`: the verdict needs a tool that
+   can check that claim, and the signer is not wrong.
 3. **No requirement applies → `NOT_CONFIGURED`**, with the set-aside claims still
    recorded.
 4. **Requirements met → `SATISFIED`**, subject to the claim-set mode. Under the

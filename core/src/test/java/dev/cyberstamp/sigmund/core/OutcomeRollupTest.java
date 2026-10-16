@@ -156,4 +156,89 @@ class OutcomeRollupTest {
                     ClaimSetMode.ANY_CLAIM).outcome()).isEqualTo(ArtifactOutcome.UNSATISFIED);
         }
     }
+
+    /**
+     * A requirement left unmet only for signers that claims no installed tool can check say
+     * made them is undecidable here, not a wrong signer.
+     */
+    @Nested
+    class SignersOnlyAnUncheckableClaimNames {
+
+        private static final String CLASSIC = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
+        private static final String PQC = "CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9";
+        private static final String OTHER = "BBE7232D7991050B54C8EA0ADC08637CA615D22C";
+
+        private static SignerIdentity signer(String id, String... fingerprints) {
+            List<Credential> keys = new java.util.ArrayList<>();
+            for (String fingerprint : fingerprints) {
+                keys.add(KeyCredential.openPgp(fingerprint));
+            }
+            return new SignerIdentity(id, keys);
+        }
+
+        private static Requirement requiring(SignerIdentity... signers) {
+            List<Clause> clauses = new java.util.ArrayList<>();
+            for (SignerIdentity signer : signers) {
+                clauses.add(new Clause(List.of(signer)));
+            }
+            return new Requirement(clauses, List.of());
+        }
+
+        private static ClaimResult verifiedBy(String fingerprint) {
+            return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
+                    List.of(KeyCredential.openPgp(fingerprint)), null, TrustRootRef.unknown(), REF,
+                    null, ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc",
+                    KeyCredential.openPgp(fingerprint));
+        }
+
+        private static ClaimResult unsupportedNaming(String fingerprint) {
+            return new ClaimResult("openpgp", ClaimOutcome.INDETERMINATE,
+                    IndeterminateReason.UNSUPPORTED_ALGORITHM, List.of(), null,
+                    TrustRootRef.unknown(), REF, null, ClaimTimeSource.SIGNER, Instant.EPOCH,
+                    "ML-DSA-87+Ed448", null, KeyCredential.openPgp(fingerprint));
+        }
+
+        @Test
+        void aCoSignerOnlyAnUncheckableClaimNamesIsUnsupportedNotUnsatisfied() {
+            Requirement both = requiring(signer("classic", CLASSIC), signer("pqc", PQC));
+
+            OutcomeRollup.Result result = OutcomeRollup.derive(
+                    List.of(verifiedBy(CLASSIC), unsupportedNaming(PQC)), both,
+                    ClaimSetMode.ALL_CLAIMS);
+
+            assertThat(result.outcome()).isEqualTo(ArtifactOutcome.INDETERMINATE);
+            assertThat(result.reason()).isEqualTo(IndeterminateReason.UNSUPPORTED_ALGORITHM);
+        }
+
+        @Test
+        void anUncheckableClaimNamingSomeoneElseLeavesTheRequirementUnsatisfied() {
+            Requirement both = requiring(signer("classic", CLASSIC), signer("pqc", PQC));
+
+            assertThat(OutcomeRollup.derive(List.of(verifiedBy(CLASSIC), unsupportedNaming(OTHER)),
+                    both, ClaimSetMode.ALL_CLAIMS).outcome())
+                    .isEqualTo(ArtifactOutcome.UNSATISFIED);
+        }
+
+        /**
+         * An appended block naming the co-signer cannot rescue a signature from the wrong key:
+         * the clause that key fails is not one an uncheckable claim could fill.
+         */
+        @Test
+        void anUncheckableClaimDoesNotExcuseAWrongVerifiedSigner() {
+            Requirement both = requiring(signer("classic", CLASSIC), signer("pqc", PQC));
+
+            assertThat(OutcomeRollup.derive(List.of(verifiedBy(OTHER), unsupportedNaming(PQC)),
+                    both, ClaimSetMode.ALL_CLAIMS).outcome())
+                    .isEqualTo(ArtifactOutcome.UNSATISFIED);
+        }
+
+        @Test
+        void oneSignerWithBothKeysIsSatisfiedByTheClassicClaimAlone() {
+            Requirement publisher = requiring(signer("publisher", CLASSIC, PQC));
+
+            assertThat(OutcomeRollup.derive(List.of(verifiedBy(CLASSIC), unsupportedNaming(PQC)),
+                    publisher, ClaimSetMode.ALL_CLAIMS).outcome())
+                    .isEqualTo(ArtifactOutcome.SATISFIED);
+        }
+    }
 }

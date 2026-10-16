@@ -309,15 +309,28 @@ for the document.
 (ADR-005) — `matchRule(subject)` and `evaluate(subject, verifiedClaims)` — so
 the roll-up stays independent of schema details.
 
-**Bootstrap** (`generateTrustConfig`) emits `rules` with one clause per set —
-the observed signer, or `any-of` where a set was observed signed by several —
-and one tolerant rule (`on-no-claim: ignore`, no `requires`) listing the
+**Bootstrap** (`generateTrustConfig`) emits `rules` with one clause per signer
+observed on a set — so an artifact observed with several signatures requires all
+of them, consistent with `extra-claims: reject` treating what was observed as
+complete — and one tolerant rule (`on-no-claim: ignore`, no `requires`) listing the
 unsigned modules it observed by `group:artifact`. It deliberately emits no
 catch-all: trust establishment is TOFU, so only changes from the snapshot are
 detected, and a dependency added later is such a change. Under the explicit
 list it is `NOT_CONFIGURED`, fails, and enters the policy through
 `updateTrustConfig` as a reviewable diff; under a catch-all an unsigned newcomer
 would pass silently.
+
+A publisher's classic and post-quantum keys are **one signer**, not two
+clauses: bootstrap combines a v4 and a v6 key that carry the same user ID and
+signed exactly the same artifacts, as a hybrid `.asc` does. As one signer either
+key satisfies the clause, so a verifier without post-quantum support reaches a
+verdict on the classic signature, and every signature present must still
+verify. User IDs are unverified, so a matching one alone never combines keys —
+otherwise a stranger's key carrying the publisher's address, seen elsewhere in
+the graph, would be accepted wherever the publisher is. Keys that sign together
+under different user IDs stay separate clauses, all required; where one of them
+cannot be checked, the roll-up reports `INDETERMINATE(unsupported-algorithm)`
+rather than `UNSATISFIED` (ADR-005).
 
 **`updateTrustConfig`** adds what the policy does not yet cover — an artifact no
 rule matches, or one matched only by a rule without `requires` (a catch-all or

@@ -15,13 +15,15 @@ import java.util.List;
  *
  * <ol>
  * <li>any failed claim wins — a valid claim alongside a failing one does not mask it;</li>
- * <li>claims no installed tool supports are set aside, and take no further part unless a rule
- * demanded that claim kind;</li>
+ * <li>claims no installed tool supports are set aside: they cannot satisfy a requirement, and
+ * cannot block one that the other claims meet;</li>
  * <li>no applicable rule means {@link ArtifactOutcome#NOT_CONFIGURED};</li>
  * <li>requirements met, honouring the claim-set mode, means
  * {@link ArtifactOutcome#SATISFIED};</li>
  * <li>otherwise whichever remaining state is most informative decides: an unresolved claim
- * over a rejected one, a rejected one over no evidence at all.</li>
+ * first; then requirements that set-aside claims would meet, had the keys they name made them,
+ * which are {@link IndeterminateReason#UNSUPPORTED_ALGORITHM}; then a rejected claim; then
+ * set-aside claims alone; and last no evidence at all.</li>
  * </ol>
  */
 final class OutcomeRollup {
@@ -46,7 +48,7 @@ final class OutcomeRollup {
         // requirements are evaluated - which is what lets a hybrid signature verify on its
         // classic block when the post-quantum tooling is absent - and the rest are sorted
         // into what verified and why anything else did not.
-        boolean anySetAside = false;
+        List<ClaimResult> setAside = null;
         List<ClaimResult> verified = null;
         IndeterminateReason unresolvedReason = null;
         for (ClaimResult claim : found) {
@@ -58,7 +60,7 @@ final class OutcomeRollup {
                 case VERIFIED -> verified = append(verified, claim);
                 case INDETERMINATE -> {
                     if (claim.reason() == IndeterminateReason.UNSUPPORTED_ALGORITHM) {
-                        anySetAside = true;
+                        setAside = append(setAside, claim);
                     } else if (unresolvedReason == null) {
                         unresolvedReason = claim.reason();
                     }
@@ -96,13 +98,41 @@ final class OutcomeRollup {
         if (unresolvedReason != null) {
             return indeterminate(unresolvedReason);
         }
+        if (setAside != null && couldBeMetBy(evaluator, verified, setAside)) {
+            return indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
+        }
         if (verified != null) {
             return new Result(ArtifactOutcome.UNSATISFIED, null);
         }
-        if (anySetAside) {
+        if (setAside != null) {
             return indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
         }
         return new Result(ArtifactOutcome.NO_CLAIM, null);
+    }
+
+    /**
+     * Asks whether the requirements would be met had the claims no installed tool can check been
+     * made by the keys they name.
+     *
+     * <p>
+     * When they would, the requirement is unmet only for want of a tool, and the outcome is
+     * {@link IndeterminateReason#UNSUPPORTED_ALGORITHM} rather than {@code UNSATISFIED}: an
+     * artifact co-signed with a post-quantum key reads as "install a tool that can check this",
+     * not as the wrong signer. This cannot turn a wrong signer into an excusable one — a clause
+     * that a verified claim fails is not one a named but unchecked key could fill — and a claim
+     * whose named key could fill it is exactly what the verifier cannot tell from the real thing.
+     */
+    private static boolean couldBeMetBy(RequirementEvaluator evaluator,
+            List<ClaimResult> verified, List<ClaimResult> setAside) {
+        List<ClaimResult> hypothetical = verified == null ? new ArrayList<>() : new ArrayList<>(verified);
+        for (ClaimResult claim : setAside) {
+            ClaimResult asNamed = claim.asIfVerifiedByDeclaredIssuer();
+            if (asNamed != null) {
+                hypothetical.add(asNamed);
+            }
+        }
+        RequirementEvaluator.Evaluation evaluation = evaluator.evaluate(hypothetical);
+        return evaluation != null && evaluation.satisfied();
     }
 
     private static Result indeterminate(IndeterminateReason reason) {

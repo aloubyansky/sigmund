@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ClaimOutcome;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
+import dev.cyberstamp.sigmund.core.KeyCredential;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
 import dev.cyberstamp.sigmund.core.RulePolicy;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
@@ -310,6 +311,99 @@ class DependencySignersMojoTest {
             DependencySignersMojo mojo = new DependencySignersMojo();
             mojo.setLog(new RecordingLog());
             mojo.writeTrustConfigYaml(results, configFile.toFile());
+        }
+    }
+
+    /**
+     * Keys that sign together. A publisher's classic and post-quantum keys — the same user ID,
+     * on exactly the same artifacts — are one signer, so either key's signature satisfies its
+     * rule and a verifier without post-quantum support still reaches a verdict. Keys that sign
+     * together but belong to different parties stay separate signers, all required.
+     */
+    @Nested
+    class CoSigningKeys {
+
+        private static final String CLASSIC = FULL_FP;
+        private static final String PQC = FP6;
+        private static final String OTHER = "BBE7232D7991050B54C8EA0ADC08637CA615D22C";
+
+        private final ArtifactCoords lib = ArtifactCoords.parse("com.example:lib:1.0");
+        private final ArtifactCoords tool = ArtifactCoords.parse("org.other:tool:1.0");
+
+        private SignedArtifact signed(ArtifactCoords coords, String userId, int version,
+                String fingerprint) {
+            return new SignedArtifact(coords, "central",
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, userId,
+                            version == 6 ? "ML-DSA-87+Ed448" : "RSA", version,
+                            fingerprint.substring(fingerprint.length() - 16), fingerprint),
+                    null, null);
+        }
+
+        private SigmundConfig generate(Path dir, SignedArtifact... results) throws Exception {
+            DependencySignersMojo mojo = new DependencySignersMojo();
+            mojo.setLog(new RecordingLog());
+            Path file = dir.resolve("sigmund.yaml");
+            mojo.writeTrustConfigYaml(List.of(results), file.toFile());
+            return SigmundConfig.parse(file);
+        }
+
+        @Test
+        void aPublishersClassicAndPqcKeysBecomeOneSigner(@TempDir Path dir) throws Exception {
+            SigmundConfig config = generate(dir,
+                    signed(lib, "Alice <alice@example.com>", 4, CLASSIC),
+                    signed(lib, "Alice <alice@example.com>", 6, PQC));
+
+            assertThat(config.signers().names()).containsExactly("alice");
+            assertThat(config.signers().get("alice").credentials()).containsExactlyInAnyOrder(
+                    KeyCredential.openPgp(CLASSIC), KeyCredential.openPgp(PQC));
+            assertThat(config.trustPolicySpec().rules().get(0).clauseIds())
+                    .containsExactly(Set.of("alice"));
+        }
+
+        @Test
+        void keysThatDoNotAlwaysSignTogetherStaySeparate(@TempDir Path dir) throws Exception {
+            SigmundConfig config = generate(dir,
+                    signed(lib, "Alice <alice@example.com>", 4, CLASSIC),
+                    signed(lib, "Alice <alice@example.com>", 6, PQC),
+                    signed(tool, "Alice <alice@example.com>", 4, CLASSIC));
+
+            assertThat(config.signers().names()).hasSize(2);
+        }
+
+        @Test
+        void differentPartiesSigningTogetherAreAllRequired(@TempDir Path dir) throws Exception {
+            SigmundConfig config = generate(dir,
+                    signed(lib, "Alice <alice@example.com>", 4, CLASSIC),
+                    signed(lib, "Bob <bob@example.com>", 6, PQC));
+
+            assertThat(config.signers().names()).hasSize(2);
+            assertThat(config.trustPolicySpec().rules().get(0).clauseIds()).hasSize(2);
+        }
+
+        @Test
+        void twoClassicKeysWithOneUserIdStaySeparate(@TempDir Path dir) throws Exception {
+            SigmundConfig config = generate(dir,
+                    signed(lib, "Alice <alice@example.com>", 4, CLASSIC),
+                    signed(lib, "Alice <alice@example.com>", 4, OTHER));
+
+            assertThat(config.signers().names()).hasSize(2);
+        }
+
+        @Test
+        void anUpdateCombinesANewPublishersKeysToo(@TempDir Path dir) throws Exception {
+            Path file = dir.resolve("sigmund.yaml");
+            Files.writeString(file, "rules:\n  - match: [\"*\"]\n    on-no-claim: ignore\n");
+            DependencySignersMojo mojo = new DependencySignersMojo();
+            mojo.setLog(new RecordingLog());
+
+            mojo.updateExistingTrustConfig(List.of(
+                    signed(lib, "Alice <alice@example.com>", 4, CLASSIC),
+                    signed(lib, "Alice <alice@example.com>", 6, PQC)), file.toFile());
+
+            SigmundConfig config = SigmundConfig.parse(file);
+            assertThat(config.signers().names()).containsExactly("alice");
+            TrustPolicy policy = RulePolicy.compile(config.trustPolicySpec(), config.signers());
+            assertThat(policy.matchRule(lib).requirement().clauses()).hasSize(1);
         }
     }
 

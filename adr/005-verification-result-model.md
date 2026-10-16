@@ -236,22 +236,37 @@ diverge (§2). It implements §3.2.1:
 2. claims with UNSUPPORTED_ALGORITHM are set aside; requirements are
    evaluated over the claims that verified
 3. no requirement applies                        -> NOT_CONFIGURED
-4. requirements unmet, the rule demands a claim kind,
-   and a claim was set aside                     -> INDETERMINATE(UNSUPPORTED_ALGORITHM)
-5. requirements met:
+4. requirements met:
    ANY_CLAIM                                     -> SATISFIED
    ALL_CLAIMS and a verified claim unaccepted    -> UNSATISFIED
    ALL_CLAIMS and an INDETERMINATE claim remains -> INDETERMINATE(that reason)
    otherwise                                     -> SATISFIED
-6. requirements unmet, in order:
+5. requirements unmet, in order:
    any remaining INDETERMINATE claim             -> INDETERMINATE(that reason)
+   requirements met had the set-aside claims
+   been made by the keys they name               -> INDETERMINATE(UNSUPPORTED_ALGORITHM)
    any verified claim                            -> UNSATISFIED
    claims set aside in step 2                    -> INDETERMINATE(UNSUPPORTED_ALGORITHM)
    nothing found                                 -> NO_CLAIM
 ```
 
-Setting aside before the `NOT_CONFIGURED` check is not observable — with no rule
-nothing can demand a claim kind — but it keeps the order the same as §3.2.1.
+Setting aside before the `NOT_CONFIGURED` check is not observable, but it keeps
+the order the same as §3.2.1.
+
+**Signers only an uncheckable claim names (revised 2026-10-16).** A set-aside
+claim proves nothing, but an OpenPGP packet names the key that made it, which
+`ClaimResult.declaredIssuer` records apart from the proven credentials. When a
+requirement is unmet and would be met had each set-aside claim been made by the
+key it names, the requirement is unmet only for want of a tool: an artifact
+co-signed with a post-quantum key that a classic-only verifier cannot check is
+`INDETERMINATE(UNSUPPORTED_ALGORITHM)` — install a tool that can — not
+`UNSATISFIED`, which would send the policy owner looking for a trust problem. It
+cannot excuse a wrong signer: a clause that a verified claim fails is not one a
+named but unchecked key can fill. An appended block naming a required co-signer
+does turn `UNSATISFIED` into `INDETERMINATE` when the classic signature is
+genuine, which is exactly what the honest artifact gets on that verifier; both
+block by default. This replaces an earlier "the rule demands a claim kind" step,
+which the schema cannot express.
 
 ```java
 public enum ClaimSetMode { ALL_CLAIMS, ANY_CLAIM }
@@ -266,15 +281,15 @@ be built and tested independently:
 
 ```java
 public interface RequirementEvaluator {
-    Evaluation evaluate(ArtifactCoords coords, List<ClaimResult> verifiedClaims);  // null: no rule applies
+    Evaluation evaluate(List<ClaimResult> verifiedClaims);
 
     record Evaluation(boolean satisfied, List<ClaimResult> accepted,
             List<ClaimResult> unaccepted) { }
 }
 ```
 
-It takes the coordinate rather than the subject, because rules match at GAV
-level and never need the digest.
+The rule is matched once, before the roll-up, and its `Requirement` is the
+evaluator; no rule means no evaluator, which is `NOT_CONFIGURED`.
 
 ### Tool-level results
 

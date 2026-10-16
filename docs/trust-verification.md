@@ -394,8 +394,11 @@ signature is two. Its outcome follows from them in a fixed order:
    only if no other verified claim comes from a signer the rule does not name (`UNSATISFIED`)
    and every claim could be checked (`INDETERMINATE`).
 5. **Otherwise, in order:** a claim that could not be checked → `INDETERMINATE`, since it might
-   have satisfied the rule; a claim that verified but is not accepted → `UNSATISFIED`; only
-   set-aside claims → `INDETERMINATE` with `unsupported-algorithm`; nothing found → `NO_CLAIM`.
+   have satisfied the rule; requirements that set-aside claims would meet, had the keys they
+   name made them → `INDETERMINATE` with `unsupported-algorithm` — a co-signer whose
+   post-quantum signature this verifier cannot check is not a wrong signer; a claim that
+   verified but is not accepted → `UNSATISFIED`; only set-aside claims → `INDETERMINATE` with
+   `unsupported-algorithm`; nothing found → `NO_CLAIM`.
 
 ### Exit Codes
 
@@ -462,7 +465,11 @@ rules:
 ```
 
 An artifact observed with several signatures gets all their signers in `requires`, so each must
-keep signing it.
+keep signing it — with one exception: a publisher's classic and post-quantum keys, carrying the
+same user ID and signing exactly the same artifacts, become one signer holding both
+fingerprints, so either signature satisfies the rule and a verifier without Sequoia still
+reaches a verdict on the classic one. A matching user ID alone never combines keys, since user
+IDs are unverified.
 
 **Tips:**
 - Review the generated file before committing — rename signer IDs to something meaningful; the comment shows the user ID each key carries, which is unverified and not used for matching
