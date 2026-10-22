@@ -117,7 +117,7 @@ Both plugins support injecting the signing key from an environment variable for 
 | `SIGN_KEY` (env var with key content) | `SIGMUND_BC_SIGNING_KEY` env var | Set `signing-key-env: SIGN_KEY` in `sigmund.yaml` to keep using the same env var name |
 | `SIGN_KEY_ID` (env var) | `sigmund.yaml` → `tools.bc.signing-fingerprint` | Full fingerprint instead of short key ID |
 | `SIGN_KEY_PASS` (env var) | `sigmund.yaml` → `tools.bc.passphrase-env` | Set to `SIGN_KEY_PASS` to keep using the same env var |
-| `<keyFile>` (POM) | Key file in BC private store (`~/.local/share/openpgp-cert-d/bc-private/`) | Sigmund manages key storage; use `sigmund keygen` to generate keys |
+| `<keyFile>` (POM) | Key file in BC private store (`~/.local/share/sigmund/bc-private/`) | Sigmund manages key storage; use `sigmund keygen` to generate keys |
 | `<keyId>` (POM) | `sigmund.yaml` → `tools.bc.signing-fingerprint` | |
 | `<keyPass>` (POM) | `sigmund.yaml` → `tools.bc.passphrase-env` | Env var name, not the passphrase itself. Default: `SIGMUND_BC_PASSPHRASE` |
 

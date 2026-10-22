@@ -140,8 +140,8 @@ tools:
     passphrase-env: SIGMUND_BC_PASSPHRASE
     cipher-suite: ed25519
     gnupg-home: ~/.gnupg
-    cert-d-home: ~/.local/share/openpgp-cert-d
-    bc-private-home: ~/.local/share/openpgp-cert-d/bc-private
+    cert-d-home: ~/.local/share/pgp.cert.d
+    bc-private-home: ~/.local/share/sigmund/bc-private
   sq:
     signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
     home: ~/.local/share/sequoia
@@ -183,7 +183,7 @@ Verification gives every artifact one outcome:
 |---|---|
 | `SATISFIED` | The matched rule's requirements are met |
 | `UNSATISFIED` | Claims verified, but not from the signers the rule requires — or, under `extra-claims: reject`, also from a signer it does not name |
-| `FAILED` | A signature does not match the artifact, or its key was revoked or had expired when it signed — the attack signal |
+| `FAILED` | A signature does not match the artifact, or its key was revoked or had expired when it signed — or was revoked as compromised, at any time ([details](verification.md#outcomes-and-reasons)). The attack signal |
 | `NO_CLAIM` | No signature or attestation was found |
 | `INDETERMINATE` | Evidence exists but could not be checked: a key not available, an algorithm not accepted, a tool not working |
 | `NOT_CONFIGURED` | No rule matches the artifact |
@@ -512,11 +512,13 @@ verification:
 
   Whether to fetch missing keys from keyservers, and to ask directories named in `issuers` for the verified addresses of keys a policy entry needs. When `false`, a signature whose signer can only be established through a directory is `INDETERMINATE` (`key-unavailable`). When `true` and a key is not found locally, tools attempt to fetch it from the configured keyservers. The behavior depends on the tool and `import-to-keyring`:
 
-  | `resolve-signers` | `import-to-keyring` | BC | GPG |
-  |---|---|---|---|
-  | `false` | any | no fetch | no fetch |
-  | `true` | `false` (default) | fetch ephemerally (in-memory, discarded after build) | skip (GPG cannot do ephemeral imports) |
-  | `true` | `true` | fetch + persist to cert-d | fetch + persist to GPG keyring |
+  | `resolve-signers` | `import-to-keyring` | BC | GPG | SQ |
+  |---|---|---|---|---|
+  | `false` | any | no fetch | no fetch | no fetch |
+  | `true` | `false` (default) | fetch ephemerally (in-memory, discarded after build) | skip (GPG cannot do ephemeral imports) | no fetch |
+  | `true` | `true` | fetch + persist to cert-d | fetch + persist to GPG keyring | no fetch |
+
+  `sq` never fetches keys: it uses only the certificates already in its own store.
 
   When `resolve-signers: true` but no tool in the configured toolchain can fetch keys (e.g., only GPG with `import-to-keyring: false`), Sigmund logs a warning.
 
@@ -533,7 +535,7 @@ verification:
 
 - **`keyservers`** (array of strings, default: `[hkps://keys.openpgp.org]`)
 
-  Keyserver URLs for fetching missing keys. The first keyserver that has a key supplies it, and the result records which one did. Keyservers supply key material only: the signature proves the key whoever served it, and a user ID a keyserver serves never becomes an identity — identities come only from [`issuers`](#issuers). That is why this is safe to change from the command line.
+  Keyserver URLs for fetching missing keys, asked in order. The first copy that carries user IDs is used; a copy without them is used only when no keyserver has a fuller one. The result records which keyserver supplied the key. Keyservers supply key material only: the signature proves the key whoever served it, and a user ID a keyserver serves never becomes an identity — identities come only from [`issuers`](#issuers). That is why this is safe to change from the command line.
 
   ```yaml
   verification:
@@ -555,7 +557,7 @@ tools:
     signing-fingerprint: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
     passphrase-env: MY_BC_PASSPHRASE
     gnupg-home: ~/.gnupg
-    cert-d-home: ~/.local/share/openpgp-cert-d
+    cert-d-home: ~/.local/share/pgp.cert.d
   sq:
     home: ~/.local/share/sequoia
     signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
@@ -609,8 +611,8 @@ Configured in the top-level `tools.bc` section.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `gnupg-home` | `~/.gnupg` | GnuPG home directory for reading `pubring.kbx` (or legacy `pubring.gpg`) |
-| `cert-d-home` | `~/.local/share/openpgp-cert-d` | Shared OpenPGP cert-d directory for public certificates |
-| `bc-private-home` | `<cert-d-home>/bc-private` | BC private key store directory |
+| `cert-d-home` | `~/.local/share/pgp.cert.d` | Shared OpenPGP cert-d directory for public certificates — the store `sq` uses by default, so each tool sees the certificates the other stores |
+| `bc-private-home` | `~/.local/share/sigmund/bc-private` | BC private key store directory, kept outside the shared cert-d |
 | `signing-fingerprint` | (none) | Fingerprint of the key to sign with (40 or 64 hex chars) |
 | `tsk-file` | (none) | Path to an exported Transferable Secret Key (TSK) file for signing |
 | `signing-key-env` | `SIGMUND_BC_SIGNING_KEY` | Environment variable name containing the ASCII-armored private key. For ephemeral CI runners. |
@@ -619,7 +621,6 @@ Configured in the top-level `tools.bc` section.
 
 **Supported cipher suites (BC):**
 
-Classic algorithms:
 - `ed25519` — EdDSA with Curve25519 (default)
 - `ed448` — EdDSA with Curve448
 - `rsa4096` — RSA with 4096-bit modulus
@@ -627,9 +628,7 @@ Classic algorithms:
 - `nistp384` — ECDSA with NIST P-384 curve
 - `nistp521` — ECDSA with NIST P-521 curve
 
-PQC composite (experimental):
-- `mldsa87-ed448` — ML-DSA-87 + Ed448 hybrid
-- `mldsa65-ed25519` — ML-DSA-65 + Ed25519 hybrid
+BC does not generate post-quantum keys; generate them with [SQ](#sq-sequoia).
 
 **Passphrase resolution order:**
 
@@ -666,7 +665,7 @@ runs; see [Accepted algorithms](verification.md#accepted-algorithms).
 
 **Supported cipher suites (SQ):**
 
-Sequoia supports post-quantum cryptography hybrid cipher suites as defined in RFC 9580:
+Sequoia supports the post-quantum hybrid cipher suites of RFC 9980, which extends OpenPGP v6 (RFC 9580):
 - `mldsa87-ed448` — ML-DSA-87 + Ed448 (default)
 - `mldsa65-ed25519` — ML-DSA-65 + Ed25519
 - Additional suites supported by `sq key generate --cipher-suite`
@@ -850,7 +849,9 @@ signing:
 
 No tool settings needed — ambient OIDC credentials from GitHub Actions are used automatically.
 
-To match signed artifacts against a specific Sigstore identity at verification time, add a signer with that identity:
+To have verification accept the artifacts by that workflow identity, define it as a signer and
+require it in a rule. A signer alone is never consulted: without a rule, or with no `rules` or
+`defaults` at all, verification only observes.
 
 ```yaml
 signers:
@@ -858,6 +859,10 @@ signers:
     identities:
       - issuer: "https://token.actions.githubusercontent.com"
         source-repository-uri: "https://github.com/myorg/myrepo"
+
+rules:
+  - match: ["com.myorg.*"]
+    requires: [ci-bot]
 
 signing:
   signer: ci-bot
@@ -874,6 +879,10 @@ signers:
       - issuer: "https://token.actions.githubusercontent.com"
         source-repository-uri: "https://github.com/myorg/myrepo"
 
+rules:
+  - match: ["com.myorg.*"]
+    requires: [release-lead]
+
 signing:
   signer: release-lead
   toolchain: [bc, sigstore]
@@ -889,4 +898,4 @@ tools:
     trusted-root: /etc/sigmund/trusted_root.json
 ```
 
-This produces both a `.asc` (OpenPGP) and a `.sigstore.json` (Sigstore bundle) for each artifact. Verifiers accept the `.asc` by the fingerprint and the bundle by the workflow identity.
+This produces both a `.asc` (OpenPGP) and a `.sigstore.json` (Sigstore bundle) for each artifact. Under the rule, the `.asc` proves `release-lead` by the fingerprint and the bundle by the workflow identity; either satisfies the rule, and both are checked.

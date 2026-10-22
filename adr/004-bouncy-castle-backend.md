@@ -33,9 +33,11 @@ schedule.
 ### Key management
 
 BcRunner reads public keys from GnuPG pubring and the shared OpenPGP cert-d
-directory. BC-generated private keys are stored in a `bc-private` subdirectory
-under cert-d. Public certs for BC-generated keys are written to the shared
-cert-d so `sq` and other tools can see them.
+directory, `~/.local/share/pgp.cert.d` — the location the cert-d specification
+names and `sq`'s default certificate store. BC-generated private keys are stored
+apart from it, in `~/.local/share/sigmund/bc-private`: the cert-d is a public
+store other tools read. Public certs for BC-generated keys are written to the
+shared cert-d so `sq` and other tools can see them.
 
 ### Tool priority
 

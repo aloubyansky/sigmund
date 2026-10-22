@@ -28,11 +28,8 @@ This guide covers how to verify artifact signatures using Sigmund. Signature ver
   - [Example: Prefer Sequoia](#example-prefer-sequoia)
   - [Example: GPG Only](#example-gpg-only)
 - [Key Discovery](#key-discovery)
-  - [Key Fetching Configuration](#key-fetching-configuration)
   - [How Key Fetching Works](#how-key-fetching-works)
-  - [Keyserver Default](#keyserver-default)
-  - [Ephemeral vs Persistent Import](#ephemeral-vs-persistent-import)
-  - [Key Fetching Limitations](#key-fetching-limitations)
+  - [Keys Served Without User IDs](#keys-served-without-user-ids)
 - [Verification Report Format](#verification-report-format)
   - [Example: All Signatures Pass](#example-all-signatures-verify)
   - [Example: Missing Key](#example-missing-key)
@@ -62,7 +59,7 @@ Sigmund verifies signatures by:
 
 1. Detecting the signature format from the file extension (`.asc` for OpenPGP, `.sigstore.json` for Sigstore)
 2. Parsing the signature file into claims
-3. Routing each unit to an appropriate verification tool (BC, Sequoia, GPG, or Sigstore)
+3. Routing each claim to an appropriate verification tool (BC, Sequoia, GPG, or Sigstore)
 4. Verifying each signature against the artifact
 5. Reporting the outcome of each signature block, and the counts across them
 
@@ -196,14 +193,14 @@ This fallthrough is important because each tool has access to different key stor
 
 **BC (Bouncy Castle)** handles any OpenPGP signature with classical algorithms (RSA, EdDSA, ECDSA). It searches for the signing key in:
 - GnuPG pubring (`~/.gnupg/pubring.kbx`)
-- Shared certificate directory (`~/.local/share/pgp.cert.d`)
-- BC private keystore (in-memory)
+- Shared certificate directory (`~/.local/share/pgp.cert.d`), the store `sq` also uses
+- Keys fetched in this session (in memory)
 
 BC returns `INDETERMINATE [KEY_UNAVAILABLE]` if the signing key is not found in any of these locations.
 
 BC verifies with Bouncy Castle's high-level OpenPGP API, which judges a signature in the context of its whole certificate, as GnuPG and Sequoia do. A signature verifies only if the key that made it was, at the signature's creation time, the primary key or a subkey validly bound to it: a binding signature by the primary that verifies, the signing flag, a back-signature (cross-certification) by a signing subkey, and neither revoked nor expired, with the primary key's expiry applying to the whole certificate. A subkey attached to someone else's certificate therefore proves nothing about that certificate's primary key. Algorithm acceptance is unchanged: SHA-1 and RIPEMD-160 signatures, and RSA and DSA keys from 1024 bits, still verify, since rejecting weak algorithms is a policy decision rather than a failed signature.
 
-**Sequoia (sq)** handles v4 and v6 signatures, the versions RFC 9580 defines, including PQC hybrid signatures (ML-DSA, RFC 9980). It does not implement LibrePGP v5 signatures. It looks up the signer's certificate in the Sequoia cert store (`~/.local/share/sequoia/certs`) and verifies using `sq verify --signer-file`.
+**Sequoia (sq)** handles v4 and v6 signatures, the versions RFC 9580 defines, including PQC hybrid signatures (ML-DSA, RFC 9980). It does not implement LibrePGP v5 signatures. It looks up the signer's certificate in its certificate store (`~/.local/share/pgp.cert.d` by default, or under `tools.sq.home`) and verifies using `sq verify --signer-file`.
 
 **GPG** runs `gpg --verify` against the local keyring. It handles v1-v4 signatures. When verifying hybrid signatures containing v6 PQC packets, GPG prints a warning about unknown packets but still reports "Good signature" if the v4 classical signature is valid.
 
@@ -342,62 +339,50 @@ verification:
 
 ## Key Discovery
 
-When verification is left undecided by `KEY_UNAVAILABLE`, Sigmund can automatically fetch the missing key from a keyserver.
-
-### Key Fetching Configuration
-
-Key fetching is controlled by the `verification` section in `sigmund.yaml`:
-
-```yaml
-verification:
-  resolve-signers: true
-  import-to-keyring: false
-  keyservers:
-    - hkps://keys.openpgp.org
-```
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `resolve-signers` | `true` | Fetch missing keys from keyservers during verification |
-| `import-to-keyring` | `false` | Persist fetched keys to tool keyrings. When `false`, BC caches keys in memory for the session only. |
-| `keyservers` | `hkps://keys.openpgp.org` | List of keyserver URLs to query |
+When a signature is left `INDETERMINATE` with `KEY_UNAVAILABLE` because no local keyring has
+its key, Sigmund can fetch the key from a keyserver and verify again. Whether it does, where it
+looks and whether it keeps what it fetches are set by `resolve-signers`, `import-to-keyring` and
+`keyservers`; see [`verification`](configuration.md#verification) for each setting and its
+default.
 
 ### How Key Fetching Works
 
-1. All tools return `KEY_UNAVAILABLE` for a signature (key not in any local keyring)
-2. Sigmund extracts the issuer fingerprint from the signature packet
-3. Sigmund queries each keyserver in order until a key is found
-4. The key is imported (persistently if `import-to-keyring: true`, or in-memory if `false`)
-5. Verification is retried with the newly available key
+1. Every tool in the toolchain returns `KEY_UNAVAILABLE` for the signature
+2. Sigmund takes the issuer fingerprint from the signature packet
+3. It asks each keyserver in order, and stops at the first copy that carries user IDs; a copy
+   without them is kept only if no keyserver has a fuller one
+4. The key is added to the fetching tool's store — in memory for the session, or persisted when
+   `import-to-keyring: true`
+5. Verification is retried with the key now available
 
-### Keyserver Default
+Only BC and GPG fetch keys; `sq` uses only the certificates already in its own store.
 
-The default keyserver is `hkps://keys.openpgp.org`. Keyservers supply key material only: the first one that has a key supplies it, the claim records which one did, and the signature proves the key whoever served it. User IDs served by a keyserver are display text and never identities, so other keyservers (e.g., `keyserver.ubuntu.com`) can be added without widening what is accepted. Identities come only from the issuers a policy names.
+| Tool | `import-to-keyring: false` (default) | `import-to-keyring: true` |
+|---|---|---|
+| BC | kept in memory, discarded when the build ends | written to the shared cert-d |
+| GPG | not fetched — GnuPG cannot import a key for one session only | imported into the GnuPG keyring |
+| sq | not fetched | not fetched |
 
-### Ephemeral vs Persistent Import
+Keyservers supply key material only. The signature proves the key whoever served it, and the
+claim records which keyserver supplied it. A user ID a keyserver serves is display text, never an
+identity, so adding a keyserver such as `keyserver.ubuntu.com` does not widen what is accepted;
+identities come only from the [`issuers`](configuration.md#issuers) a policy names.
 
-**Ephemeral (default):** `import-to-keyring: false`
+### Keys Served Without User IDs
 
-BC caches fetched keys in memory for the current session. Keys are not written to disk. This is useful for one-off verification without polluting your keyring.
+`keys.openpgp.org` serves a key without its user IDs until the owner verifies an address. Without
+the self-signatures on those user IDs, no tool can validate the key, so its signatures are
+`INDETERMINATE` with `KEY_UNAVAILABLE`, not `FAILED`; GnuPG refuses to import such a key at all.
+A fuller copy resolves it:
 
-**Note:** GPG cannot import keys ephemerally. When GPG is the primary tool and `import-to-keyring: false`, key fetching is skipped for GPG entirely. Use `import-to-keyring: true` if you want GPG to auto-fetch keys.
-
-**Persistent:** `import-to-keyring: true`
-
-Fetched keys are imported into the tool's keyring and persisted to disk:
-- BC imports to `~/.gnupg/pubring.kbx` or shared cert-d
-- Sequoia imports to `~/.local/share/sequoia/certs`
-- GPG imports to `~/.gnupg/pubring.kbx`
-
-Keys remain available for future verifications.
-
-### Key Fetching Limitations
-
-**keys.openpgp.org** may serve keys without user IDs attached (for privacy). BC can use these keys for verification, but GPG cannot import them. If you rely on GPG and encounter import failures, consider:
-
-1. Using BC as the primary tool (`toolchain: [bc, ...]`)
-2. Manually importing the key with `gpg --recv-keys <FINGERPRINT>` from a different keyserver
-3. Setting `import-to-keyring: true` and ensuring BC handles the import
+1. List another keyserver after it, so the fetch can find a copy with user IDs:
+   ```yaml
+   verification:
+     keyservers:
+       - hkps://keys.openpgp.org
+       - hkps://keyserver.ubuntu.com
+   ```
+2. Or import the key from elsewhere before verifying, e.g. `gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys <FINGERPRINT>`
 
 ## Verification Report Format
 

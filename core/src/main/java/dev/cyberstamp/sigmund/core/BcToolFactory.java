@@ -87,7 +87,7 @@ final class BcToolFactory implements SignatureToolFactory {
     private static BcKeyStore buildKeyStore(Map<String, String> settings) {
         Path gnupgHome = resolveGnupgHome(settings);
         Path certDHome = resolveCertDHome(settings);
-        Path bcPrivateHome = resolveBcPrivateHome(settings, certDHome);
+        Path bcPrivateHome = resolveBcPrivateHome(settings);
         return new BcKeyStore(gnupgHome, certDHome, bcPrivateHome,
                 "true".equals(settings.get("import-to-keyring")));
     }
@@ -106,28 +106,41 @@ final class BcToolFactory implements SignatureToolFactory {
 
     /**
      * Resolves the shared cert-d directory.
+     *
+     * <p>
+     * Defaults to {@code ~/.local/share/pgp.cert.d}, the location the shared OpenPGP certificate
+     * directory specification names and {@code sq} uses as its certificate store, so that
+     * certificates one tool stores are visible to the other.
      */
-    private static Path resolveCertDHome(Map<String, String> settings) {
+    static Path resolveCertDHome(Map<String, String> settings) {
         String home = settings.get("cert-d-home");
         if (home != null) {
             return Path.of(home);
         }
-        String userHome = System.getProperty("user.home");
-        if (userHome == null) {
-            throw new SigmundException("Cannot determine cert-d home: user.home is not set");
-        }
-        return Path.of(userHome, ".local", "share", "openpgp-cert-d");
+        return localShare("cert-d home").resolve("pgp.cert.d");
     }
 
     /**
      * Resolves the BC private key store directory.
+     *
+     * <p>
+     * Defaults to {@code ~/.local/share/sigmund/bc-private}, outside the cert-d: the cert-d is a
+     * public certificate store shared with other tools, and secret keys do not belong in it.
      */
-    private static Path resolveBcPrivateHome(Map<String, String> settings, Path certDHome) {
+    static Path resolveBcPrivateHome(Map<String, String> settings) {
         String home = settings.get("bc-private-home");
         if (home != null) {
             return Path.of(home);
         }
-        return certDHome.resolve("bc-private");
+        return localShare("BC private key store").resolve("sigmund").resolve("bc-private");
+    }
+
+    private static Path localShare(String purpose) {
+        String userHome = System.getProperty("user.home");
+        if (userHome == null) {
+            throw new SigmundException("Cannot determine " + purpose + ": user.home is not set");
+        }
+        return Path.of(userHome, ".local", "share");
     }
 
     /**

@@ -372,7 +372,7 @@ proven, the trust root, and the evidence each claim was read from.
 |---------|---------|
 | **SATISFIED** | The claims found meet what the matched rule requires |
 | **UNSATISFIED** | Verification succeeded, but not by the signers the rule requires — or, under `extra-claims: reject`, also by one it does not name |
-| **FAILED** | A signature does not match the artifact, or its key was revoked or had expired when it signed — an attack signal, never tolerated |
+| **FAILED** | A signature does not match the artifact, or its key was revoked or had expired when it signed — or was revoked as compromised, at any time ([details](verification.md#outcomes-and-reasons)). An attack signal, never tolerated |
 | **NO_CLAIM** | No evidence was found at all |
 | **INDETERMINATE** | Evidence was found but could not be checked; the reason says why — a key that could not be fetched or used, an algorithm Sigmund does not accept, a tool that did not run |
 | **NOT_CONFIGURED** | No rule matches this artifact |
@@ -414,17 +414,9 @@ signature is two. Its outcome follows from them in a fixed order:
 
 ### Maven Properties
 
-These properties configure how verification runs; what it accepts comes only from `sigmund.yaml`:
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| `sigmund.trustConfig` | `${project.basedir}/sigmund.yaml` | Path to the trust configuration file |
-| `sigmund.resolveSigners` | `true` | Fetch unknown keys from keyservers |
-| `sigmund.keyservers` | `hkps://keys.openpgp.org` | Comma-separated keyserver list (also accepts singular `sigmund.keyserver`) |
-| `sigmund.verifyPomFiles` | `false` | Also verify signatures on POM files |
-| `sigmund.includeTestDependencies` | `false` | Include test-scoped dependencies |
-| `sigmund.detail` | `false` | Show credentials, trust roots and evidence for each result, and list ignored artifacts |
-| `sigmund.skip` | `false` | Skip verification |
+Properties configure how verification runs — where keys come from, which files are checked, how
+much is reported; what it accepts comes only from `sigmund.yaml`. See
+[`sigmund:verify`](maven-plugin.md#sigmundverify) for the full list.
 
 ## Generating Trust Configuration
 
@@ -683,7 +675,7 @@ A fingerprint with spaces, or a 16-character key ID, is rejected when the file l
 ### "FAILED" results
 
 The signature does not match the artifact, or the key that made it was revoked or had expired
-when it signed. This is different from `UNSATISFIED`, where the signature is valid but the signer
+when it signed — or was revoked as compromised, which fails every signature it made. This is different from `UNSATISFIED`, where the signature is valid but the signer
 is not accepted. Verify that:
 1. The artifact and signature files match
 2. The artifact hasn't been tampered with

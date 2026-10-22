@@ -221,7 +221,7 @@ For ephemeral CI runners (containers, VMs that are destroyed after each build), 
 
 ```bash
 sigmund keygen --tool bc --userid "CI <ci@example.com>"
-# Copy the key file from ~/.local/share/openpgp-cert-d/bc-private/<fingerprint>
+# Copy the key file from ~/.local/share/sigmund/bc-private/<first 2 hex>/<rest of fingerprint>
 # Or export with GPG: gpg --export-secret-keys --armor <fingerprint>
 # Store the armored content as a CI secret named SIGMUND_BC_SIGNING_KEY
 ```

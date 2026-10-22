@@ -106,9 +106,9 @@ BC manages keys across three sources, searched in order:
 
 1. **GnuPG pubring** (`~/.gnupg/pubring.kbx` or legacy `pubring.gpg`) — read-only. BC can read public keys from GnuPG's keyring for verification. The modern keybox format (`pubring.kbx`, GnuPG 2.1+) is tried first.
 
-2. **Shared cert-d** (`~/.local/share/openpgp-cert-d/`) — read/write for public certificates. Uses the standard OpenPGP cert-d two-level directory layout (fingerprint `ABCDEF...` is stored at `AB/CDEF...`). Public certificates written here are visible to `sq` and other tools that support cert-d.
+2. **Shared cert-d** (`~/.local/share/pgp.cert.d/`) — read/write for public certificates. Uses the standard OpenPGP cert-d two-level directory layout (fingerprint `ABCDEF...` is stored at `AB/CDEF...`). It is the location the cert-d specification names and `sq`'s default certificate store, so certificates written here are visible to `sq` and other tools that support cert-d.
 
-3. **BC private store** (`~/.local/share/openpgp-cert-d/bc-private/`) — read/write for private keys. BC-generated private keys are stored in standard OpenPGP transferable secret key format in a subdirectory under cert-d.
+3. **BC private store** (`~/.local/share/sigmund/bc-private/`) — read/write for private keys. BC-generated private keys are stored in standard OpenPGP transferable secret key format, in the same two-level layout, outside the shared cert-d: that is a public certificate store other tools read, and secret keys do not belong in it.
 
 4. **Ephemeral cache** — in-memory cache for keys fetched from keyservers when `import-to-keyring` is false. Keys are available for verification during the session but are not persisted to disk.
 
@@ -392,7 +392,7 @@ were met and which claims met them, not what a requirement is.
 - `SATISFIED` — the claims found meet what the policy requires of this artifact
 - `UNSATISFIED` — verification succeeded, but not by the signers the rule requires
 - `FAILED` — a signature does not match the artifact, or its key was revoked or had expired
-  when it signed; an attack signal, and never tolerated
+  when it signed, or was revoked as compromised at any time; an attack signal, and never tolerated
 - `NO_CLAIM` — no evidence was found at all
 - `INDETERMINATE` — nothing could be established either way, with a reason saying why
 - `NOT_CONFIGURED` — no rule applies to this artifact

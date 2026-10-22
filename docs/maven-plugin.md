@@ -142,7 +142,7 @@ The report groups results by outcome, then by who attested them. Each artifact l
 | Property | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `sigmund.trustConfig` | No | `${project.basedir}/sigmund.yaml` | Path to the trust configuration file |
-| `sigmund.resolveSigners` | No | `true` | Fetch unknown GPG keys from keyservers. Overrides config file setting. |
+| `sigmund.resolveSigners` | No | `true` | Fetch unknown keys from keyservers, and ask directories named in `issuers` for verified addresses. Overrides config file setting. |
 | `sigmund.keyservers` | No | `hkps://keys.openpgp.org` | Comma-separated keyserver list. Used when `resolveSigners` is enabled. |
 | `sigmund.verifyPomFiles` | No | `false` | Also verify signatures on POM files for each dependency |
 | `sigmund.detail` | No | `false` | Add the credentials proven and the trust root to each attester group, and the evidence file and claim time to each artifact, and list ignored artifacts. Results are grouped by outcome and then by attester either way |
@@ -171,14 +171,15 @@ SATISFIED (2)
 
 UNSATISFIED (1)
   openpgp VERIFIED by gpg (RSA) - Unknown <unknown@example.com>
-    com.other:tool:3.0
+    com.other:tool:3.0 [blocks]
 
 NO_CLAIM (1)
-    org.wildfly.common:wildfly-common:2.0.1
+    org.wildfly.common:wildfly-common:2.0.1 [warning]
 ```
 
+Each artifact line is tagged with what its outcome does; a `SATISFIED` one needs no tag.
 Artifacts nothing attested carry no group header. When an outcome blocks, the
-build fails naming each artifact and its outcome:
+build fails naming each blocking artifact and its outcome:
 
 ```
 Verification blocked the build for 1 artifact(s): com.other:tool:3.0 (UNSATISFIED)
