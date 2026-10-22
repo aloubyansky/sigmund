@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -155,6 +156,82 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
             }
         }
         return null;
+    }
+
+    private static final int VALIDSIG_TIMESTAMP = 4;
+    private static final int ERRSIG_RETURN_CODE = 7;
+    private static final String ERRSIG_NO_PUBLIC_KEY = "9";
+    private static final String ERRSIG_UNSUPPORTED_ALGORITHM = "4";
+
+    /**
+     * Reads the verdict of a {@code gpg --status-fd 1 --verify} run from its status lines.
+     *
+     * <p>
+     * The exit code cannot be used: GnuPG exits 0 for a good signature by a revoked key, and by
+     * a key that had expired when it signed, warning only in text written for people. The status
+     * lines name the case. {@code BADSIG} and {@code REVKEYSIG} are {@link ClaimOutcome#FAILED};
+     * {@code EXPKEYSIG} is {@code FAILED} only when the key's {@code KEYEXPIRED} time is not after
+     * the signature's own time, since a signature made while the key was valid stays valid after
+     * it expires (§3.8); {@code GOODSIG} is verified. {@code ERRSIG} is indeterminate — a missing
+     * public key ({@code NO_PUBKEY}, which is also how GnuPG answers for a certificate it refused
+     * to import, such as one without user IDs) is {@link IndeterminateReason#KEY_UNAVAILABLE}, an
+     * algorithm it does not support {@link IndeterminateReason#UNSUPPORTED_ALGORITHM} — and status
+     * with none of these means GnuPG itself did not run as expected.
+     *
+     * @param statusOutput the status lines
+     * @return the verdict
+     */
+    static ToolVerdict verdict(String statusOutput) {
+        Map<String, List<String[]>> status = statusLines(statusOutput);
+        if (status.containsKey("BADSIG") || status.containsKey("REVKEYSIG")) {
+            return ToolVerdict.failed();
+        }
+        if (status.containsKey("EXPKEYSIG")) {
+            return expiredBeforeSigning(status) ? ToolVerdict.failed() : ToolVerdict.verified();
+        }
+        if (status.containsKey("GOODSIG")) {
+            return ToolVerdict.verified();
+        }
+        return errSigVerdict(status);
+    }
+
+    private static ToolVerdict errSigVerdict(Map<String, List<String[]>> status) {
+        String returnCode = status.getOrDefault("ERRSIG", List.of()).stream()
+                .filter(fields -> fields.length > ERRSIG_RETURN_CODE)
+                .map(fields -> fields[ERRSIG_RETURN_CODE])
+                .findFirst().orElse(null);
+        if (status.containsKey("NO_PUBKEY") || ERRSIG_NO_PUBLIC_KEY.equals(returnCode)) {
+            return ToolVerdict.indeterminate(IndeterminateReason.KEY_UNAVAILABLE);
+        }
+        if (ERRSIG_UNSUPPORTED_ALGORITHM.equals(returnCode)) {
+            return ToolVerdict.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
+        }
+        return ToolVerdict.indeterminate(IndeterminateReason.TOOL_UNAVAILABLE);
+    }
+
+    private static boolean expiredBeforeSigning(Map<String, List<String[]>> status) {
+        List<String[]> validSig = status.getOrDefault("VALIDSIG", List.of());
+        if (validSig.isEmpty() || validSig.get(0).length <= VALIDSIG_TIMESTAMP) {
+            return true;
+        }
+        long signedAt = Long.parseLong(validSig.get(0)[VALIDSIG_TIMESTAMP]);
+        return status.getOrDefault("KEYEXPIRED", List.of()).stream()
+                .filter(fields -> fields.length > 2)
+                .anyMatch(fields -> Long.parseLong(fields[2]) <= signedAt);
+    }
+
+    private static Map<String, List<String[]>> statusLines(String statusOutput) {
+        Map<String, List<String[]>> lines = new HashMap<>();
+        if (statusOutput == null) {
+            return lines;
+        }
+        for (String line : statusOutput.split("\\R")) {
+            String[] fields = line.trim().split("\\s+");
+            if (fields.length > 1 && "[GNUPG:]".equals(fields[0])) {
+                lines.computeIfAbsent(fields[1], keyword -> new ArrayList<>()).add(fields);
+            }
+        }
+        return lines;
     }
 
     /**
@@ -314,11 +391,10 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
      * {@code VALIDSIG}, the full fingerprints of the signing key and its primary key, which a
      * signature carrying only a 64-bit key ID does not.
      * <p>
-     * Exit code 2 means GPG emitted warnings — a hybrid {@code .asc} carrying a v6 packet
-     * GnuPG does not understand produces one — so the signature counts as verified only when
-     * GPG also reports "Good signature". A missing public key is reported as
-     * {@link IndeterminateReason#KEY_UNAVAILABLE} rather than as a failure: nothing about the
-     * artifact has been established, and the key may be available on a later run.
+     * The outcome comes from the status lines, not the exit code: see {@link #verdict(String)}.
+     * A missing public key is reported as {@link IndeterminateReason#KEY_UNAVAILABLE} rather
+     * than as a failure: nothing about the artifact has been established, and the key may be
+     * available on a later run.
      *
      * @param artifactFile the file that was signed
      * @param signatureFile the detached signature file to verify
@@ -345,21 +421,9 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
         String algorithm = extractAlgorithm(result.stderr());
         String signerUserId = extractSignerUserId(result.stderr());
 
-        // Exit code 2 means warnings (e.g. unknown packet versions); treat as
-        // valid only if GPG still reports "Good signature"
-        ClaimOutcome outcome;
-        IndeterminateReason reason = null;
-        if (result.exitCode() == 0
-                || (result.exitCode() == 2 && result.stderr().contains("Good signature"))) {
-            outcome = ClaimOutcome.VERIFIED;
-        } else if (result.stderr().contains("No public key")) {
-            outcome = ClaimOutcome.INDETERMINATE;
-            reason = IndeterminateReason.KEY_UNAVAILABLE;
-        } else {
-            outcome = ClaimOutcome.FAILED;
-        }
+        ToolVerdict verdict = verdict(result.stdout());
         String[] validSig = validSigFields(result.stdout());
-        return new GpgVerifyResult(outcome, reason, keyId, algorithm, signerUserId,
+        return new GpgVerifyResult(verdict.outcome(), verdict.reason(), keyId, algorithm, signerUserId,
                 fingerprintField(validSig, VALIDSIG_SIGNING_FINGERPRINT),
                 fingerprintField(validSig, VALIDSIG_PRIMARY_FINGERPRINT));
     }

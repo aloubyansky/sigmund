@@ -19,6 +19,7 @@ This guide covers how to verify artifact signatures using Sigmund. Signature ver
   - [How Routing Works](#how-routing-works)
   - [Tool Capabilities](#tool-capabilities)
   - [Outcomes and reasons](#outcomes-and-reasons)
+  - [Accepted algorithms](#accepted-algorithms)
 - [Sigstore Verification](#sigstore-verification)
   - [Auto-Detection](#auto-detection)
   - [Identity Extraction](#identity-extraction)
@@ -27,11 +28,8 @@ This guide covers how to verify artifact signatures using Sigmund. Signature ver
   - [Example: Prefer Sequoia](#example-prefer-sequoia)
   - [Example: GPG Only](#example-gpg-only)
 - [Key Discovery](#key-discovery)
-  - [Key Fetching Configuration](#key-fetching-configuration)
   - [How Key Fetching Works](#how-key-fetching-works)
-  - [Keyserver Default](#keyserver-default)
-  - [Ephemeral vs Persistent Import](#ephemeral-vs-persistent-import)
-  - [Key Fetching Limitations](#key-fetching-limitations)
+  - [Keys Served Without User IDs](#keys-served-without-user-ids)
 - [Verification Report Format](#verification-report-format)
   - [Example: All Signatures Pass](#example-all-signatures-verify)
   - [Example: Missing Key](#example-missing-key)
@@ -61,7 +59,7 @@ Sigmund verifies signatures by:
 
 1. Detecting the signature format from the file extension (`.asc` for OpenPGP, `.sigstore.json` for Sigstore)
 2. Parsing the signature file into claims
-3. Routing each unit to an appropriate verification tool (BC, Sequoia, GPG, or Sigstore)
+3. Routing each claim to an appropriate verification tool (BC, Sequoia, GPG, or Sigstore)
 4. Verifying each signature against the artifact
 5. Reporting the outcome of each signature block, and the counts across them
 
@@ -195,14 +193,14 @@ This fallthrough is important because each tool has access to different key stor
 
 **BC (Bouncy Castle)** handles any OpenPGP signature with classical algorithms (RSA, EdDSA, ECDSA). It searches for the signing key in:
 - GnuPG pubring (`~/.gnupg/pubring.kbx`)
-- Shared certificate directory (`~/.local/share/pgp.cert.d`)
-- BC private keystore (in-memory)
+- Shared certificate directory (`~/.local/share/pgp.cert.d`), the store `sq` also uses
+- Keys fetched in this session (in memory)
 
 BC returns `INDETERMINATE [KEY_UNAVAILABLE]` if the signing key is not found in any of these locations.
 
 BC verifies with Bouncy Castle's high-level OpenPGP API, which judges a signature in the context of its whole certificate, as GnuPG and Sequoia do. A signature verifies only if the key that made it was, at the signature's creation time, the primary key or a subkey validly bound to it: a binding signature by the primary that verifies, the signing flag, a back-signature (cross-certification) by a signing subkey, and neither revoked nor expired, with the primary key's expiry applying to the whole certificate. A subkey attached to someone else's certificate therefore proves nothing about that certificate's primary key. Algorithm acceptance is unchanged: SHA-1 and RIPEMD-160 signatures, and RSA and DSA keys from 1024 bits, still verify, since rejecting weak algorithms is a policy decision rather than a failed signature.
 
-**Sequoia (sq)** handles v4 and v6 signatures, the versions RFC 9580 defines, including PQC hybrid signatures (ML-DSA, RFC 9980). It does not implement LibrePGP v5 signatures. It looks up the signer's certificate in the Sequoia cert store (`~/.local/share/sequoia/certs`) and verifies using `sq verify --signer-file`.
+**Sequoia (sq)** handles v4 and v6 signatures, the versions RFC 9580 defines, including PQC hybrid signatures (ML-DSA, RFC 9980). It does not implement LibrePGP v5 signatures. It looks up the signer's certificate in its certificate store (`~/.local/share/pgp.cert.d` by default, or under `tools.sq.home`) and verifies using `sq verify --signer-file`.
 
 **GPG** runs `gpg --verify` against the local keyring. It handles v1-v4 signatures. When verifying hybrid signatures containing v6 PQC packets, GPG prints a warning about unknown packets but still reports "Good signature" if the v4 classical signature is valid.
 
@@ -211,7 +209,9 @@ BC verifies with Bouncy Castle's high-level OpenPGP API, which judges a signatur
 Each verification tool returns one of three outcomes:
 
 - **`VERIFIED`** — the signature is valid
-- **`FAILED`** — the signature is invalid: a tampered artifact or the wrong signature
+- **`FAILED`** — the signature must not be trusted: the artifact's bytes do not match it
+  (tampering, or the wrong signature), or the key that made it had already expired when it
+  signed, or was revoked — as compromised, at any time; for another reason, before it signed
 - **`INDETERMINATE`** — nothing was established either way, with a reason saying why
 
 Keeping "could not check" apart from "checked and rejected" is the point of the
@@ -219,15 +219,54 @@ third outcome: only `FAILED` is an attack signal. The reasons are:
 
 | Reason | Meaning | Transient |
 |--------|---------|-----------|
-| `KEY_UNAVAILABLE` | The signing key is in no keyring and could not be fetched | yes |
+| `KEY_UNAVAILABLE` | The signing key is in no keyring and could not be fetched, or the copy found cannot be used — such as a certificate served without the self-signatures that bind the key | yes |
 | `TRUST_ROOT_UNAVAILABLE` | Sigstore TUF metadata missing or too stale | yes |
 | `DISCOVERY_UNAVAILABLE` | Evidence might exist but the source could not be queried | yes |
 | `TOOL_UNAVAILABLE` | The verification tool could not be run, or broke while running | yes |
-| `UNSUPPORTED_ALGORITHM` | No installed tool can check this signature | no |
+| `UNSUPPORTED_ALGORITHM` | No installed tool can check this signature, or it uses an algorithm Sigmund does not accept (see below) | no |
 | `EVIDENCE_MALFORMED` | The signature or bundle could not be parsed | no |
 
 A transient reason may resolve on a later run; a permanent one will not without
 installing different tooling or fixing the evidence.
+
+A tool declining to *use a key* is never reported as `FAILED`. A correct signature by a key
+whose certificate lacks its binding self-signatures is `KEY_UNAVAILABLE`: keys.openpgp.org,
+for example, serves a key without its user IDs — and so without the self-signatures on them —
+until its owner verifies an address, and a fuller copy from another keyserver may resolve it.
+A key bound only with an algorithm Sigmund does not accept is `UNSUPPORTED_ALGORITHM`.
+
+### Accepted algorithms
+
+Every backend accepts the same algorithms, so the verdict for an artifact does not depend on
+which tool answered, or on the machine it ran on. The set is fixed in Sigmund, not
+configurable. On top of each tool's current defaults, Sigmund accepts what artifacts in Maven
+repositories have long been signed with:
+
+| Accepted | Why |
+|---|---|
+| SHA-1 and RIPEMD-160 document signatures | Older releases are signed this way |
+| SHA-1 and RIPEMD-160 self-signatures, at any date | Many active release keys are still bound by SHA-1 self-signatures. The practical attack on SHA-1 is a chosen-prefix collision, which needs the victim to sign data the attacker prepared; a self-signature is made by the key's owner over their own key, so it does not apply. GnuPG exempts self-signatures for the same reason, and Sigmund never relies on third-party certifications |
+| RSA and DSA keys from 1024 bits | Older release keys |
+
+A signature using anything weaker is `INDETERMINATE` with `UNSUPPORTED_ALGORITHM`, not
+`FAILED`.
+
+How each tool is made to apply it:
+
+- **Bouncy Castle** — Sigmund configures its verification policy in code.
+- **Sequoia (`sq`)** — Sigmund runs `sq` with `SEQUOIA_CRYPTO_POLICY` pointing at a policy file
+  it writes, which **replaces the host's system crypto policy** for those runs. On Fedora and
+  RHEL the system policy (`/etc/crypto-policies/back-ends/sequoia.config`) rejects SHA-1,
+  RIPEMD-160, RSA-1024 and DSA, so without the override a SHA-1-bound key such as many on Maven
+  Central would be rejected by `sq` alone. Your own `sq` use outside Sigmund is unaffected.
+- **GnuPG** — its defaults already accept the set; Sigmund passes no options. GnuPG does
+  reject a SHA-1 self-signature on an ECDSA P-256 key — for hash size rather than for SHA-1 —
+  where the other tools accept it; SHA-1-bound keys are in practice RSA or DSA keys from before
+  ECDSA was common.
+
+Each tool is also read by what it actually concluded rather than by its exit code: GnuPG exits
+0 for a good signature by a revoked key, so Sigmund reads its status lines, and Sequoia's report
+is read for whether it found a bad signature or a key it would not use.
 
 ## Sigstore Verification
 
@@ -257,8 +296,9 @@ signers:
     email: "release@example.com"
     openpgp4: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
 
-trust:
-  "com.example.*": release-lead
+rules:
+  - match: ["com.example.*"]
+    requires: [release-lead]
 ```
 
 An artifact signed with OpenPGP satisfies `release-lead` by the pinned fingerprint, or by a newer key for which `keys.openpgp.org` has verified the address; one signed with Sigstore satisfies it by the address in a Google-issued certificate. A user ID on an OpenPGP key is never matched on its own.
@@ -268,7 +308,7 @@ An artifact signed with OpenPGP satisfies `release-lead` by the pinned fingerpri
 You can configure which tools are used and their order in `sigmund.yaml`:
 
 ```yaml
-discovery:
+verification:
   toolchain: [bc, sq, gpg]
 ```
 
@@ -284,7 +324,7 @@ The default toolchain is `[bc, sq, gpg]`:
 To prioritize Sequoia for PQC verification:
 
 ```yaml
-discovery:
+verification:
   toolchain: [sq, bc, gpg]
 ```
 
@@ -293,68 +333,56 @@ discovery:
 To use only GPG:
 
 ```yaml
-discovery:
+verification:
   toolchain: [gpg]
 ```
 
 ## Key Discovery
 
-When verification is left undecided by `KEY_UNAVAILABLE`, Sigmund can automatically fetch the missing key from a keyserver.
-
-### Key Fetching Configuration
-
-Key fetching is controlled by the `discovery` section in `sigmund.yaml`:
-
-```yaml
-discovery:
-  resolve-signers: true
-  import-to-keyring: false
-  keyservers:
-    - hkps://keys.openpgp.org
-```
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `resolve-signers` | `true` | Fetch missing keys from keyservers during verification |
-| `import-to-keyring` | `false` | Persist fetched keys to tool keyrings. When `false`, BC caches keys in memory for the session only. |
-| `keyservers` | `hkps://keys.openpgp.org` | List of keyserver URLs to query |
+When a signature is left `INDETERMINATE` with `KEY_UNAVAILABLE` because no local keyring has
+its key, Sigmund can fetch the key from a keyserver and verify again. Whether it does, where it
+looks and whether it keeps what it fetches are set by `resolve-signers`, `import-to-keyring` and
+`keyservers`; see [`verification`](configuration.md#verification) for each setting and its
+default.
 
 ### How Key Fetching Works
 
-1. All tools return `KEY_UNAVAILABLE` for a signature (key not in any local keyring)
-2. Sigmund extracts the issuer fingerprint from the signature packet
-3. Sigmund queries each keyserver in order until a key is found
-4. The key is imported (persistently if `import-to-keyring: true`, or in-memory if `false`)
-5. Verification is retried with the newly available key
+1. Every tool in the toolchain returns `KEY_UNAVAILABLE` for the signature
+2. Sigmund takes the issuer fingerprint from the signature packet
+3. It asks each keyserver in order, and stops at the first copy that carries user IDs; a copy
+   without them is kept only if no keyserver has a fuller one
+4. The key is added to the fetching tool's store — in memory for the session, or persisted when
+   `import-to-keyring: true`
+5. Verification is retried with the key now available
 
-### Keyserver Default
+Only BC and GPG fetch keys; `sq` uses only the certificates already in its own store.
 
-The default keyserver is `hkps://keys.openpgp.org`. Keyservers supply key material only: the first one that has a key supplies it, the claim records which one did, and the signature proves the key whoever served it. User IDs served by a keyserver are display text and never identities, so other keyservers (e.g., `keyserver.ubuntu.com`) can be added without widening what is accepted. Identities come only from the issuers a policy names.
+| Tool | `import-to-keyring: false` (default) | `import-to-keyring: true` |
+|---|---|---|
+| BC | kept in memory, discarded when the build ends | written to the shared cert-d |
+| GPG | not fetched — GnuPG cannot import a key for one session only | imported into the GnuPG keyring |
+| sq | not fetched | not fetched |
 
-### Ephemeral vs Persistent Import
+Keyservers supply key material only. The signature proves the key whoever served it, and the
+claim records which keyserver supplied it. A user ID a keyserver serves is display text, never an
+identity, so adding a keyserver such as `keyserver.ubuntu.com` does not widen what is accepted;
+identities come only from the [`issuers`](configuration.md#issuers) a policy names.
 
-**Ephemeral (default):** `import-to-keyring: false`
+### Keys Served Without User IDs
 
-BC caches fetched keys in memory for the current session. Keys are not written to disk. This is useful for one-off verification without polluting your keyring.
+`keys.openpgp.org` serves a key without its user IDs until the owner verifies an address. Without
+the self-signatures on those user IDs, no tool can validate the key, so its signatures are
+`INDETERMINATE` with `KEY_UNAVAILABLE`, not `FAILED`; GnuPG refuses to import such a key at all.
+A fuller copy resolves it:
 
-**Note:** GPG cannot import keys ephemerally. When GPG is the primary tool and `import-to-keyring: false`, key fetching is skipped for GPG entirely. Use `import-to-keyring: true` if you want GPG to auto-fetch keys.
-
-**Persistent:** `import-to-keyring: true`
-
-Fetched keys are imported into the tool's keyring and persisted to disk:
-- BC imports to `~/.gnupg/pubring.kbx` or shared cert-d
-- Sequoia imports to `~/.local/share/sequoia/certs`
-- GPG imports to `~/.gnupg/pubring.kbx`
-
-Keys remain available for future verifications.
-
-### Key Fetching Limitations
-
-**keys.openpgp.org** may serve keys without user IDs attached (for privacy). BC can use these keys for verification, but GPG cannot import them. If you rely on GPG and encounter import failures, consider:
-
-1. Using BC as the primary tool (`toolchain: [bc, ...]`)
-2. Manually importing the key with `gpg --recv-keys <FINGERPRINT>` from a different keyserver
-3. Setting `import-to-keyring: true` and ensuring BC handles the import
+1. List another keyserver after it, so the fetch can find a copy with user IDs:
+   ```yaml
+   verification:
+     keyservers:
+       - hkps://keys.openpgp.org
+       - hkps://keyserver.ubuntu.com
+   ```
+2. Or import the key from elsewhere before verifying, e.g. `gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys <FINGERPRINT>`
 
 ## Verification Report Format
 
@@ -409,7 +437,7 @@ The signing key is not in any keyring. Solutions:
 
 1. **Enable automatic key fetching** (default):
    ```yaml
-   discovery:
+   verification:
      resolve-signers: true
    ```
 
@@ -432,7 +460,7 @@ This is expected when verifying hybrid signatures. GPG processes the v4 classica
 To verify the PQC signature, ensure Sequoia is installed and appears in the toolchain:
 
 ```yaml
-discovery:
+verification:
   toolchain: [bc, sq, gpg]
 ```
 

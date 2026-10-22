@@ -6,19 +6,33 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.KeyPairGenerator;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Map;
 import java.util.Set;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
+import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
+import org.bouncycastle.bcpg.PublicKeyPacket;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
+import org.bouncycastle.bcpg.sig.KeyFlags;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.openpgp.PGPKeyPair;
+import org.bouncycastle.openpgp.PGPKeyRingGenerator;
+import org.bouncycastle.openpgp.PGPPrivateKey;
+import org.bouncycastle.openpgp.PGPPublicKey;
+import org.bouncycastle.openpgp.PGPPublicKeyRing;
 import org.bouncycastle.openpgp.PGPSecretKey;
 import org.bouncycastle.openpgp.PGPSecretKeyRing;
 import org.bouncycastle.openpgp.PGPSignature;
 import org.bouncycastle.openpgp.PGPSignatureGenerator;
 import org.bouncycastle.openpgp.PGPSignatureSubpacketGenerator;
 import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentSignerBuilder;
+import org.bouncycastle.openpgp.operator.jcajce.JcaPGPDigestCalculatorProviderBuilder;
+import org.bouncycastle.openpgp.operator.jcajce.JcaPGPKeyPair;
+import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyEncryptorBuilder;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -114,20 +128,86 @@ class BcRunnerTest {
         }
     }
 
-    /**
-     * Signs an artifact with the primary key of a stored key ring, choosing the hash and the
-     * signed creation time, and parses the result as a claim.
-     */
+    @Nested
+    class KeyValidity {
+
+        @Test
+        void aSubkeyBoundWithARejectedHashIsUnsupportedNotFailed(@TempDir Path tempDir)
+                throws Exception {
+            PGPKeyPair primary = rsaKeyPair();
+            PGPKeyPair subkey = rsaKeyPair();
+            PGPPublicKeyRing certificate = PGPPublicKeyRing.insertPublicKey(
+                    keyRing(primary, null, HashAlgorithmTags.SHA256).generatePublicKeyRing(),
+                    keyRing(primary, subkey, HashAlgorithmTags.MD5).generatePublicKeyRing()
+                            .getPublicKey(subkey.getKeyID()));
+            BcKeyStore store = new BcKeyStore(null, tempDir.resolve("cert-d"),
+                    tempDir.resolve("bc-private"));
+            store.addFetched(certificate, "hkps://keys.example.org");
+            Path artifact = Files.writeString(tempDir.resolve("artifact.txt"), "content");
+            OpenPgpClaim claim = lowLevelSignature(subkey.getPublicKey(), subkey.getPrivateKey(),
+                    artifact, HashAlgorithmTags.SHA256, Instant.now());
+
+            try (BcRunner bcRunner = new BcRunner(store, null, null)) {
+                VerifyResult result = bcRunner.verify(artifact, claim);
+
+                assertThat(result.isIndeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM))
+                        .as(result.outcome() + " " + result.reason()).isTrue();
+            }
+        }
+
+        private static PGPKeyPair rsaKeyPair() throws Exception {
+            KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA",
+                    new BouncyCastleProvider());
+            generator.initialize(2048, new SecureRandom());
+            return new JcaPGPKeyPair(PublicKeyPacket.VERSION_4, PublicKeyAlgorithmTags.RSA_GENERAL,
+                    generator.generateKeyPair(), Date.from(Instant.now().minusSeconds(3600)));
+        }
+
+        /**
+         * The primary key with a user ID certified using the given hash and, when a subkey is
+         * given, that subkey bound for signing using the same hash and back-signed with SHA-256.
+         */
+        private static PGPKeyRingGenerator keyRing(PGPKeyPair primary, PGPKeyPair subkey,
+                int selfSignatureHash) throws Exception {
+            PGPSignatureSubpacketGenerator flags = new PGPSignatureSubpacketGenerator();
+            flags.setKeyFlags(false, KeyFlags.CERTIFY_OTHER);
+            PGPKeyRingGenerator generator = new PGPKeyRingGenerator(
+                    PGPSignature.POSITIVE_CERTIFICATION, primary, "Signer <signer@example.org>",
+                    new JcaPGPDigestCalculatorProviderBuilder().build().get(HashAlgorithmTags.SHA1),
+                    flags.generate(), null,
+                    new JcaPGPContentSignerBuilder(PublicKeyAlgorithmTags.RSA_GENERAL,
+                            selfSignatureHash),
+                    new JcePBESecretKeyEncryptorBuilder(0).build(null));
+            if (subkey != null) {
+                PGPSignatureSubpacketGenerator signing = new PGPSignatureSubpacketGenerator();
+                signing.setKeyFlags(false, KeyFlags.SIGN_DATA);
+                generator.addSubKey(subkey, signing.generate(), null,
+                        new JcaPGPContentSignerBuilder(PublicKeyAlgorithmTags.RSA_GENERAL,
+                                HashAlgorithmTags.SHA256));
+            }
+            return generator;
+        }
+    }
+
     private static OpenPgpClaim lowLevelSignature(BcKeyStore store, String fingerprint,
             Path artifact, int hashAlgorithm, Instant creationTime) throws Exception {
         PGPSecretKey key = store.findSecretKey(fingerprint).getSecretKey();
+        return lowLevelSignature(key.getPublicKey(), key.extractPrivateKey(null), artifact,
+                hashAlgorithm, creationTime);
+    }
+
+    /**
+     * Signs an artifact with the given key, choosing the hash and the
+     * signed creation time, and parses the result as a claim.
+     */
+    private static OpenPgpClaim lowLevelSignature(PGPPublicKey publicKey, PGPPrivateKey privateKey,
+            Path artifact, int hashAlgorithm, Instant creationTime) throws Exception {
         PGPSignatureGenerator generator = new PGPSignatureGenerator(
-                new JcaPGPContentSignerBuilder(key.getPublicKey().getAlgorithm(), hashAlgorithm),
-                key.getPublicKey());
-        generator.init(PGPSignature.BINARY_DOCUMENT, key.extractPrivateKey(null));
+                new JcaPGPContentSignerBuilder(publicKey.getAlgorithm(), hashAlgorithm), publicKey);
+        generator.init(PGPSignature.BINARY_DOCUMENT, privateKey);
         PGPSignatureSubpacketGenerator hashed = new PGPSignatureSubpacketGenerator();
         hashed.setSignatureCreationTime(true, Date.from(creationTime));
-        hashed.setIssuerFingerprint(false, key.getPublicKey());
+        hashed.setIssuerFingerprint(false, publicKey);
         generator.setHashedSubpackets(hashed.generate());
         generator.update(Files.readAllBytes(artifact));
         Path signature = artifact.resolveSibling(artifact.getFileName() + ".asc");

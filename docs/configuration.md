@@ -6,182 +6,216 @@ Sigmund uses a `sigmund.yaml` file for configuration. This reference documents e
 
 - [File Location](#file-location)
 - [Complete Example](#complete-example)
+- [Policy and Enforcement](#policy-and-enforcement)
+  - [When a policy is present](#when-a-policy-is-present)
+  - [Outcomes](#outcomes)
+  - [How enforcement is resolved](#how-enforcement-is-resolved)
 - [Section Reference](#section-reference)
-  - [version](#version)
   - [issuers](#issuers)
   - [signers](#signers)
+  - [artifact-sets](#artifact-sets)
+  - [rules](#rules)
+  - [defaults](#defaults)
   - [signing](#signing)
-  - [artifacts](#artifacts)
-  - [trust](#trust)
-  - [signature-optional](#signature-optional)
-  - [policy](#policy)
   - [verification](#verification)
   - [tools](#tools)
+- [Artifact Patterns](#artifact-patterns)
 - [Tool Settings Tables](#tool-settings-tables)
   - [BC (BouncyCastle)](#bc-bouncycastle)
   - [SQ (Sequoia)](#sq-sequoia)
   - [GPG (GnuPG)](#gpg-gnupg)
   - [Sigstore](#sigstore)
 - [Common Configuration Patterns](#common-configuration-patterns)
-  - [Minimal Verification-Only Config](#minimal-verification-only-config)
+  - [Minimal Verification Policy](#minimal-verification-policy)
+  - [Publisher Key and CI Identity Together](#publisher-key-and-ci-identity-together)
+  - [Tolerating Unsigned Artifacts](#tolerating-unsigned-artifacts)
+  - [Gradual Adoption](#gradual-adoption)
   - [CI/CD Signing Config](#cicd-signing-config)
   - [Multi-Tool Hybrid Signing](#multi-tool-hybrid-signing)
   - [Sigstore-Only Signing](#sigstore-only-signing)
   - [Mixed OpenPGP + Sigstore Signing](#mixed-openpgp--sigstore-signing)
-  - [Strict Trust Policy](#strict-trust-policy)
-  - [Permissive Development Config](#permissive-development-config)
 
 ## File Location
 
-Sigmund locates configuration files using the following search order:
+**Maven plugin.** The goals read `${project.basedir}/sigmund.yaml`, or the file given with
+`-Dsigmund.trustConfig=<path>`. When the default file does not exist, `sigmund:verify` runs
+without a policy and says so — it verifies and reports everything, failing only on a signature
+that does not verify. A file given explicitly that does not exist is an error, so a mistyped
+path cannot turn enforcement off.
 
-1. **Explicit path** — specified via `--config` flag (CLI) or `-Dsigmund.trustConfig` (Maven)
-2. **Local config** — `./sigmund.yaml` (current working directory for CLI, `${project.basedir}` for Maven)
+**CLI.** Commands search, in order:
+
+1. **Explicit path** — the `--config` flag
+2. **Local config** — `./sigmund.yaml` in the current working directory
 3. **User config** — `~/.config/sigmund/sigmund.yaml`
 
 The **first file found wins**. Configuration files are not merged.
 
+The top-level keys are `issuers`, `signers`, `artifact-sets`, `rules`, `defaults`, `signing`,
+`verification` and `tools`. Any other key is an error, with the nearest known key suggested —
+an ignored key would silently drop what you wrote. The schema of earlier versions (`trust`,
+`signature-optional`, `policy`, `artifacts`, `version`) is rejected with a message saying what
+replaces it.
+
 ## Complete Example
 
 ```yaml
-# Schema version (optional, defaults to 1)
-version: 1
-
 # Issuers trusted to vouch for identities in entries that name none
 issuers:
   - keys.openpgp.org
   - https://token.actions.githubusercontent.com
 
-# Identity registry — define all trusted signers
+# Identity registry — everyone policy or signing refers to
 signers:
-  # Full form: organization with multiple members
+  # An organization with several release keys
   apache:
     members:
       - pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
         email: "dev@maven.apache.org"
       - pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
-  
+
   # Keys already seen, plus an address for keys to come
   jane:
     pgp4: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
     pgp6: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
     email: "jane@example.com"
-  
-  # CI/CD identity, attested by a Sigstore certificate
+
+  # A CI workflow, attested by a Sigstore certificate
   github-bot:
     identities:
       - source-repository-uri: "https://github.com/myorg/myrepo"
         build-config-uri: "https://github.com/myorg/myrepo/.github/workflows/release.yml@refs/heads/main"
-  
-  # Minimal form: an address, vouched for by a listed issuer
+
+  # An address, vouched for by a listed issuer
   jackson-dev: "tatu@fasterxml.com"
 
-# Artifact-to-signer trust mappings
-trust:
-  # Map artifact patterns to signers
-  "org.apache.maven.*": apache
-  "org.apache.commons.*": apache
-  "com.fasterxml.jackson.*": jackson-dev
-  "com.example:mylib": jane
-  
-  # Multiple signers for one pattern
-  "io.quarkus.*": [redhat, jboss-community]
+# Named groups of artifact patterns, for use in rules
+artifact-sets:
+  apache-stack:
+    - "org.apache.maven.*"
+    - "org.apache.commons.*"
 
-# Artifacts that do not require a signature
-signature-optional:
-  - "com.internal.*"
-  - "com.example:test-utils"
+# What each set of artifacts must satisfy
+rules:
+  - match: [apache-stack]
+    requires: [apache]
 
-# Policy enforcement rules
-policy:
-  # Action on untrusted artifacts: "fail" or "warn"
-  on-untrusted: fail
-  
-  # Evidence matching for artifacts with multiple signatures
-  listed-evidence: all      # 'all' or 'any' - default: all
-  unlisted-evidence: ignore # 'ignore', 'warn', or 'require' - default: ignore
+  - match: ["com.fasterxml.jackson.*"]
+    requires: [jackson-dev]
+
+  # Both the release key and the CI workflow must have signed
+  - match: ["com.example:mylib"]
+    requires: [jane, github-bot]
+
+  # Unsigned internal artifacts are tolerated; a signature on one is still checked
+  - match: ["com.internal.*"]
+    on-no-claim: ignore
+
+# Policy-wide settings
+defaults:
+  extra-claims: reject
+  on-indeterminate: warn
 
 # Signing configuration
 signing:
-  # Which signer identity to sign as (references signers section)
   signer: jane
-  
-  # Toolchain order for signing operations
   toolchain: [bc, sq, gpg]
-  
-  # Default credential types to produce (filters which tools are used)
   credential-types: [pgp4, pgp6]
-  
-  # Named profiles for explicit switching (e.g., --profile classic)
   profiles:
     classic:
       - pgp4
 
-# Verification settings
+# How verification runs — never what it accepts
 verification:
-  # Toolchain order for verification operations
   toolchain: [bc, sq, gpg]
-  
-  # Fetch missing keys from keyservers during verification
   resolve-signers: true
-  
-  # Persist fetched keys to tool keyrings (vs. in-memory cache)
   import-to-keyring: false
-  
-  # Keyserver URLs for key discovery
   keyservers:
     - hkps://keys.openpgp.org
 
-# Tool-specific settings (used by both signing and discovery)
+# Tool-specific settings, used by both signing and verification
 tools:
   bc:
-    # Signing settings
     signing-fingerprint: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
     passphrase-env: SIGMUND_BC_PASSPHRASE
     cipher-suite: ed25519
-    
-    # Verification settings
     gnupg-home: ~/.gnupg
-    cert-d-home: ~/.local/share/openpgp-cert-d
-    bc-private-home: ~/.local/share/openpgp-cert-d/bc-private
-  
+    cert-d-home: ~/.local/share/pgp.cert.d
+    bc-private-home: ~/.local/share/sigmund/bc-private
   sq:
-    # Signing settings
     signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
-    
-    # Common settings
     home: ~/.local/share/sequoia
     executable: sq
-  
   gpg:
-    # Signing settings
     key-name: "0xDEADBEEF"
-    
-    # Common settings
     executable: gpg
     home: ~/.gnupg
-  
   sigstore:
-    # Use the Sigstore staging instance (for testing)
     staging: false
-    # Custom trusted root file (optional, defaults to TUF-fetched root)
     trusted-root: /path/to/trusted_root.json
-    # Allow interactive OIDC browser login (for desktop use)
     interactive: true
 ```
 
+## Policy and Enforcement
+
+The **policy** is the part of the file that decides what verification accepts: `issuers`,
+`signers` as policy refers to them, `artifact-sets`, `rules` and `defaults`. The rest —
+`signing`, `verification`, `tools` — configures how Sigmund runs. Only the policy can change
+whether an artifact is accepted, and none of it can be set from the command line.
+
+### When a policy is present
+
+A file **declares a policy** when it has a `rules` or a `defaults` section — an empty
+`rules: []` included. That single switch decides how strict verification is:
+
+- **No policy** — a missing file, or one that only configures signing, tools or signers.
+  Verification observes: every dependency is verified and reported, and only a signature that
+  does not verify (`FAILED`) blocks the build. The goal logs that it is observing only.
+- **A policy present** enforces: every outcome other than `SATISFIED` blocks, unless the policy
+  relaxes it. An artifact no rule matches is `NOT_CONFIGURED` and blocks too, which makes
+  coverage a deliberate decision — add a rule, or a catch-all.
+
+### Outcomes
+
+Verification gives every artifact one outcome:
+
+| Outcome | Meaning |
+|---|---|
+| `SATISFIED` | The matched rule's requirements are met |
+| `UNSATISFIED` | Claims verified, but not from the signers the rule requires — or, under `extra-claims: reject`, also from a signer it does not name |
+| `FAILED` | A signature does not match the artifact, or its key was revoked or had expired when it signed — or was revoked as compromised, at any time ([details](verification.md#outcomes-and-reasons)). The attack signal |
+| `NO_CLAIM` | No signature or attestation was found |
+| `INDETERMINATE` | Evidence exists but could not be checked: a key not available, an algorithm not accepted, a tool not working |
+| `NOT_CONFIGURED` | No rule matches the artifact |
+
+See [Trust Verification](trust-verification.md) for how claims roll up into these, and
+[Signature Verification](verification.md#outcomes-and-reasons) for the reasons an outcome is
+`INDETERMINATE`.
+
+### How enforcement is resolved
+
+Each outcome other than `SATISFIED` has an action:
+
+- `fail` — the artifact blocks the build
+- `warn` — it is reported as a warning
+- `ignore` — it is counted in the report, and listed only with `-Dsigmund.detail`
+
+The action is taken from the first of: the matched rule's own setting (`on-…` keys on the
+rule), the policy's [`defaults`](#defaults), and the built-in default:
+
+| Outcome | Setting | Built-in default |
+|---|---|---|
+| `FAILED` | — | `fail`, always; a setting for it is an error |
+| `UNSATISFIED` | `on-unsatisfied` | `fail` |
+| `NO_CLAIM` | `on-no-claim` | `fail` |
+| `INDETERMINATE` | `on-indeterminate` | `fail` |
+| `NOT_CONFIGURED` | `on-not-configured` | `fail` with a policy, `ignore` without |
+
+Enforcement never changes an outcome. A report shows the same outcomes whether they blocked or
+not, and an `ignore`d artifact is still verified — a signature that is present on it must still
+verify.
+
 ## Section Reference
-
-### `version`
-
-**Type:** Integer  
-**Default:** `1`
-
-The schema version for this configuration file. Currently, only version `1` is defined.
-
-```yaml
-version: 1
-```
 
 ### `issuers`
 
@@ -201,22 +235,24 @@ Every issuer is an `https://` URL, and its kind is known from it, so it needs no
 - **`https://keys.openpgp.org`** — a directory that publishes an address on a key only after the address owner confirms it. It vouches for `email`. As a known directory it may be written without the scheme, `keys.openpgp.org`.
 - **Any other `https://` URL** — an OIDC issuer, proven through a Sigstore (Fulcio) certificate. It vouches for the certificate `subject`, `email` when the subject is an address, and the Fulcio certificate extensions listed under [`identities`](#object-form).
 
-Any other name without `https://` is a config error. Results always record the URL. The list is policy: it cannot be set from the command line, because it decides whether an identity is accepted at all.
+Any other name is an error when verification loads the policy. Signing does not check issuers, so a mistake here does not stop a release from being signed. Results always record the URL.
 
-An entry may name its own `issuer` instead, which trusts that issuer for that entry only — it does not have to be listed. Listing an issuer makes it vouch for every entry that names none, so trusting an OIDC provider for one bot is better done inline.
+An entry may name its own `issuer` instead, which trusts that issuer for that entry only — it does not have to be listed. Listing an issuer makes it vouch for every entry that names none, so trusting an OIDC provider for one bot is better done inline. An entry that names no issuer must be assertable by exactly one listed issuer of a kind: when two listed OIDC issuers could both vouch for it, it is an error asking you to name the issuer on the entry.
 
 ### `signers`
 
 **Type:** Map of signer ID → signer definition  
 **Default:** `{}` (empty)
 
-Defines the identity registry of trusted signers. Each signer can be specified in multiple forms:
+Defines the identity registry. Rules refer to signers by ID, and `signing.signer` names the identity to sign as. Each signer can be specified in multiple forms.
 
 #### Minimal Form (Email Only)
 
 A simple string value: an email address, vouched for by one of the listed [`issuers`](#issuers).
 
 ```yaml
+issuers: [keys.openpgp.org]
+
 signers:
   jackson-dev: "tatu@fasterxml.com"
 ```
@@ -228,11 +264,11 @@ An object with credential fields. At least one credential must be specified, and
 ```yaml
 signers:
   jane:
-    pgp4: "ABCD...EF12"                 # OpenPGP v4 fingerprint (40 hex chars)
-    pgp6: "1234...CDEF"                 # OpenPGP v6 fingerprint (64 hex chars)
-    email: "jane@example.com"           # Address vouched for by a listed issuer
+    pgp4: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"                          # OpenPGP v4 fingerprint
+    pgp6: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"  # OpenPGP v6 fingerprint
+    email: "jane@example.com"                                                 # vouched for by a listed issuer
     identities:
-      - issuer: "https://token.actions.githubusercontent.com"   # optional; else the list
+      - issuer: "https://token.actions.githubusercontent.com"                 # optional; else the list
         source-repository-uri: "https://github.com/org/repo"
 ```
 
@@ -252,11 +288,13 @@ signers:
 - **`identities`** — A list of complete identities, each an `issuer` (optional; otherwise the listed [`issuers`](#issuers)) and the attributes that issuer must have attested. Only the attributes you name need to match, and at least one besides `issuer` is required. One signer may carry several, for example the same address from two issuers:
 
   ```yaml
-  identities:
-    - issuer: keys.openpgp.org
-      email: "alice@example.com"
-    - issuer: "https://accounts.google.com"
-      email: "alice@example.com"
+  signers:
+    alice:
+      identities:
+        - issuer: keys.openpgp.org
+          email: "alice@example.com"
+        - issuer: "https://accounts.google.com"
+          email: "alice@example.com"
   ```
 
   What an entry may name depends on its issuer's kind. A directory attests `email` only. An OIDC issuer attests the certificate `subject`, `email` when the subject is an address, and the Fulcio certificate extensions:
@@ -276,13 +314,13 @@ signers:
 
   > **Signing-time vs verification-time matching:** When both `issuer` and `subject` are set and the signer is used for signing (`signing.signer`), the OIDC token is validated at signing time — mismatched identities are rejected before requesting a Fulcio certificate. The other attributes are matched at verification time only.
 
-**Aliases:** `openpgp4` and `openpgp6` are accepted aliases for `pgp4` and `pgp6` respectively.
-
 #### Organization with Multiple Members
 
-When a signer represents an organization, use the `members` array to list individual signing keys.
+When a signer represents an organization, use the `members` array to list individual signing keys. A member may carry any credential a signer can; nested `members` are not allowed.
 
 ```yaml
+issuers: [keys.openpgp.org]
+
 signers:
   apache:
     members:
@@ -291,14 +329,143 @@ signers:
       - pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
 ```
 
+### `artifact-sets`
+
+**Type:** Map of set name → array of [artifact patterns](#artifact-patterns)  
+**Default:** `{}` (empty)
+
+Names a group of patterns so rules can refer to it. A set is a label only: a rule that names
+it matches exactly as if it listed the set's patterns.
+
+```yaml
+signers:
+  apache:
+    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+
+artifact-sets:
+  apache-stack:
+    - "org.apache.maven.*"
+    - "org.apache.commons.*"
+    - "org.apache.httpcomponents.*"
+
+rules:
+  - match: [apache-stack]
+    requires: [apache]
+```
+
+A word in `match` with no `.`, `:` or `*` is always a set name, and one that is not defined is
+an error with the nearest set suggested — otherwise a misspelled set would quietly become a
+group pattern matching nothing.
+
+### `rules`
+
+**Type:** Array of rules  
+**Default:** none — and without `rules` or `defaults` there is [no policy](#when-a-policy-is-present)
+
+Each rule says what the artifacts it matches must satisfy:
+
+```yaml
+signers:
+  acme-release:
+    pgp4: "9B1C0E7F2D4A6B83C5E1F09A7D3B2C4E6F8A0B1D"
+  acme-ci:
+    identities:
+      - issuer: "https://token.actions.githubusercontent.com"
+        source-repository-uri: "https://github.com/acme/widget"
+  acme-ci-eu:
+    identities:
+      - issuer: "https://token.actions.githubusercontent.com"
+        source-repository-uri: "https://github.com/acme/widget-eu"
+
+rules:
+  - match: ["com.acme.*"]
+    requires: [acme-release, {any-of: [acme-ci, acme-ci-eu]}]
+    on-indeterminate: warn
+```
+
+#### Fields
+
+- **`match`** (required) — a list of [artifact patterns](#artifact-patterns) and
+  [artifact-set](#artifact-sets) names. The rule matches an artifact when any of them does.
+- **`requires`** (optional) — a list of clauses, **all** of which must be satisfied. A clause
+  is a signer ID, satisfied by a verified claim proving one of that signer's credentials, or
+  `{any-of: [...]}`, satisfied by any one of the listed signers. So
+  `[acme-release, {any-of: [acme-ci, acme-ci-eu]}]` reads "acme-release, and acme-ci or
+  acme-ci-eu". `requires` is always a list; an empty list is an error — a rule that tolerates
+  artifacts says so through its `on-…` settings instead. `any-of` entries are signer IDs and
+  cannot nest. Signer IDs must be defined under `signers`.
+- **`on-unsatisfied`**, **`on-no-claim`**, **`on-indeterminate`**, **`on-not-configured`**
+  (optional) — `fail`, `warn` or `ignore` for this rule's artifacts, overriding
+  [`defaults`](#defaults). See [How enforcement is resolved](#how-enforcement-is-resolved).
+
+#### Which rule applies
+
+**The most specific rule wins**, and only that rule applies — nothing is merged across rules,
+so the rule a result names explains it fully. Specificity is decided by the
+[pattern](#artifact-patterns) that matched.
+
+**Two rules must not tie.** If patterns of two different rules have equal specificity and some
+coordinate matches both, the policy is rejected when verification loads it, naming both rules
+and such a coordinate:
+
+```
+Rules tie on specificity: rules[0] 'com.acme:*:1.0' and rules[1] 'com.acme:lib' both match com.acme:lib:1.0; make one more specific or merge them
+```
+
+The check is conservative: it also rejects a tie whose shared coordinates a more specific third
+rule would always take, so that a verdict never depends on the order rules are written in.
+
+#### Rules without `requires`
+
+A rule may leave `requires` out, typically a catch-all or a rule for artifacts known to be
+unsigned. It matches, so its artifacts are not `NOT_CONFIGURED`, but it requires no signer:
+
+- an **unsigned** artifact is `NO_CLAIM` — relax it with `on-no-claim: ignore`;
+- a **signed** artifact is `UNSATISFIED` under the default `extra-claims: reject`, because its
+  signer is one no clause names. Tolerate those too with `on-unsatisfied: ignore`, or give the
+  artifact a rule of its own.
+
+### `defaults`
+
+**Type:** Object  
+**Default:** `extra-claims: reject`, built-in enforcement
+
+Policy-wide settings. Declaring `defaults` — even with only `extra-claims` — makes the file a
+[policy](#when-a-policy-is-present).
+
+```yaml
+defaults:
+  extra-claims: reject
+  on-no-claim: warn
+  on-indeterminate: warn
+```
+
+#### Fields
+
+- **`extra-claims`** (`reject` or `ignore`, default `reject`) — what to do with a verified claim
+  from a signer no clause of the matched rule names, once the requirements are already met.
+  `reject` treats the rule's signers as the complete list and makes such an artifact
+  `UNSATISFIED`; `ignore` records the claim and lets the requirements decide. It never applies to
+  a claim that fails — that is always `FAILED`.
+- **`on-unsatisfied`**, **`on-no-claim`**, **`on-indeterminate`**, **`on-not-configured`** —
+  `fail`, `warn` or `ignore` for every rule that does not set its own. There is no `on-failed`.
+
 ### `signing`
 
 **Type:** Object  
 **Default:** No signer, no toolchain configured
 
-Configures which identity to sign as and the signing toolchain.
+Configures which identity to sign as and the signing toolchain. Signing uses only `signing`,
+`signers` and `tools`. The policy's own checks — that rules name defined signers, that issuers
+are known, that rules do not tie — run only when verification loads it, so a mistake there does
+not stop a release from being signed. A file that is not well-formed — invalid YAML, an unknown
+key, a malformed rule — fails every command.
 
 ```yaml
+signers:
+  my-identity:
+    pgp4: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
+
 signing:
   signer: my-identity             # References a signer from the signers section
   toolchain: [bc, sq, gpg]        # Tools to use for signing, in priority order
@@ -315,124 +482,16 @@ signing:
 - **`credential-types`** (array of strings, optional) — The default set of credential types to produce. Only tools whose supported credential types intersect this list are used. When omitted, all available signing tools are used. Values: `pgp4`, `pgp6`, `sigstore`.
 - **`profiles`** (map, optional) — Named profiles for explicit switching (e.g., `--profile classic`). Each profile maps a name to a list of credential type strings. When a profile is requested by name, it takes precedence over `credential-types`.
 
-### `signature-optional`
-
-**Type:** Array of strings
-**Default:** `[]` (empty)
-
-Lists artifact patterns for which a signature is not required. Artifacts matching these patterns will not fail verification when unsigned. If a matching artifact happens to be signed, normal trust policy evaluation applies.
-
-```yaml
-signature-optional:
-  - "com.internal.*"
-  - "com.example:test-utils"
-```
-
-Pattern syntax is the same as the `trust` section. Named artifact groups from the `artifacts` section can also be referenced here.
-
-### `artifacts`
-
-**Type:** Map of group name → array of artifact patterns  
-**Default:** `{}` (empty)
-
-Defines named groups of artifact patterns that can be referenced by name in the `trust` and `signature-optional` sections. This avoids repeating the same long list of patterns when multiple signers or policies share the same set of artifacts.
-
-```yaml
-artifacts:
-  apache-stack:
-    - "org.apache.maven.*"
-    - "org.apache.commons.*"
-    - "org.apache.httpcomponents.*"
-  internal-libs:
-    - "com.internal.platform.*"
-    - "com.internal.shared.*"
-
-trust:
-  apache-stack: apache          # Expands to all three org.apache.* patterns
-  internal-libs: release-team
-
-signature-optional:
-  - internal-libs               # Expands to both com.internal.* patterns
-```
-
-When a key in `trust` or an entry in `signature-optional` matches a group name, it is expanded into the group's patterns. If no group matches, the key is treated as a literal artifact pattern.
-
-### `trust`
-
-**Type:** Map of artifact pattern → signer reference(s)  
-**Default:** `{}` (empty)
-
-Maps artifact coordinate patterns to trusted signer IDs. Patterns support wildcards and Maven coordinate syntax.
-
-```yaml
-trust:
-  "org.apache.maven.*": apache              # Single signer
-  "io.quarkus.*": [redhat, jboss-community] # Multiple signers (array)
-  "com.example:mylib": jane                 # Specific artifact
-  "com.example:*:1.0.*": jane               # Version wildcards
-```
-
-#### Pattern Format
-
-Patterns use Maven coordinate syntax with wildcard support:
-
-- `groupId` — matches all artifacts in the group
-- `groupId.*` — matches group and all subgroups (prefix match)
-- `groupId:artifactId` — matches specific artifact, all versions
-- `groupId:artifactId:version` — matches specific version
-- `groupId:artifactId:type:classifier:version` — full coordinates
-
-**Wildcards:** Use `*` to match any value in a coordinate segment.
-
-**Precedence:** When multiple patterns match an artifact, the most specific pattern wins.
-
-#### Signer References
-
-Values can be:
-- A single signer ID (string)
-- An array of signer IDs (for artifacts signed by multiple parties)
-
-Signer IDs must reference entries from the `signers` section.
-
-### `policy`
-
-**Type:** Object  
-**Default:** `on-untrusted: fail`, `listed-evidence: all`, `unlisted-evidence: ignore`
-
-Configures trust policy enforcement rules.
-
-```yaml
-policy:
-  on-untrusted: fail
-  listed-evidence: all
-  unlisted-evidence: ignore
-```
-
-#### Fields
-
-- **`on-untrusted`** (string, default: `fail`)
-  - `fail` — Reject artifacts that are not trusted or unsigned
-  - `warn` — Log a warning but allow the build to continue
-
-- **`listed-evidence`** (string, default: `all`)
-  
-  Controls how to handle signatures from signers listed in the trust configuration:
-  - `all` — All signatures must match the expected signer(s) for the artifact
-  - `any` — At least one signature must match an expected signer
-
-- **`unlisted-evidence`** (string, default: `ignore`)
-  
-  Controls how to handle signatures from signers NOT listed in the trust configuration:
-  - `ignore` — Unlisted signatures are ignored (trust decision based only on listed signers)
-  - `warn` — Log a warning when unlisted signatures are found, but don't fail
-  - `require` — Fail if any unlisted signatures are found on the artifact
-
 ### `verification`
 
-**Type:** Object
+**Type:** Object  
 **Default:** See fields below
 
-Configures the verification toolchain, key fetching, and verification behavior.
+Configures how verification runs: which tools check claims, and where keys are fetched from.
+These settings change what Sigmund can see, never what it accepts — a wider keyserver list can
+turn a `key-unavailable` into a verdict, but cannot make an untrusted artifact pass. Which
+cryptographic algorithms are accepted is fixed in Sigmund and the same for every tool; see
+[Accepted algorithms](verification.md#accepted-algorithms).
 
 ```yaml
 verification:
@@ -446,44 +505,43 @@ verification:
 #### Fields
 
 - **`toolchain`** (array of strings, default: `[bc, sq, gpg]`)
-  
-  Lists which tools to use for verification and in what order. When specified, **only** the listed tools are initialized. When omitted, all available tools are initialized in the default order (`bc`, `sq`, `gpg`). Tool-specific settings are configured in the top-level `tools` section.
-  
-  ```yaml
-  toolchain: [bc, sq]  # Use only BC and Sequoia
-  ```
+
+  Lists which tools to use for verification and in what order. When specified, **only** the listed tools are initialized. When omitted, all available tools are initialized in the default order (`bc`, `sq`, `gpg`). Tool-specific settings are configured in the top-level `tools` section. The tools reach the same verdict for the same signature; the order decides which answers first.
 
 - **`resolve-signers`** (boolean, default: `true`)
-  
+
   Whether to fetch missing keys from keyservers, and to ask directories named in `issuers` for the verified addresses of keys a policy entry needs. When `false`, a signature whose signer can only be established through a directory is `INDETERMINATE` (`key-unavailable`). When `true` and a key is not found locally, tools attempt to fetch it from the configured keyservers. The behavior depends on the tool and `import-to-keyring`:
 
-  | `resolve-signers` | `import-to-keyring` | BC | GPG |
-  |---|---|---|---|
-  | `false` | any | no fetch | no fetch |
-  | `true` | `false` (default) | fetch ephemerally (in-memory, discarded after build) | skip (GPG cannot do ephemeral imports) |
-  | `true` | `true` | fetch + persist to cert-d | fetch + persist to GPG keyring |
+  | `resolve-signers` | `import-to-keyring` | BC | GPG | SQ |
+  |---|---|---|---|---|
+  | `false` | any | no fetch | no fetch | no fetch |
+  | `true` | `false` (default) | fetch ephemerally (in-memory, discarded after build) | skip (GPG cannot do ephemeral imports) | no fetch |
+  | `true` | `true` | fetch + persist to cert-d | fetch + persist to GPG keyring | no fetch |
+
+  `sq` never fetches keys: it uses only the certificates already in its own store.
 
   When `resolve-signers: true` but no tool in the configured toolchain can fetch keys (e.g., only GPG with `import-to-keyring: false`), Sigmund logs a warning.
 
   A per-keyserver circuit breaker prevents slow builds when offline — after the first connection failure to a keyserver, all subsequent fetch attempts to that server are skipped. A per-key negative cache prevents re-querying the same missing key across artifacts.
 
 - **`import-to-keyring`** (boolean, default: `false`)
-  
+
   Controls how fetched keys are stored. Only meaningful when `resolve-signers` is `true`:
-  
+
   - `false` (default) — Keys are cached in memory for the session. BC supports ephemeral key storage; GPG does not, so key fetch is skipped entirely for GPG when this is `false`.
   - `true` — Keys are permanently imported into the tool's keyring (BC cert-d or GPG keyring).
-  
-  **Note:** `keys.openpgp.org` may serve keys without user IDs. BC can use these for verification, but GPG cannot import them.
+
+  **Note:** `keys.openpgp.org` serves a key without its user IDs until the owner verifies an address. Without the self-signatures on its user IDs, the key cannot be validated, so its signatures are `INDETERMINATE` (`key-unavailable`); a fuller copy from another keyserver resolves them. GPG refuses to import such a key at all.
 
 - **`keyservers`** (array of strings, default: `[hkps://keys.openpgp.org]`)
-  
-  Keyserver URLs for fetching missing keys. The first keyserver that has a key supplies it, and the result records which one did. Keyservers supply key material only: the signature proves the key whoever served it, and a user ID a keyserver serves never becomes an identity — identities come only from [`issuers`](#issuers). That is why this is safe to change from the command line.
-  
+
+  Keyserver URLs for fetching missing keys, asked in order. The first copy that carries user IDs is used; a copy without them is used only when no keyserver has a fuller one. The result records which keyserver supplied the key. Keyservers supply key material only: the signature proves the key whoever served it, and a user ID a keyserver serves never becomes an identity — identities come only from [`issuers`](#issuers). That is why this is safe to change from the command line.
+
   ```yaml
-  keyservers:
-    - hkps://keys.openpgp.org
-    - hkps://keyserver.ubuntu.com
+  verification:
+    keyservers:
+      - hkps://keys.openpgp.org
+      - hkps://keyserver.ubuntu.com
   ```
 
 ### `tools`
@@ -491,32 +549,58 @@ verification:
 **Type:** Map of tool name → tool settings  
 **Default:** `{}` (empty)
 
-Configures per-tool settings used by both signing and discovery operations. All tool-specific configuration lives here, avoiding duplication between `signing` and `discovery` sections.
+Configures per-tool settings used by both signing and verification. All tool-specific configuration lives here, so `signing` and `verification` only name tools.
 
 ```yaml
 tools:
   bc:
-    signing-fingerprint: "ABCD...EF12"
+    signing-fingerprint: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
     passphrase-env: MY_BC_PASSPHRASE
     gnupg-home: ~/.gnupg
-    cert-d-home: ~/.local/share/openpgp-cert-d
-  
+    cert-d-home: ~/.local/share/pgp.cert.d
   sq:
     home: ~/.local/share/sequoia
-    signing-fingerprint: "1234...CDEF"
+    signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
     executable: sq
-  
   gpg:
     key-name: "0xDEADBEEF"
     home: ~/.gnupg
     executable: gpg
 ```
 
-#### Fields
+Keys are tool names (`bc`, `sq`, `gpg`, `sigstore`). Values are tool-specific settings documented in the [Tool Settings Tables](#tool-settings-tables) below. For example, `tools.bc.signing-fingerprint` is used by signing, while `tools.bc.gnupg-home` is used by verification.
 
-Keys are tool names (`bc`, `sq`, `gpg`, `sigstore`). Values are tool-specific settings documented in the [Tool Settings Tables](#tool-settings-tables) below.
+## Artifact Patterns
 
-Settings configured here are available to both signing and verification operations. For example, `tools.bc.signing-fingerprint` is used by signing operations, while `tools.bc.gnupg-home` is used by verification.
+Rules match on group, artifact and version — the Maven coordinates of a module. Classifier and
+extension are not part of a pattern: every file published under one coordinate (jar, pom,
+sources, javadoc) comes from the same module build, so one rule covers them all, while each file
+is still verified and reported on its own.
+
+| Pattern | Matches |
+|---|---|
+| `org.example` | every artifact in group `org.example` |
+| `org.example.*` | group `org.example` and every group below it — `org.example.sub` — but not `org.examplefoo` |
+| `org.example:lib` | artifact `lib`, every version |
+| `org.example:lib:1.0` | that version only |
+| `org.example:lib-*` | artifacts whose name starts with `lib-` |
+| `org.example:lib:1.*` | versions starting with `1.` — `1.0`, `1.2.3` — but not `10.0`, nor a bare `1` |
+| `*` | everything: a catch-all, the least specific pattern |
+
+An omitted part matches anything, and a part may be `*`. On the group, `.*` is a subtree that
+includes the group itself. On artifact and version, a trailing `*` is a plain prefix of
+everything before it, dot included. A pattern with more than three parts is an error, since a
+classifier-scoped pattern would silently match nothing. Quote a pattern that starts with `*` —
+in YAML a bare `*` starts an alias.
+
+A word with no `.`, `:` or `*` is an [artifact-set](#artifact-sets) name. To match a group whose
+name is a single word, write `junit:*`.
+
+**Specificity.** When several rules match, the one whose matching pattern is most specific
+wins. The group counts most, by its number of segments, an exact group beating the `.*` subtree
+of the same name; a named artifact beats a prefix, which beats any; a version adds the same way.
+`org.example:lib:1.0` beats `org.example:lib`, which beats `org.example`, which beats
+`org.example.*`, which beats `*`.
 
 ## Tool Settings Tables
 
@@ -527,8 +611,8 @@ Configured in the top-level `tools.bc` section.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `gnupg-home` | `~/.gnupg` | GnuPG home directory for reading `pubring.kbx` (or legacy `pubring.gpg`) |
-| `cert-d-home` | `~/.local/share/openpgp-cert-d` | Shared OpenPGP cert-d directory for public certificates |
-| `bc-private-home` | `<cert-d-home>/bc-private` | BC private key store directory |
+| `cert-d-home` | `~/.local/share/pgp.cert.d` | Shared OpenPGP cert-d directory for public certificates — the store `sq` uses by default, so each tool sees the certificates the other stores |
+| `bc-private-home` | `~/.local/share/sigmund/bc-private` | BC private key store directory, kept outside the shared cert-d |
 | `signing-fingerprint` | (none) | Fingerprint of the key to sign with (40 or 64 hex chars) |
 | `tsk-file` | (none) | Path to an exported Transferable Secret Key (TSK) file for signing |
 | `signing-key-env` | `SIGMUND_BC_SIGNING_KEY` | Environment variable name containing the ASCII-armored private key. For ephemeral CI runners. |
@@ -537,7 +621,6 @@ Configured in the top-level `tools.bc` section.
 
 **Supported cipher suites (BC):**
 
-Classic algorithms:
 - `ed25519` — EdDSA with Curve25519 (default)
 - `ed448` — EdDSA with Curve448
 - `rsa4096` — RSA with 4096-bit modulus
@@ -545,9 +628,7 @@ Classic algorithms:
 - `nistp384` — ECDSA with NIST P-384 curve
 - `nistp521` — ECDSA with NIST P-521 curve
 
-PQC composite (experimental):
-- `mldsa87-ed448` — ML-DSA-87 + Ed448 hybrid
-- `mldsa65-ed25519` — ML-DSA-65 + Ed25519 hybrid
+BC does not generate post-quantum keys; generate them with [SQ](#sq-sequoia).
 
 **Passphrase resolution order:**
 
@@ -579,9 +660,12 @@ Configured in the top-level `tools.sq` section.
 | `signing-fingerprint` | (none) | Fingerprint of the key to sign with (64 hex chars for v6 keys) |
 | `cipher-suite` | `mldsa87-ed448` | Algorithm for key generation (PQC hybrid suites) |
 
+Sigmund runs `sq` under its own crypto policy, which replaces the host's system policy for those
+runs; see [Accepted algorithms](verification.md#accepted-algorithms).
+
 **Supported cipher suites (SQ):**
 
-Sequoia supports post-quantum cryptography hybrid cipher suites as defined in RFC 9580:
+Sequoia supports the post-quantum hybrid cipher suites of RFC 9980, which extends OpenPGP v6 (RFC 9580):
 - `mldsa87-ed448` — ML-DSA-87 + Ed448 (default)
 - `mldsa65-ed25519` — ML-DSA-65 + Ed25519
 - Additional suites supported by `sq key generate --cipher-suite`
@@ -644,41 +728,99 @@ tools:
 
 ## Common Configuration Patterns
 
-### Minimal Verification-Only Config
+### Minimal Verification Policy
+
+One signer, one rule. Anything the rule does not match is `NOT_CONFIGURED` and fails, so start
+with [Gradual Adoption](#gradual-adoption) if your dependencies are mostly unsigned.
 
 ```yaml
-version: 1
-
 signers:
-  apache: "dev@apache.org"
+  apache:
+    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
 
-trust:
-  "org.apache.*": apache
+rules:
+  - match: ["org.apache.*"]
+    requires: [apache]
 ```
+
+### Publisher Key and CI Identity Together
+
+Accept an artifact only if both the publisher's release key and the project's release workflow
+signed it — a stolen key alone, or a compromised workflow alone, is not enough.
+
+```yaml
+signers:
+  acme-release:
+    pgp4: "9B1C0E7F2D4A6B83C5E1F09A7D3B2C4E6F8A0B1D"
+  acme-ci:
+    identities:
+      - issuer: "https://token.actions.githubusercontent.com"
+        source-repository-uri: "https://github.com/acme/widget"
+        build-config-uri: "https://github.com/acme/widget/.github/workflows/release.yml@refs/heads/main"
+
+rules:
+  - match: ["com.acme.*"]
+    requires: [acme-release, acme-ci]
+```
+
+### Tolerating Unsigned Artifacts
+
+Internal artifacts are published unsigned. They are still verified, so a signature that is
+present on one must verify; only a missing one is tolerated.
+
+```yaml
+signers:
+  apache:
+    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+
+rules:
+  - match: ["org.apache.*"]
+    requires: [apache]
+  - match: ["com.internal.*", "com.example:test-utils"]
+    on-no-claim: ignore
+```
+
+### Gradual Adoption
+
+Require signers where you know them, and see everything else without failing the build. The
+catch-all reports every other artifact as a warning — unsigned (`NO_CLAIM`) or signed by someone
+no rule names (`UNSATISFIED`) — so the report shows what is left to cover.
+
+```yaml
+signers:
+  apache:
+    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+
+rules:
+  - match: ["org.apache.*"]
+    requires: [apache]
+  - match: ["*"]
+    on-no-claim: warn
+    on-unsatisfied: warn
+```
+
+`sigmund:dependency-signers -Dsigmund.generateTrustConfig` writes a starting policy from the
+signatures your dependencies carry today; see [Maven Plugin](maven-plugin.md).
 
 ### CI/CD Signing Config
 
 ```yaml
-version: 1
-
 signing:
   toolchain: [bc]
 
 tools:
   bc:
-    signing-fingerprint: "ABCD...EF12"
+    signing-fingerprint: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
     passphrase-env: CI_SIGNING_KEY_PASSPHRASE
 ```
 
 ### Multi-Tool Hybrid Signing
 
 ```yaml
-version: 1
-
 signers:
   release-team:
-    pgp4: "ABCD...EF12"  # v4 fingerprint for GPG compatibility
-    pgp6: "1234...CDEF"  # v6 fingerprint for PQC
+    pgp4: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"                          # v4 key, for GPG compatibility
+    pgp6: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"  # v6 key, for PQC
 
 signing:
   signer: release-team
@@ -690,37 +832,37 @@ verification:
 
 tools:
   bc:
-    signing-fingerprint: "1234...CDEF"  # Use v6 key
+    signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
     cipher-suite: ed448
-  
   sq:
-    signing-fingerprint: "1234...CDEF"
-  
+    signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
   gpg:
-    key-name: "0xABCDEF12"  # Use v4 key
+    key-name: "0xDEADBEEF"
 ```
 
 ### Sigstore-Only Signing
 
 ```yaml
-version: 1
-
 signing:
   toolchain: [sigstore]
 ```
 
 No tool settings needed — ambient OIDC credentials from GitHub Actions are used automatically.
 
-To match signed artifacts against a specific Sigstore identity at verification time, add a signer with that identity:
+To have verification accept the artifacts by that workflow identity, define it as a signer and
+require it in a rule. A signer alone is never consulted: without a rule, or with no `rules` or
+`defaults` at all, verification only observes.
 
 ```yaml
-version: 1
-
 signers:
   ci-bot:
     identities:
       - issuer: "https://token.actions.githubusercontent.com"
         source-repository-uri: "https://github.com/myorg/myrepo"
+
+rules:
+  - match: ["com.myorg.*"]
+    requires: [ci-bot]
 
 signing:
   signer: ci-bot
@@ -730,14 +872,16 @@ signing:
 ### Mixed OpenPGP + Sigstore Signing
 
 ```yaml
-version: 1
-
 signers:
   release-lead:
     pgp4: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
     identities:
       - issuer: "https://token.actions.githubusercontent.com"
         source-repository-uri: "https://github.com/myorg/myrepo"
+
+rules:
+  - match: ["com.myorg.*"]
+    requires: [release-lead]
 
 signing:
   signer: release-lead
@@ -754,38 +898,4 @@ tools:
     trusted-root: /etc/sigmund/trusted_root.json
 ```
 
-This produces both a `.asc` (OpenPGP) and a `.sigstore.json` (Sigstore bundle) for each artifact. Verifiers accept the `.asc` by the fingerprint and the bundle by the workflow identity.
-
-### Strict Trust Policy
-
-```yaml
-version: 1
-
-policy:
-  on-untrusted: fail
-  listed-evidence: all       # All listed signatures must match
-  unlisted-evidence: require # Fail on any unlisted signatures
-
-verification:
-  resolve-signers: false     # Don't auto-fetch keys
-  import-to-keyring: false   # Don't persist fetched keys
-```
-
-### Permissive Development Config
-
-```yaml
-version: 1
-
-policy:
-  on-untrusted: warn           # Warn but don't fail
-  listed-evidence: any         # Any matching signature is sufficient
-  unlisted-evidence: ignore    # Ignore unlisted signatures
-
-signature-optional:
-  - "com.internal.*"           # Internal artifacts don't need signatures
-  - "com.example:*:*-SNAPSHOT" # Snapshots don't need signatures
-
-verification:
-  resolve-signers: true        # Auto-fetch missing keys
-  import-to-keyring: true      # Cache keys permanently
-```
+This produces both a `.asc` (OpenPGP) and a `.sigstore.json` (Sigstore bundle) for each artifact. Under the rule, the `.asc` proves `release-lead` by the fingerprint and the bundle by the workflow identity; either satisfies the rule, and both are checked.

@@ -8,8 +8,11 @@ import java.util.Objects;
  * <p>
  * Patterns are written as {@code group}, {@code group:artifact} or
  * {@code group:artifact:version}, where an omitted component matches anything. A component
- * may be {@code *} to match anything explicitly, and a group may end in {@code .*} to match
- * a namespace and everything below it.
+ * may be {@code *} to match anything explicitly. A group may end in {@code .*} to match a
+ * namespace and everything below it, so {@code org.apache.*} covers {@code org.apache} and
+ * {@code org.apache.maven} but not {@code org.apachex}. An artifact or version ending in
+ * {@code *} is a plain prefix of everything before the {@code *}, dot included, so
+ * {@code 1.*} covers {@code 1.0} and {@code 1.2.3} but not {@code 10.0} or {@code 1}.
  *
  * <p>
  * Patterns stop at the version. Classifier and extension are deliberately not policy
@@ -131,17 +134,108 @@ public final class ArtifactPattern {
         if (ANY.equals(pattern)) {
             return true;
         }
-        if (pattern.equals(value)) {
-            return true;
-        }
-        if (pattern.endsWith(PREFIX_WILDCARD)) {
-            return value.startsWith(
-                    pattern.substring(0, pattern.length() - PREFIX_WILDCARD.length()));
-        }
         if (pattern.endsWith(ANY)) {
-            return value.startsWith(pattern.substring(0, pattern.length() - 1));
+            return value.startsWith(componentPrefix(pattern));
         }
-        return false;
+        return pattern.equals(value);
+    }
+
+    private static String componentPrefix(String pattern) {
+        return pattern.substring(0, pattern.length() - 1);
+    }
+
+    /**
+     * Indicates whether some coordinate is matched by both this pattern and another.
+     *
+     * <p>
+     * A pattern matches a coordinate only when its group, artifact and version each match,
+     * so the coordinates it matches are the product of three independent sets, and two
+     * patterns share a coordinate exactly when every pair of components shares a value. Each
+     * component has only three shapes — anything, an exact value, and a prefix (for the group,
+     * a dot-bounded subtree) — so the answer is exact rather than a heuristic.
+     *
+     * @param other the pattern to compare with
+     * @return {@code true} when at least one coordinate matches both patterns
+     */
+    boolean overlaps(ArtifactPattern other) {
+        return commonNamespace(namespace, other.namespace) != null
+                && commonComponent(name, other.name) != null
+                && commonComponent(version, other.version) != null;
+    }
+
+    /**
+     * Returns a coordinate both patterns match, as {@code group:artifact:version}, for naming the
+     * conflict in configuration errors.
+     *
+     * <p>
+     * Each component is the narrower side's value: the exact value, the longer prefix, or the
+     * deeper subtree root. A component left open by both patterns is written {@code *}.
+     *
+     * @param other the pattern to compare with
+     * @return a coordinate both patterns match, or {@code null} when they share none
+     */
+    String commonCoordinate(ArtifactPattern other) {
+        if (!overlaps(other)) {
+            return null;
+        }
+        return commonNamespace(namespace, other.namespace) + ":"
+                + commonComponent(name, other.name) + ":"
+                + commonComponent(version, other.version);
+    }
+
+    private static String commonNamespace(String a, String b) {
+        if (ANY.equals(a)) {
+            return b.endsWith(PREFIX_WILDCARD) ? subtreeRoot(b) : b;
+        }
+        if (ANY.equals(b)) {
+            return commonNamespace(b, a);
+        }
+        String rootA = a.endsWith(PREFIX_WILDCARD) ? subtreeRoot(a) : null;
+        String rootB = b.endsWith(PREFIX_WILDCARD) ? subtreeRoot(b) : null;
+        if (rootA == null && rootB == null) {
+            return a.equals(b) ? a : null;
+        }
+        if (rootA == null) {
+            return withinSubtree(a, rootB) ? a : null;
+        }
+        if (rootB == null) {
+            return withinSubtree(b, rootA) ? b : null;
+        }
+        if (withinSubtree(rootA, rootB)) {
+            return rootA;
+        }
+        return withinSubtree(rootB, rootA) ? rootB : null;
+    }
+
+    private static String subtreeRoot(String namespacePattern) {
+        return namespacePattern.substring(0, namespacePattern.length() - PREFIX_WILDCARD.length());
+    }
+
+    private static boolean withinSubtree(String value, String root) {
+        return value.equals(root) || value.startsWith(root + ".");
+    }
+
+    private static String commonComponent(String a, String b) {
+        if (ANY.equals(a)) {
+            return ANY.equals(b) ? ANY : b.endsWith(ANY) ? componentPrefix(b) : b;
+        }
+        if (ANY.equals(b)) {
+            return commonComponent(b, a);
+        }
+        boolean prefixA = a.endsWith(ANY);
+        boolean prefixB = b.endsWith(ANY);
+        if (!prefixA && !prefixB) {
+            return a.equals(b) ? a : null;
+        }
+        if (!prefixA) {
+            return a.startsWith(componentPrefix(b)) ? a : null;
+        }
+        if (!prefixB) {
+            return b.startsWith(componentPrefix(a)) ? b : null;
+        }
+        String longer = a.length() >= b.length() ? componentPrefix(a) : componentPrefix(b);
+        String shorter = a.length() >= b.length() ? componentPrefix(b) : componentPrefix(a);
+        return longer.startsWith(shorter) ? longer : null;
     }
 
     private int namespaceSpecificity() {

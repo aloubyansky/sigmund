@@ -7,7 +7,7 @@ File trustConfig = new File(basedir, "sigmund.yaml")
 assert trustConfig.exists() : "sigmund.yaml should have been generated"
 String yaml = trustConfig.text
 assert yaml.contains("signers:") : "Generated config should have signers section"
-assert yaml.contains("trust:") : "Generated config should have trust section"
+assert yaml.contains("rules:") : "Generated config should have rules section"
 
 // Phase 2: verify goal should have run successfully
 assert log.contains("Verifying signers") : "Should log verification start"

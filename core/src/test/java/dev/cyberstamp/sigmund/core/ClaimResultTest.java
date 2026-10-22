@@ -20,7 +20,7 @@ class ClaimResultTest {
     private static ClaimResult verified(ClaimOutcome outcome, IndeterminateReason reason,
             EvidenceRef evidence, List<Credential> credentials) {
         return new ClaimResult("openpgp", outcome, reason, credentials, null,
-                AttesterRole.UNKNOWN, TrustRootRef.unknown(), evidence, null,
+                TrustRootRef.unknown(), evidence, null,
                 ClaimTimeSource.SIGNER, Instant.ofEpochSecond(1_700_000_100L), "RSA", "bc");
     }
 
@@ -87,15 +87,6 @@ class ClaimResultTest {
     class Invariants {
 
         @Test
-        void roleDefaultsToUnknownRatherThanPublisher() {
-            ClaimResult result = new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
-                    List.of(), null, null, TrustRootRef.unknown(), REF, null,
-                    ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");
-
-            assertThat(result.role()).isEqualTo(AttesterRole.UNKNOWN);
-        }
-
-        @Test
         void evidenceIsRequired() {
             assertThatThrownBy(() -> verified(ClaimOutcome.VERIFIED, null, null, List.of()))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -111,7 +102,7 @@ class ClaimResultTest {
         @Test
         void aBlankKindIsRejected() {
             assertThatThrownBy(() -> new ClaimResult(" ", ClaimOutcome.VERIFIED, null,
-                    List.of(), null, AttesterRole.UNKNOWN, TrustRootRef.unknown(), REF, null,
+                    List.of(), null, TrustRootRef.unknown(), REF, null,
                     ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc"))
                     .isInstanceOf(IllegalArgumentException.class);
         }

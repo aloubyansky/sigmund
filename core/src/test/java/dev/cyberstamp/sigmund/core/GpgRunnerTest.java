@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -306,5 +307,72 @@ class GpgRunnerTest {
         Path conf = tempDir.resolve("gpg.conf");
         Files.writeString(conf, "default-key\tABCD1234ABCD1234\n");
         assertThat(GpgRunner.parseDefaultKey(conf)).isEqualTo("ABCD1234ABCD1234");
+    }
+
+    /**
+     * The verdict read from GnuPG's {@code --status-fd} lines, as GnuPG 2.4 writes them; the
+     * agreement tests run the same cases against the installed gpg.
+     */
+    @Nested
+    class VerdictFromStatus {
+
+        private static final String VALIDSIG = "[GNUPG:] VALIDSIG"
+                + " 8746E44B15EE4052D2A645981900992082AE2A13 2026-10-16 1792178762 0 4 0 1 8 00"
+                + " 8746E44B15EE4052D2A645981900992082AE2A13\n";
+
+        @Test
+        void aGoodSignatureVerifies() {
+            assertThat(GpgRunner.verdict("[GNUPG:] GOODSIG 1900992082AE2A13 Signer\n" + VALIDSIG))
+                    .isEqualTo(ToolVerdict.verified());
+        }
+
+        @Test
+        void aBadSignatureFails() {
+            assertThat(GpgRunner.verdict("[GNUPG:] BADSIG 1900992082AE2A13 Signer\n"
+                    + "[GNUPG:] FAILURE gpg-exit 33554433\n")).isEqualTo(ToolVerdict.failed());
+        }
+
+        /** GnuPG exits 0 for a revoked key's signature; only the status line says it is revoked. */
+        @Test
+        void aRevokedKeyFails() {
+            assertThat(GpgRunner.verdict("[GNUPG:] REVKEYSIG 6737F201BB02FA7A Signer\n" + VALIDSIG
+                    + "[GNUPG:] KEYREVOKED\n")).isEqualTo(ToolVerdict.failed());
+        }
+
+        @Test
+        void aKeyThatHadExpiredWhenItSignedFails() {
+            assertThat(GpgRunner.verdict("[GNUPG:] KEYEXPIRED 1791401161\n"
+                    + "[GNUPG:] EXPKEYSIG C1E9F7FDDA6AAB67 Signer\n" + VALIDSIG))
+                    .isEqualTo(ToolVerdict.failed());
+        }
+
+        /** A signature made while the key was valid stays valid after the key expires (§3.8). */
+        @Test
+        void aKeyThatExpiredAfterItSignedVerifies() {
+            assertThat(GpgRunner.verdict("[GNUPG:] KEYEXPIRED 1800000000\n"
+                    + "[GNUPG:] EXPKEYSIG C1E9F7FDDA6AAB67 Signer\n" + VALIDSIG))
+                    .isEqualTo(ToolVerdict.verified());
+        }
+
+        @Test
+        void aMissingKeyIsNotAvailable() {
+            assertThat(GpgRunner.verdict("[GNUPG:] ERRSIG F9F37B1217967E91 1 8 00 1792178762 9"
+                    + " 4C31CD7C37B62BB8A83B7FEBF9F37B1217967E91\n"
+                    + "[GNUPG:] NO_PUBKEY F9F37B1217967E91\n"))
+                    .isEqualTo(ToolVerdict.indeterminate(IndeterminateReason.KEY_UNAVAILABLE));
+        }
+
+        @Test
+        void anAlgorithmGnupgDoesNotSupportIsUnsupported() {
+            assertThat(GpgRunner.verdict("[GNUPG:] ERRSIG F9F37B1217967E91 99 8 00 1792178762 4"
+                    + " 4C31CD7C37B62BB8A83B7FEBF9F37B1217967E91\n"))
+                    .isEqualTo(ToolVerdict.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM));
+        }
+
+        @Test
+        void statusWithoutAVerdictIsTheToolsFailure() {
+            assertThat(GpgRunner.verdict("[GNUPG:] FAILURE gpg-exit 33554433\n"))
+                    .isEqualTo(ToolVerdict.indeterminate(IndeterminateReason.TOOL_UNAVAILABLE));
+        }
     }
 }

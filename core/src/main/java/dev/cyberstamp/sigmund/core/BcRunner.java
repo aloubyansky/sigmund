@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 import org.bouncycastle.bcpg.AEADAlgorithmTags;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
@@ -43,7 +44,6 @@ import org.bouncycastle.openpgp.PGPSignatureSubpacketGenerator;
 import org.bouncycastle.openpgp.PGPSignatureSubpacketVector;
 import org.bouncycastle.openpgp.PGPUtil;
 import org.bouncycastle.openpgp.api.OpenPGPCertificate;
-import org.bouncycastle.openpgp.api.OpenPGPDefaultPolicy;
 import org.bouncycastle.openpgp.api.OpenPGPDetachedSignatureProcessor;
 import org.bouncycastle.openpgp.api.OpenPGPKey;
 import org.bouncycastle.openpgp.api.OpenPGPPolicy;
@@ -88,18 +88,10 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
             Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6);
 
     /**
-     * The algorithm policy for verification: Bouncy Castle's defaults, widened to accept what
-     * Sigmund has always accepted — SHA-1 and RIPEMD-160 document signatures, and RSA and DSA
-     * keys from 1024 bits, which older artifacts in Maven repositories are signed with.
-     * Rejecting weak algorithms is a policy decision with its own outcome, not something to
-     * report as a failed signature, so it is not made here.
+     * The algorithm policy for verification, shared with the other OpenPGP backends: see
+     * {@link VerificationAlgorithms}.
      */
-    private static final OpenPGPPolicy VERIFICATION_POLICY = new OpenPGPDefaultPolicy()
-            .acceptDocumentSignatureHashAlgorithm(HashAlgorithmTags.SHA1)
-            .acceptDocumentSignatureHashAlgorithm(HashAlgorithmTags.RIPEMD160)
-            .acceptPublicKeyAlgorithmWithMinimalStrength(PublicKeyAlgorithmTags.RSA_GENERAL, 1024)
-            .acceptPublicKeyAlgorithmWithMinimalStrength(PublicKeyAlgorithmTags.RSA_SIGN, 1024)
-            .acceptPublicKeyAlgorithmWithMinimalStrength(PublicKeyAlgorithmTags.DSA, 1024);
+    private static final OpenPGPPolicy VERIFICATION_POLICY = VerificationAlgorithms.bouncyCastlePolicy();
 
     private final BcOpenPGPApi api;
     private final BcKeyStore keyStore;
@@ -546,7 +538,8 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
             byte[] sigBytes = AscCombiner.dearmor(opgu.armoredBlock());
             PGPSignature signature = parseSignature(sigBytes);
             if (signature == null) {
-                return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint, fingerprint);
+                return OpenPgpVerifyResult.indeterminate(IndeterminateReason.EVIDENCE_MALFORMED, userId,
+                        algorithm, version, fingerprint, fingerprint);
             }
             if (findVerificationKey(pubKeyRing, signature) == null) {
                 return OpenPgpVerifyResult.indeterminate(IndeterminateReason.KEY_UNAVAILABLE, userId, algorithm, version,
@@ -556,9 +549,11 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
             OpenPGPCertificate certificate = new OpenPGPCertificate(pubKeyRing,
                     api.getImplementation(), VERIFICATION_POLICY);
             OpenPGPDocumentSignature document = verifyAgainst(certificate, signature, artifactFile);
-            if (document == null || document.getIssuer() == null
-                    || !document.isValid(VERIFICATION_POLICY)) {
+            if (document == null || document.getIssuer() == null || !document.isTestedCorrect()) {
                 return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint, fingerprint);
+            }
+            if (!document.isValid(VERIFICATION_POLICY)) {
+                return keyNotValid(certificate, document, signature, version, fingerprint, algorithm, userId);
             }
             PGPPublicKey signingKey = document.getIssuer().getPGPPublicKey();
             return OpenPgpVerifyResult.verified(userId, algorithm, version, fingerprint, fingerprint)
@@ -566,8 +561,103 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
                             primaryFingerprintOf(pubKeyRing, signingKey))
                     .withKeySource(found.source());
         } catch (Exception e) {
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.TOOL_UNAVAILABLE, userId,
+                    algorithm, version, fingerprint, fingerprint);
+        }
+    }
+
+    /**
+     * Explains a signature that is cryptographically correct but whose key is not valid.
+     *
+     * <p>
+     * Only a key that was revoked or had expired when it signed makes the signature
+     * {@link ClaimOutcome#FAILED}. Otherwise the bytes are what the key signed, and what
+     * is missing is a key that can be trusted to have made them: an algorithm the verification
+     * policy rejects is {@link IndeterminateReason#UNSUPPORTED_ALGORITHM}, and a certificate
+     * that carries no self-signature binding the key — as keys.openpgp.org serves one whose
+     * owner never verified an address — is {@link IndeterminateReason#KEY_UNAVAILABLE}, since
+     * a fuller copy of the certificate may resolve it. Self-signatures that are present, use
+     * acceptable algorithms and still do not bind the key are a broken or forged certificate,
+     * which is {@code FAILED}.
+     */
+    private OpenPgpVerifyResult keyNotValid(OpenPGPCertificate certificate,
+            OpenPGPDocumentSignature document, PGPSignature signature, int version,
+            String fingerprint, String algorithm, String userId) {
+        Date signedAt = signature.getCreationTime();
+        OpenPGPCertificate.OpenPGPComponentKey issuer = document.getIssuer();
+        OpenPGPCertificate.OpenPGPPrimaryKey primary = certificate.getPrimaryKey();
+        if (revokedOrExpiredAt(primary, signedAt) || revokedOrExpiredAt(issuer, signedAt)) {
             return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint, fingerprint);
         }
+        if (!algorithmsAccepted(signature, issuer.getPGPPublicKey())) {
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM, userId,
+                    algorithm, version, fingerprint, fingerprint);
+        }
+        List<PGPSignature> selfSignatures = selfSignatures(primary.getPGPPublicKey(),
+                issuer.getPGPPublicKey());
+        if (selfSignatures.isEmpty()) {
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.KEY_UNAVAILABLE, userId,
+                    algorithm, version, fingerprint, fingerprint);
+        }
+        if (selfSignatures.stream().anyMatch(BcRunner::rejectedByPolicy)) {
+            return OpenPgpVerifyResult.indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM, userId,
+                    algorithm, version, fingerprint, fingerprint);
+        }
+        return OpenPgpVerifyResult.failed(userId, algorithm, version, fingerprint, fingerprint);
+    }
+
+    private static boolean revokedOrExpiredAt(OpenPGPCertificate.OpenPGPComponentKey key, Date at) {
+        if (key.getRevocation(at) != null) {
+            return true;
+        }
+        Date expiry = key.getKeyExpirationDateAt(at);
+        return expiry != null && !expiry.after(at);
+    }
+
+    private static boolean algorithmsAccepted(PGPSignature signature, PGPPublicKey signingKey) {
+        return VERIFICATION_POLICY.isAcceptableDocumentSignatureHashAlgorithm(
+                signature.getHashAlgorithm(), signature.getCreationTime())
+                && VERIFICATION_POLICY.isAcceptablePublicKeyStrength(signingKey.getAlgorithm(),
+                        signingKey.getBitStrength());
+    }
+
+    /**
+     * The self-signatures that could bind the signing key: the primary key's user ID
+     * certifications and direct-key signatures, and for a subkey its binding signatures, all
+     * issued by the primary key. A subkey without a binding has none. Their validity is not
+     * judged here.
+     */
+    private static List<PGPSignature> selfSignatures(PGPPublicKey primary, PGPPublicKey signingKey) {
+        List<PGPSignature> found = signaturesBy(primary, primary, candidate -> candidate.isCertification()
+                || candidate.getSignatureType() == PGPSignature.DIRECT_KEY);
+        if (signingKey.getKeyID() == primary.getKeyID()) {
+            return found;
+        }
+        List<PGPSignature> bindings = signaturesBy(signingKey, primary,
+                candidate -> candidate.getSignatureType() == PGPSignature.SUBKEY_BINDING);
+        if (found.isEmpty() || bindings.isEmpty()) {
+            return List.of();
+        }
+        found.addAll(bindings);
+        return found;
+    }
+
+    private static List<PGPSignature> signaturesBy(PGPPublicKey key, PGPPublicKey issuer,
+            Predicate<PGPSignature> kind) {
+        List<PGPSignature> found = new ArrayList<>();
+        Iterator<PGPSignature> signatures = key.getSignatures();
+        while (signatures.hasNext()) {
+            PGPSignature candidate = signatures.next();
+            if (candidate.getKeyID() == issuer.getKeyID() && kind.test(candidate)) {
+                found.add(candidate);
+            }
+        }
+        return found;
+    }
+
+    private static boolean rejectedByPolicy(PGPSignature selfSignature) {
+        return !VERIFICATION_POLICY.isAcceptableCertificationSignatureHashAlgorithm(
+                selfSignature.getHashAlgorithm(), selfSignature.getCreationTime());
     }
 
     /**

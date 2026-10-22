@@ -10,8 +10,6 @@ import org.junit.jupiter.api.Test;
 
 class CredentialMatchingTest {
 
-    private static final ArtifactCoords COORDS = new ArtifactCoords("org.example", "lib", "", "jar", "1.0");
-
     private static final EvidenceRef EVIDENCE_REF = new EvidenceRef(
             Path.of("artifact.jar.asc"),
             DigestSet.sha256("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
@@ -144,8 +142,8 @@ class CredentialMatchingTest {
     }
 
     /**
-     * Runs the production matching path: a policy that expects this signer, evaluated over a
-     * claim that proved these credentials.
+     * Runs the production matching path: a clause naming this signer, evaluated over a claim that
+     * proved these credentials. Credential matching lives in {@link Clause}.
      */
     private static boolean matchesAny(SignerIdentity signer, ClaimResult claim) {
         return matchesAny(signer, claim, List.of());
@@ -153,19 +151,12 @@ class CredentialMatchingTest {
 
     private static boolean matchesAny(SignerIdentity signer, ClaimResult claim,
             List<String> issuers) {
-        TrustPolicy policy = new DefaultTrustPolicy(
-                Map.of(COORDS.namespace(), List.of(signer)), List.of(),
-                ListedEvidencePolicy.ALL, UnlistedEvidencePolicy.IGNORE, UntrustedPolicy.FAIL,
-                issuers);
-
-        RequirementEvaluator.Evaluation evaluation = policy.requirements().evaluate(COORDS, List.of(claim));
-
-        return evaluation != null && evaluation.satisfied();
+        return new Clause(List.of(signer)).accepts(claim, issuers);
     }
 
     private static ClaimResult claim(List<Credential> provenCredentials) {
         return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null, provenCredentials, null,
-                AttesterRole.UNKNOWN, TrustRootRef.unknown(), EVIDENCE_REF, null,
+                TrustRootRef.unknown(), EVIDENCE_REF, null,
                 ClaimTimeSource.SIGNER, Instant.EPOCH, "RSA", "bc");
     }
 }

@@ -1,9 +1,9 @@
 package dev.cyberstamp.sigmund.plugin;
 
 import dev.cyberstamp.sigmund.core.ClaimOutcome;
-import dev.cyberstamp.sigmund.core.DiscoveryConfig;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SignatureVerificationReport;
+import dev.cyberstamp.sigmund.core.VerificationConfig;
 import java.io.File;
 import java.util.Map;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -64,7 +64,7 @@ public class VerifySignatureMojo extends AbstractSigmundMojo {
     private Sigmund createSigmund() throws MojoExecutionException {
         try {
             return buildSigmund(
-                    new DiscoveryConfig(true, false, null, null),
+                    new VerificationConfig(true, false, null, null),
                     mergeToolOverrides(SequoiaHomeResolver.toolsConfigOverrides(sqHome)));
         } catch (Exception e) {
             throw new MojoExecutionException("Failed to create verifier", e);

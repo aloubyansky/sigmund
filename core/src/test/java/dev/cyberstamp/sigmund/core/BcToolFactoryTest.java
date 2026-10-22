@@ -46,6 +46,36 @@ class BcToolFactoryTest {
     }
 
     @Test
+    void certDDefaultsToTheStoreSqUses() {
+        assertThat(BcToolFactory.resolveCertDHome(Map.of()))
+                .isEqualTo(Path.of(System.getProperty("user.home"), ".local", "share", "pgp.cert.d"));
+    }
+
+    @Test
+    void privateKeysDefaultOutsideTheSharedCertD() {
+        Path certD = BcToolFactory.resolveCertDHome(Map.of());
+        Path privateHome = BcToolFactory.resolveBcPrivateHome(Map.of());
+
+        assertThat(privateHome).isEqualTo(
+                Path.of(System.getProperty("user.home"), ".local", "share", "sigmund", "bc-private"));
+        assertThat(privateHome.startsWith(certD)).isFalse();
+    }
+
+    @Test
+    void privateKeysStayPutWhenOnlyTheCertDMoves() {
+        assertThat(BcToolFactory.resolveBcPrivateHome(Map.of("cert-d-home", "/tmp/cert-d")))
+                .isEqualTo(BcToolFactory.resolveBcPrivateHome(Map.of()));
+    }
+
+    @Test
+    void configuredPathsWin() {
+        assertThat(BcToolFactory.resolveCertDHome(Map.of("cert-d-home", "/tmp/cert-d")))
+                .isEqualTo(Path.of("/tmp/cert-d"));
+        assertThat(BcToolFactory.resolveBcPrivateHome(Map.of("bc-private-home", "/tmp/bc-private")))
+                .isEqualTo(Path.of("/tmp/bc-private"));
+    }
+
+    @Test
     void createWithSigningFingerprint() {
         SignatureTool tool = new BcToolFactory().createSigning(null, Map.of(
                 "signing-fingerprint", "AABBCCDD"));

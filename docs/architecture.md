@@ -25,6 +25,7 @@ This document describes how Sigmund works internally — the three-tool system, 
 - [Identity Verification Layer](#identity-verification-layer)
   - [Layer 2: Signature Operations](#layer-2-signature-operations)
   - [Layer 1: Identity Verification](#layer-1-identity-verification)
+  - [Policy Model](#policy-model)
   - [Credential Types and Matching](#credential-types-and-matching)
   - [Artifact Outcomes](#artifact-outcomes)
 - [Supported Cipher Suites](#supported-cipher-suites)
@@ -78,7 +79,7 @@ For example, a hybrid `.asc` with both a PGP4 (RSA) and PGP6 (ML-DSA) signature:
 Configure the toolchain in `sigmund.yaml`:
 
 ```yaml
-discovery:
+verification:
   toolchain: [bc, sq, gpg]
 ```
 
@@ -105,9 +106,9 @@ BC manages keys across three sources, searched in order:
 
 1. **GnuPG pubring** (`~/.gnupg/pubring.kbx` or legacy `pubring.gpg`) — read-only. BC can read public keys from GnuPG's keyring for verification. The modern keybox format (`pubring.kbx`, GnuPG 2.1+) is tried first.
 
-2. **Shared cert-d** (`~/.local/share/openpgp-cert-d/`) — read/write for public certificates. Uses the standard OpenPGP cert-d two-level directory layout (fingerprint `ABCDEF...` is stored at `AB/CDEF...`). Public certificates written here are visible to `sq` and other tools that support cert-d.
+2. **Shared cert-d** (`~/.local/share/pgp.cert.d/`) — read/write for public certificates. Uses the standard OpenPGP cert-d two-level directory layout (fingerprint `ABCDEF...` is stored at `AB/CDEF...`). It is the location the cert-d specification names and `sq`'s default certificate store, so certificates written here are visible to `sq` and other tools that support cert-d.
 
-3. **BC private store** (`~/.local/share/openpgp-cert-d/bc-private/`) — read/write for private keys. BC-generated private keys are stored in standard OpenPGP transferable secret key format in a subdirectory under cert-d.
+3. **BC private store** (`~/.local/share/sigmund/bc-private/`) — read/write for private keys. BC-generated private keys are stored in standard OpenPGP transferable secret key format, in the same two-level layout, outside the shared cert-d: that is a public certificate store other tools read, and secret keys do not belong in it.
 
 4. **Ephemeral cache** — in-memory cache for keys fetched from keyservers when `import-to-keyring` is false. Keys are available for verification during the session but are not persisted to disk.
 
@@ -240,28 +241,36 @@ BC handles any `OpenPgpClaim` (v4 or v6 classic algorithms). Verification steps:
 2. Search for the signer's certificate in the key store (`BcKeyStore.findPublicKey()`); if it is absent and key fetching is enabled, fetch it from keyservers (`KeyserverFetcher`)
 3. Parse the signature packet using Bouncy Castle's `BcPGPObjectFactory`
 4. Verify with Bouncy Castle's high-level API (`OpenPGPCertificate` and `OpenPGPDetachedSignatureProcessor`): the signature must be correct and made, at its creation time, by the primary key or a subkey validly bound to it — binding signature, signing flag, a signing subkey's back-signature, not revoked or expired, the primary key's expiry applying to the whole certificate
-5. Return `VERIFIED`, proving the signing key's and the primary key's full fingerprints, or `FAILED`
+5. Return `VERIFIED`, proving the signing key's and the primary key's full fingerprints, when the signature is correct and the key valid
+6. When the signature is correct (`isTestedCorrect()`) but the key is not valid, explain why: revoked or expired at the signature's time is `FAILED`; an algorithm the policy rejects is `INDETERMINATE [UNSUPPORTED_ALGORITHM]`; a certificate with no self-signature binding the key — as keys.openpgp.org serves one without user IDs — is `INDETERMINATE [KEY_UNAVAILABLE]`; self-signatures that are present and acceptable yet do not bind it are a broken certificate, `FAILED`
+7. A signature that is not correct is `FAILED`; one that cannot be parsed is `INDETERMINATE [EVIDENCE_MALFORMED]`; an exception is `INDETERMINATE [TOOL_UNAVAILABLE]`
 
-The algorithm policy accepts what Sigmund has always accepted, including SHA-1 and RIPEMD-160 signatures and RSA and DSA keys from 1024 bits; rejecting weak algorithms is a separate policy decision.
+The algorithm policy comes from `VerificationAlgorithms`, shared with the other backends: SHA-1 and RIPEMD-160 document signatures, SHA-1 and RIPEMD-160 self-signatures at any date, and RSA and DSA keys from 1024 bits, on top of Bouncy Castle's defaults. See [Accepted algorithms](verification.md#accepted-algorithms).
 
 ### sq Verification (v4 and v6 packets)
 
 Sequoia implements RFC 9580, so it is routed v4 and v6 signatures, including RFC 9980 post-quantum ones; it does not implement LibrePGP's v5. The issuer fingerprint is extracted from the signature packet, used to look up the signer's certificate in the Sequoia cert store (`sq inspect --cert`), locate the cert file in cert-d, and verify with `sq verify --signer-file`. If the certificate is not in the store, the result is `INDETERMINATE [KEY_UNAVAILABLE]`. If `sq` is not available or the fingerprint cannot be extracted, it is `INDETERMINATE` citing `TOOL_UNAVAILABLE` or `UNSUPPORTED_ALGORITHM`.
 
+`sq` runs with `SEQUOIA_CRYPTO_POLICY` pointing at a copy of the `sequoia-policy.toml` classpath resource that `VerificationAlgorithms` defines, replacing the host's system crypto policy. A non-zero exit is read from its report (`SqRunner.verdict`): a *bad signature* is `FAILED`; a *bad key* is `FAILED` when revoked or expired, `UNSUPPORTED_ALGORITHM` when the policy rejected it, and `KEY_UNAVAILABLE` otherwise; a report without that tally is `TOOL_UNAVAILABLE`.
+
 ### gpg Verification (v1-v4 packets)
 
-Runs `gpg --verify` against the local keyring. GPG exit codes are interpreted as:
-- **Exit 0** — signature valid (`VERIFIED`)
-- **Exit 2 with "Good signature" in stderr** — signature valid but GPG encountered an unknown packet (`VERIFIED`). This is the expected result for hybrid `.asc` files containing v6 PQC packets.
-- **Exit 1** — bad signature (`FAILED`)
-- **stderr contains "No public key"** — signer's key not in keyring (`KEY_UNAVAILABLE`)
+Runs `gpg --status-fd 1 --verify` against the local keyring and reads the status lines (`GpgRunner.verdict`), never the exit code — GnuPG exits 0 for a good signature by a revoked key:
+- **`GOODSIG`** — `VERIFIED`, also when GnuPG exits 2 for an unknown v6 packet in a hybrid `.asc`
+- **`BADSIG`** or **`REVKEYSIG`** — `FAILED`
+- **`EXPKEYSIG`** — `FAILED` when the `KEYEXPIRED` time is not after the signature's own time (from `VALIDSIG`), otherwise `VERIFIED`
+- **`ERRSIG`** with **`NO_PUBKEY`** — `KEY_UNAVAILABLE`; GnuPG also answers this way for a certificate it refused to import, such as one without user IDs
+- **`ERRSIG`** with return code 4 — `UNSUPPORTED_ALGORITHM`
+- **none of these** — `TOOL_UNAVAILABLE`
+
+GnuPG's defaults already accept the algorithms in `VerificationAlgorithms`. `KeyValidityAgreementTest` holds the three backends to the same answers.
 
 The block's public-key algorithm ID is used to classify the signature as PQC or classical in the report. PQC algorithm IDs are 30-36 per the IANA OpenPGP Public Key Algorithms registry (RFC 9980).
 
 ### Verification Modes
 
-- **Default:** Every signature in the file must pass for the overall result to be `PASS`.
-- **Lenient (`--lenient`):** At least one signature must pass and none may fail. Skipped or no-key signatures are tolerated.
+- **Default:** Every signature in the file must be `VERIFIED` for the file to verify.
+- **Lenient (`--lenient`):** At least one signature must be `VERIFIED` and none `FAILED`. Signatures left `INDETERMINATE` — a key not available, an algorithm no installed tool supports — are tolerated.
 
 ## Identity Verification Layer
 
@@ -299,12 +308,33 @@ Layer 1 is the `EvidenceProvider` interface, bridged from Layer 2 via `Signature
 The `TrustVerifier` consumes `ClaimResult`s and produces one `ArtifactResult` per artifact:
 
 1. **Collect claims** — each provider verifies the evidence resolved for the artifact
-2. **Evaluate requirements** — `TrustPolicy.requirements()` decides which verified claims the
-   policy accepts, and which it does not
-3. **Roll up** — `OutcomeRollup` derives the `ArtifactOutcome` from the claims and that
-   evaluation, in a fixed order: a failed claim dominates, claims no installed tool supports
-   are set aside, no applicable rule means `NOT_CONFIGURED`, requirements met means
+2. **Match the rule** — `TrustPolicy.matchRule` selects the most specific `Rule`, recorded on the
+   result as a `MatchedRule` (the pattern that matched and the rule's location)
+3. **Roll up** — `OutcomeRollup` evaluates the rule's `Requirement` over the verified claims and
+   derives the `ArtifactOutcome` in a fixed order: a failed claim dominates, claims no installed
+   tool supports are set aside, no rule means `NOT_CONFIGURED`, requirements met means
    `SATISFIED`, and otherwise the most informative remaining state decides
+
+Whether an outcome blocks is decided afterwards, by `VerificationReport.enforcement`, from the
+matched rule's overrides, the policy defaults and the built-in defaults — so enforcement never
+changes an outcome.
+
+### Policy Model
+
+The policy exists in two forms:
+
+- **`TrustPolicySpec`** of `RuleSpec`s — what the parser produces: patterns, clauses as signer
+  IDs, enforcement overrides and each rule's location. Only structure is checked. Signing reads
+  the configuration in this form and never goes further, so a verification-only mistake cannot
+  stop a release from being signed.
+- **`RulePolicy`** of `Rule`s — produced by `RulePolicy.compile` when a verifier is built. It
+  resolves signer IDs into `SignerIdentity`s and builds each rule's `Requirement` (a conjunction
+  of `Clause`s, each a disjunction of signers), validates issuers and identity entries, and
+  rejects rules that tie on specificity — any equal-specificity patterns of two rules sharing a
+  coordinate.
+
+`ArtifactPattern` holds a parsed pattern: its specificity, whether it matches a coordinate, and
+whether two patterns overlap.
 
 The roll-up lives in core rather than in an integration so that a goal and a resolver-level
 extension cannot reach different outcomes from the same policy and the same evidence.
@@ -338,26 +368,31 @@ leaves the claim `INDETERMINATE` with `key-unavailable`.
 Identity matching works via credential overlap: a claim satisfies a signer when one of the
 credentials it proved matches one the signer is configured with.
 
-The matching logic lives in `TrustPolicy.requirements()`, the default
-`RequirementEvaluator`:
+A `Clause` accepts a claim when any of its signers has a credential matching one the claim
+proved; a `Requirement` is satisfied when every clause accepts some claim. Identity
+credentials without an issuer of their own match against the policy's listed issuers:
 ```java
-for (Credential proven : claim.attesterCredentials()) {
+for (SignerIdentity signer : signers) {
     for (Credential expected : signer.credentials()) {
-        if (expected.matches(proven)) {
-            return true;
+        for (Credential proven : claim.attesterCredentials()) {
+            if (matches(expected, proven, defaultIssuers)) {
+                return true;
+            }
         }
     }
 }
 ```
 
-It is a separate interface from the roll-up on purpose: deriving an outcome needs to know
-whether requirements were met and which claims met them, not what a requirement is.
+`Requirement` implements `RequirementEvaluator`, the interface the roll-up consults. It is
+separate from the roll-up on purpose: deriving an outcome needs to know whether requirements
+were met and which claims met them, not what a requirement is.
 
 ### Artifact Outcomes
 
 - `SATISFIED` — the claims found meet what the policy requires of this artifact
-- `UNSATISFIED` — verification succeeded, but not by a signer the policy accepts
-- `FAILED` — a signature did not verify; an attack signal, and never tolerated
+- `UNSATISFIED` — verification succeeded, but not by the signers the rule requires
+- `FAILED` — a signature does not match the artifact, or its key was revoked or had expired
+  when it signed, or was revoked as compromised at any time; an attack signal, and never tolerated
 - `NO_CLAIM` — no evidence was found at all
 - `INDETERMINATE` — nothing could be established either way, with a reason saying why
 - `NOT_CONFIGURED` — no rule applies to this artifact

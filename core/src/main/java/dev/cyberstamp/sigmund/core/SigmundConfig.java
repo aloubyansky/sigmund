@@ -1,5 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
+import java.io.Reader;
 import java.nio.file.Path;
 
 /**
@@ -7,36 +8,46 @@ import java.nio.file.Path;
  * <p>
  * Produces separate typed objects for different consumers while keeping the
  * user's configuration in one place. {@code signers} is a top-level shared
- * registry of known identities — referenced by both {@link TrustPolicy}
- * (via trust mappings) and {@link SigningConfig} (via signer name).
+ * registry of known identities — referenced by both the trust policy
+ * (via rule clauses) and {@link SigningConfig} (via signer name).
+ * <p>
+ * The policy is held as a raw {@link TrustPolicySpec}: the parser produces it without resolving
+ * signers or validating issuers, so that the signing path can read {@code signing}/{@code signers}/
+ * {@code tools} without compiling it. The verification path compiles it with
+ * {@link RulePolicy#compile(TrustPolicySpec, SignersConfig)} when the verifier is built.
  *
  * <h2>Usage</h2>
  *
  * <pre>{@code
  * SigmundConfig config = SigmundConfig.parse(Path.of("sigmund.yaml"));
- * TrustPolicy policy = config.trustPolicy();
+ * TrustPolicy policy = RulePolicy.compile(config.trustPolicySpec(), config.signers());
  * SigningConfig signing = config.signingConfig();
  * ToolsConfig tools = config.toolsConfig();
- * DiscoveryConfig discovery = config.discoveryConfig();
+ * VerificationConfig verification = config.verificationConfig();
  * }</pre>
  *
- * @param version the schema version (currently 1)
  * @param signers shared identity registry
- * @param artifacts named groups of artifact patterns for reuse in trust/unsigned sections
- * @param trustPolicy the trust policy parsed from trust/unsigned/policy sections
+ * @param artifactSets named groups of artifact patterns for reuse in rule match entries
+ * @param trustPolicySpec the raw trust policy parsed from the rules/defaults/issuers sections
  * @param signingConfig the signing configuration parsed from the signing section
  * @param toolsConfig the per-tool configuration registry parsed from the top-level tools section
- * @param discoveryConfig the discovery configuration parsed from the discovery section
+ * @param verificationConfig the verification configuration parsed from the verification section
  * @see SigmundConfigParser
  */
 public record SigmundConfig(
-        int version,
         SignersConfig signers,
-        ArtifactsConfig artifacts,
-        TrustPolicy trustPolicy,
+        ArtifactSetsConfig artifactSets,
+        TrustPolicySpec trustPolicySpec,
         SigningConfig signingConfig,
         ToolsConfig toolsConfig,
-        DiscoveryConfig discoveryConfig) {
+        VerificationConfig verificationConfig) {
+
+    /**
+     * The zero-config configuration, used when no {@code sigmund.yaml} exists: no signers, no
+     * policy and default tool, signing and verification settings. Verification under it observes —
+     * every artifact is verified and reported, and only {@link ArtifactOutcome#FAILED} blocks.
+     */
+    public static final SigmundConfig EMPTY = new SigmundConfig(null, null, null, null, null, null);
 
     /**
      * Creates a config with defensive defaults for null fields.
@@ -45,11 +56,11 @@ public record SigmundConfig(
         if (signers == null) {
             signers = SignersConfig.EMPTY;
         }
-        if (artifacts == null) {
-            artifacts = ArtifactsConfig.EMPTY;
+        if (artifactSets == null) {
+            artifactSets = ArtifactSetsConfig.EMPTY;
         }
-        if (trustPolicy == null) {
-            trustPolicy = DefaultTrustPolicy.EMPTY;
+        if (trustPolicySpec == null) {
+            trustPolicySpec = TrustPolicySpec.EMPTY;
         }
         if (signingConfig == null) {
             signingConfig = SigningConfig.DEFAULT;
@@ -57,8 +68,8 @@ public record SigmundConfig(
         if (toolsConfig == null) {
             toolsConfig = ToolsConfig.EMPTY;
         }
-        if (discoveryConfig == null) {
-            discoveryConfig = DiscoveryConfig.DEFAULT;
+        if (verificationConfig == null) {
+            verificationConfig = VerificationConfig.DEFAULT;
         }
     }
 
@@ -71,5 +82,17 @@ public record SigmundConfig(
      */
     public static SigmundConfig parse(Path file) {
         return SigmundConfigParser.parse(file);
+    }
+
+    /**
+     * Parses configuration text, for checking a config that has not been written yet.
+     *
+     * @param source a human-readable name for the text, used in error messages
+     * @param reader the YAML text
+     * @return the parsed configuration
+     * @throws PolicyConfigException if the text contains invalid configuration
+     */
+    public static SigmundConfig parse(String source, Reader reader) {
+        return SigmundConfigParser.parse(source, reader);
     }
 }

@@ -101,7 +101,7 @@ mvn sigmund:dependency-signers \
   -Dsigmund.generateTrustConfig=true
 ```
 
-This creates a `sigmund.yaml` file in your project root based on actual dependency signatures. The generated file contains three sections:
+This creates a `sigmund.yaml` file in your project root based on actual dependency signatures. It has two sections.
 
 **signers** — Declares known signers by their full key fingerprints, with the user ID each key carries as a comment:
 
@@ -109,27 +109,27 @@ This creates a `sigmund.yaml` file in your project root based on actual dependen
 signers:
   alice-developer:  # user ID on the key, unverified: Alice Developer <alice@example.com>
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
-    pgp6: "D62AAB339E45E5EA2FD036872B01D46A517A2991..."
 ```
 
 The user ID is not used for matching — anyone can put any address on a key. To also accept keys Alice generates later, add `email: "alice@example.com"` and list `keys.openpgp.org` under `issuers`; see [issuers](configuration.md#issuers).
 
-**trust** — Maps artifact patterns to trusted signers:
+**rules** — What each group of artifacts must satisfy. A requirement rule per group of artifacts signed alike, and one rule listing the modules that carried no signature:
 
 ```yaml
-trust:
-  com.example:*: alice-developer
-  com.other:tool: [signer-2, signer-3]
+signers:
+  alice-developer:  # user ID on the key, unverified: Alice Developer <alice@example.com>
+    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+
+rules:
+  - match: [com.example.*]
+    requires: [alice-developer]
+  - match: [com.internal:util]
+    on-no-claim: ignore
 ```
 
-**signature-optional** — Lists artifacts allowed to carry no signature:
+`com.example.*` covers the group and every group below it. An artifact signed by several parties gets them all in `requires`, and every one must keep signing. A publisher's classic and post-quantum keys — the same user ID, signing exactly the same artifacts — become one signer with both fingerprints, so either signature satisfies its rule. The last rule tolerates `com.internal:util` being unsigned — it is still verified, so a signature that does appear on it must verify. See [rules](configuration.md#rules) for the full syntax.
 
-```yaml
-signature-optional:
-  - com.internal:util
-```
-
-Wildcard patterns like `com.example:*` trust all artifacts from a group. Multiple signers can be specified as a YAML array when an artifact is co-signed.
+The generated file deliberately has no catch-all rule: a dependency you add later matches no rule, fails verification as `NOT_CONFIGURED`, and enters the policy only through an update you review.
 
 ## Enforce the Policy
 
@@ -142,43 +142,55 @@ mvn sigmund:verify
 **On success**, you'll see output like:
 
 ```
-SATISFIED (2)
-  openpgp VERIFIED by bc (Ed25519) - Alice Developer <alice@example.com>
-    com.example:lib-a:1.0
-    com.example:lib-b:2.0
-
-NO_CLAIM (1)
-    com.internal:util:1.0
+[INFO] SATISFIED (2)
+[INFO]   openpgp VERIFIED by bc (Ed25519) - Alice Developer <alice@example.com>
+[INFO]     com.example:lib-a:1.0
+[INFO]     com.example:lib-b:2.0
+[INFO]
+[INFO] NO_CLAIM (1) — ignored: 1 by rules[1] 'com.internal:util'
 ```
 
 Results are grouped by outcome, and within an outcome by who attested them.
-`com.internal:util` reached `NO_CLAIM` because no signature was found for it;
-listing it under `signature-optional` is what keeps that from failing the build.
-Add `-Dsigmund.detail` to see the key each group proved, the trust root it was
-checked against, and the evidence file behind each artifact.
+`com.internal:util` reached `NO_CLAIM` because no signature was found for it; the
+heading counts it and names the rule that tolerates it, and the artifact itself is
+listed only with `-Dsigmund.detail`. Detail also shows the key each group proved,
+the trust root it was checked against, and the evidence file behind each artifact.
 
-**When untrusted artifacts are found**, the default behavior is to fail the build:
+**When untrusted artifacts are found**, the build fails:
 
 ```
-UNSATISFIED (1)
-  openpgp VERIFIED by bc (RSA) - Bob Malicious <bob@evil.com>
-    com.sketchy:malware:1.0
+[ERROR] UNSATISFIED (1)
+[ERROR]   openpgp VERIFIED by bc (RSA) - Bob Malicious <bob@evil.com>
+[ERROR]     com.example:lib-c:1.0 [blocks]
 
-[ERROR] Verification blocked the build for 1 artifact(s): com.sketchy:malware:1.0 (UNSATISFIED)
+[ERROR] Verification blocked the build for 1 artifact(s): com.example:lib-c:1.0 (UNSATISFIED)
 ```
 
 The signature verified — `UNSATISFIED` says the policy does not accept the
 signer, not that the cryptography failed. That case is `FAILED`, and no setting
 tolerates it.
 
-The `on-untrusted` setting controls failure behavior. The default is `fail`. Set it to `warn` in `sigmund.yaml` to report issues without failing the build:
+Each outcome's handling is set in the policy, per rule or in `defaults`: `fail`,
+`warn` or `ignore`. To see the blast radius of a stricter policy without failing
+the build, relax it while you look — for example, report unsigned artifacts
+everywhere as warnings:
 
 ```yaml
-policy:
-  on-untrusted: warn
+signers:
+  alice-developer:
+    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+
+rules:
+  - match: [com.example.*]
+    requires: [alice-developer]
+
+defaults:
+  on-no-claim: warn
 ```
 
-Or override it per-build with `-Dsigmund.onUntrusted=warn`.
+These settings live only in `sigmund.yaml`, never on the command line: they change
+what is accepted, so they belong in the reviewed file. See
+[Policy and Enforcement](configuration.md#policy-and-enforcement).
 
 ## Update When Dependencies Change
 
@@ -189,7 +201,12 @@ mvn sigmund:dependency-signers \
   -Dsigmund.updateTrustConfig=true
 ```
 
-This appends new entries to the existing `sigmund.yaml` file, preserving all existing content including comments and formatting. New signers are added to the `signers` section, new trust patterns to the `trust` section, and artifacts found without a signature to the `signature-optional` section.
+This adds what the policy does not cover yet, preserving all existing content including comments and formatting:
+
+- an artifact no rule matches gets a requirement on its signers, or, if it carries no signature, a rule tolerating that;
+- a module that was listed as unsigned and is now signed moves out of that list into a requirement rule of its own.
+
+It never rewrites what a requirement already covers. An artifact whose rule requires one signer but which is now signed by another is listed under **Needs review** instead — a changed signer is exactly what verification exists to catch, so accepting it is your decision. The update is checked before it is written: a result that would not load is not written.
 
 Review changes before committing:
 

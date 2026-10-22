@@ -131,19 +131,21 @@ sq: ML-DSA-87+Ed448 D62AAB339E45E5EA2FD036872B01D46A517A2991... (Alice <alice@ex
 
 **Default Phase:** `validate`
 
-Verifies that all project dependencies are signed by trusted signers as defined in `sigmund.yaml`. Matching is by full key fingerprint, or by an identity — an email address or a CI workflow — vouched for by an issuer the policy trusts. Artifacts listed in the `signature-optional` section are allowed to carry no signature.
+Verifies project dependencies against the policy in `sigmund.yaml`: each artifact's most specific rule says which signers it requires. Matching is by full key fingerprint, or by an identity — an email address or a CI workflow — vouched for by an issuer the policy trusts. What each outcome does to the build is set in the policy, per rule or in `defaults`; see [Policy and Enforcement](configuration.md#policy-and-enforcement).
+
+Without a `sigmund.yaml` at the default location, or with one that declares neither `rules` nor `defaults`, the goal runs without a policy: it verifies and reports every dependency, fails only on a signature that does not verify, and logs that it is observing only. A file given with `-Dsigmund.trustConfig` that does not exist is an error.
+
+The report groups results by outcome, then by who attested them. Each artifact line is logged at the severity of what its outcome does and tagged `[blocks]`, `[warning]` or `[ignored]`; ignored artifacts are counted in their outcome's heading, with the rule or `defaults` that tolerated them, and listed only with `-Dsigmund.detail`.
 
 **Parameters:**
 
 | Property | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `sigmund.trustConfig` | No | `${project.basedir}/sigmund.yaml` | Path to the trust configuration file |
-| `sigmund.onUntrusted` | No | — | Policy for untrusted artifacts: `fail` or `warn`. Overrides config file setting. |
-| `sigmund.listedEvidence` | No | — | Overrides `policy.listed-evidence` in `sigmund.yaml`. Values: `all` (all listed evidence must match) or `any` (at least one match sufficient). |
-| `sigmund.resolveSigners` | No | `true` | Fetch unknown GPG keys from keyservers. Overrides config file setting. |
+| `sigmund.resolveSigners` | No | `true` | Fetch unknown keys from keyservers, and ask directories named in `issuers` for verified addresses. Overrides config file setting. |
 | `sigmund.keyservers` | No | `hkps://keys.openpgp.org` | Comma-separated keyserver list. Used when `resolveSigners` is enabled. |
 | `sigmund.verifyPomFiles` | No | `false` | Also verify signatures on POM files for each dependency |
-| `sigmund.detail` | No | `false` | Add the credentials proven and the trust root to each attester group, and the evidence file and claim time to each artifact. Results are grouped by outcome and then by attester either way |
+| `sigmund.detail` | No | `false` | Add the credentials proven and the trust root to each attester group, and the evidence file and claim time to each artifact, and list ignored artifacts. Results are grouped by outcome and then by attester either way |
 | `sigmund.sqHome` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
 | `sigmund.gpgHome` | No | — | GnuPG home directory, overrides GPG and BC home paths |
 | `sigmund.importToKeyring` | No | — | Persist fetched keys to keyrings. Overrides config file setting. |
@@ -169,14 +171,15 @@ SATISFIED (2)
 
 UNSATISFIED (1)
   openpgp VERIFIED by gpg (RSA) - Unknown <unknown@example.com>
-    com.other:tool:3.0
+    com.other:tool:3.0 [blocks]
 
 NO_CLAIM (1)
-    org.wildfly.common:wildfly-common:2.0.1
+    org.wildfly.common:wildfly-common:2.0.1 [warning]
 ```
 
+Each artifact line is tagged with what its outcome does; a `SATISFIED` one needs no tag.
 Artifacts nothing attested carry no group header. When an outcome blocks, the
-build fails naming each artifact and its outcome:
+build fails naming each blocking artifact and its outcome:
 
 ```
 Verification blocked the build for 1 artifact(s): com.other:tool:3.0 (UNSATISFIED)
@@ -193,6 +196,13 @@ SATISFIED (2)
     com.example:lib:1.0
       evidence lib-1.0.jar.asc sha256:ba7816bf8f01 (sidecar)
       claimed 2026-03-12T10:04:11Z (signer)
+```
+
+A claim no installed tool can check also shows the key its signature packet
+names, which nothing has proven:
+
+```
+    declared issuer openpgp6 CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9 (not verified)
 ```
 
 See [Outcomes](trust-verification.md#outcomes) for what each outcome means.
@@ -291,11 +301,11 @@ Many signers appear as `NOT VERIFIED` because the default keyserver (`keys.openp
 
 **Generating a trust config:**
 
-Use `-Dsigmund.generateTrustConfig=true` to create an initial `sigmund.yaml` from your project's actual dependency signatures. The generated file groups artifacts by signer, collapses common groupId prefixes into wildcard patterns (e.g., `io.quarkus.*`), and lists artifacts with no signature in the `signature-optional` section. The file can be used directly with the `verify` goal.
+Use `-Dsigmund.generateTrustConfig=true` to create an initial `sigmund.yaml` from your project's actual dependency signatures. The generated file defines a signer per key, writes a requirement rule per group of artifacts signed alike — collapsing common groupId prefixes into wildcard patterns (e.g., `io.quarkus.*`) — and one rule tolerating the modules found without a signature. It has no catch-all, so a dependency added later fails as `NOT_CONFIGURED` until an update adds it. The file can be used directly with the `verify` goal.
 
 **Updating a trust config:**
 
-Use `-Dsigmund.updateTrustConfig=true` to add new dependency signers to an existing `sigmund.yaml`. This is useful after adding new dependencies — existing content including comments and formatting is preserved, and new entries are inserted at the end of each section. Review the changes with `git diff`.
+Use `-Dsigmund.updateTrustConfig=true` to add what an existing `sigmund.yaml` does not cover yet. Existing content including comments and formatting is preserved. An artifact no rule matches — or only a catch-all or the rule tolerating unsigned modules — gets a requirement rule for its signers, and a module that started being signed moves out of the unsigned list. An artifact under a requirement that is now signed by someone the rule does not name is never rewritten; it is listed under **Needs review**. The updated file is checked before it is written, and nothing is written if it would not load. Review the changes with `git diff`; see [Updating Trust Configuration](trust-verification.md#updating-trust-configuration).
 
 ### sigmund:inspect-signer
 
@@ -328,21 +338,17 @@ mvn sigmund:inspect-signer -Dsigmund.email=alice@example.com
 
 ## Configuration Precedence
 
-Maven properties (`-Dsigmund.*`) override `sigmund.yaml` values, which override defaults.
+Maven properties (`-Dsigmund.*`) override `sigmund.yaml` values, which override defaults — but only for settings that configure **how** verification runs. What it accepts — signers, issuers, rules and enforcement — comes only from `sigmund.yaml`, so that it is reviewed with the rest of the project; no property can loosen it.
 
 **Properties that override config file settings:**
 
-- `sigmund.onUntrusted` overrides `policy.on-untrusted` in `sigmund.yaml`
-- `sigmund.listedEvidence` overrides `policy.listed-evidence` in `sigmund.yaml` (`all` or `any`)
-- `sigmund.resolveSigners` overrides `discovery.resolve-signers` in `sigmund.yaml`
-- `sigmund.keyservers` overrides `discovery.keyservers` in `sigmund.yaml`
+- `sigmund.resolveSigners` overrides `verification.resolve-signers` in `sigmund.yaml`
+- `sigmund.keyservers` overrides `verification.keyservers` in `sigmund.yaml`
+- `sigmund.importToKeyring` overrides `verification.import-to-keyring` in `sigmund.yaml`
 
 **Example:**
 
 ```bash
-# Override the failure policy from the config file
-mvn verify -Dsigmund.onUntrusted=warn
-
 # Enable fetching unknown keys from keyservers
 mvn verify -Dsigmund.resolveSigners=true
 ```

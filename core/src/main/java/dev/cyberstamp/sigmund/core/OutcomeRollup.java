@@ -15,13 +15,15 @@ import java.util.List;
  *
  * <ol>
  * <li>any failed claim wins — a valid claim alongside a failing one does not mask it;</li>
- * <li>claims no installed tool supports are set aside, and take no further part unless a rule
- * demanded that claim kind;</li>
+ * <li>claims no installed tool supports are set aside: they cannot satisfy a requirement, and
+ * cannot block one that the other claims meet;</li>
  * <li>no applicable rule means {@link ArtifactOutcome#NOT_CONFIGURED};</li>
  * <li>requirements met, honouring the claim-set mode, means
  * {@link ArtifactOutcome#SATISFIED};</li>
  * <li>otherwise whichever remaining state is most informative decides: an unresolved claim
- * over a rejected one, a rejected one over no evidence at all.</li>
+ * first; then requirements left unmet only for want of a tool, which are
+ * {@link IndeterminateReason#UNSUPPORTED_ALGORITHM}; then any other claim, which leaves a signer
+ * the requirements do not accept; and last no evidence at all.</li>
  * </ol>
  */
 final class OutcomeRollup {
@@ -32,22 +34,20 @@ final class OutcomeRollup {
     /**
      * Derives the outcome for one artifact.
      *
-     * @param coords the artifact being evaluated, which selects the applicable rule
      * @param claims every claim found for the artifact, in the order they were parsed
-     * @param evaluator decides whether the verified claims satisfy the applicable rule
-     * @param requiredKind the claim kind a rule demands, by format name, or {@code null}
+     * @param evaluator the requirement of the rule that matched the artifact, or {@code null}
+     *        when no rule did
      * @param mode what to do with claims beyond those that satisfied the requirements
      * @return the outcome and, where one applies, the reason it could not be decided
      */
-    public static Result derive(ArtifactCoords coords, List<ClaimResult> claims,
-            RequirementEvaluator evaluator, String requiredKind, ClaimSetMode mode) {
+    public static Result derive(List<ClaimResult> claims, RequirementEvaluator evaluator, ClaimSetMode mode) {
         List<ClaimResult> found = claims == null ? List.of() : claims;
 
         // One pass: a failed claim ends it, an unsupported one is set aside before
         // requirements are evaluated - which is what lets a hybrid signature verify on its
         // classic block when the post-quantum tooling is absent - and the rest are sorted
         // into what verified and why anything else did not.
-        boolean anySetAside = false;
+        List<ClaimResult> setAside = null;
         List<ClaimResult> verified = null;
         IndeterminateReason unresolvedReason = null;
         for (ClaimResult claim : found) {
@@ -59,7 +59,7 @@ final class OutcomeRollup {
                 case VERIFIED -> verified = append(verified, claim);
                 case INDETERMINATE -> {
                     if (claim.reason() == IndeterminateReason.UNSUPPORTED_ALGORITHM) {
-                        anySetAside = true;
+                        setAside = append(setAside, claim);
                     } else if (unresolvedReason == null) {
                         unresolvedReason = claim.reason();
                     }
@@ -67,21 +67,15 @@ final class OutcomeRollup {
                 // A claim outcome nobody accounted for must not be skipped into a pass:
                 // an unhandled state silently dropped here is how a verdict stops meaning
                 // what it says.
-                default -> throw new IllegalStateException(
-                        "unhandled claim outcome: " + claim.outcome());
+                default -> throw new IllegalStateException("unhandled claim outcome: " + claim.outcome());
             }
         }
 
         // no rule applies to this artifact
         RequirementEvaluator.Evaluation evaluation = evaluator == null ? null
-                : evaluator.evaluate(coords, verified == null ? List.of() : verified);
+                : evaluator.evaluate(verified == null ? List.of() : verified);
         if (evaluation == null) {
             return new Result(ArtifactOutcome.NOT_CONFIGURED, null);
-        }
-
-        // the rule demanded a claim kind that nothing installed could check
-        if (requiredKind != null && anySetAside && !evaluation.satisfied()) {
-            return indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
         }
 
         // requirements met, subject to what the claim-set mode says about the rest
@@ -102,13 +96,62 @@ final class OutcomeRollup {
         if (unresolvedReason != null) {
             return indeterminate(unresolvedReason);
         }
-        if (verified != null) {
-            return new Result(ArtifactOutcome.UNSATISFIED, null);
-        }
-        if (anySetAside) {
+        if (setAside != null && onlyAToolIsMissing(evaluator, verified, setAside)) {
             return indeterminate(IndeterminateReason.UNSUPPORTED_ALGORITHM);
         }
+        if (verified != null || setAside != null) {
+            return new Result(ArtifactOutcome.UNSATISFIED, null);
+        }
         return new Result(ArtifactOutcome.NO_CLAIM, null);
+    }
+
+    /**
+     * Asks whether unmet requirements are unmet only because no installed tool can check the
+     * claims set aside.
+     *
+     * <p>
+     * They are when the requirements would be met had each set-aside claim been made by the key
+     * it names, and when nothing verified and some set-aside claim names no key, leaving no
+     * signer to judge. Otherwise every signer in view — proven by a verified claim or named by a
+     * set-aside one — leaves the requirements unmet, and installing a tool cannot change that:
+     * the outcome is {@code UNSATISFIED}, whether or not a classic block verified alongside. An
+     * artifact co-signed with a post-quantum key reads as "install a tool that can check this"
+     * only when its key is one the policy accepts.
+     */
+    private static boolean onlyAToolIsMissing(RequirementEvaluator evaluator,
+            List<ClaimResult> verified, List<ClaimResult> setAside) {
+        return couldBeMetBy(evaluator, verified, setAside)
+                || verified == null && namesNoKey(setAside);
+    }
+
+    /**
+     * Asks whether the requirements would be met had the set-aside claims been made by the keys
+     * they name.
+     *
+     * <p>
+     * The verified claims are evaluated again alongside them because a requirement is a
+     * conjunction: a verified claim may meet one clause and a set-aside claim another, and the
+     * evaluator says only whether a set of claims meets the requirement, not which clauses it
+     * left open. Adding claims can only meet more clauses, so this cannot excuse a wrong signer:
+     * it holds only when every clause the verified claims leave unmet accepts a key some
+     * set-aside claim names — a key the verifier cannot tell from the real thing without a tool
+     * that checks it. A set-aside claim contributes that key alone, never an identity.
+     */
+    private static boolean couldBeMetBy(RequirementEvaluator evaluator,
+            List<ClaimResult> verified, List<ClaimResult> setAside) {
+        List<ClaimResult> hypothetical = verified == null ? new ArrayList<>() : new ArrayList<>(verified);
+        for (ClaimResult claim : setAside) {
+            ClaimResult asNamed = claim.asIfVerifiedByDeclaredIssuer();
+            if (asNamed != null) {
+                hypothetical.add(asNamed);
+            }
+        }
+        RequirementEvaluator.Evaluation evaluation = evaluator.evaluate(hypothetical);
+        return evaluation != null && evaluation.satisfied();
+    }
+
+    private static boolean namesNoKey(List<ClaimResult> setAside) {
+        return setAside.stream().anyMatch(claim -> claim.declaredIssuer() == null);
     }
 
     private static Result indeterminate(IndeterminateReason reason) {

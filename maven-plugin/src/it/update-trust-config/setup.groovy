@@ -11,7 +11,7 @@ gpghome.setExecutable(true, true)
 
 // Create a partial sigmund.yaml that only covers commons-lang3.
 // Includes a comment that should be preserved after update.
-// The update goal should add the missing jspecify signer.
+// jspecify is signed by a key no full fingerprint is known for, so the update leaves it out.
 def config = new File(basedir, "sigmund.yaml")
 config.text = """\
 # Trust configuration for update test
@@ -20,8 +20,9 @@ signers:
   gary-gregory:  # user ID on the key, unverified: Gary David Gregory (Code signing key) <ggregory@apache.org>
     pgp4: "2DB4F1EF0FA761ECC4EA935C86FDC7E2A11262CB"
 
-trust:
-  org.apache.commons:commons-lang3: gary-gregory
+rules:
+  - match: [org.apache.commons:commons-lang3]
+    requires: [gary-gregory]
 """
 println "Created partial sigmund.yaml (commons-lang3 only, with comments)"
 println "Created clean GNUPGHOME at ${gpghome}"
