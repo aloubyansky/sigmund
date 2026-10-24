@@ -430,9 +430,10 @@ class SigmundConfigParser {
      * parsed as patterns, {@code requires} is normalized into a conjunction of disjunctions by
      * signer id, and the enforcement and extra-claims settings are read. Signer references are not
      * resolved and issuer assertability is not checked — those happen when the policy is compiled on
-     * the verification path. The policy is {@code present} when the document declares
-     * {@code rules} or {@code defaults}; a file that only configures signing, tools or signers
-     * is zero-config for verification, which observes rather than enforces.
+     * the verification path. The policy is {@linkplain TrustPolicySpec#declared() declared} when
+     * the document declares {@code rules} or {@code defaults}; a file that only configures
+     * signing, tools or signers is zero-config for verification, which observes rather than
+     * enforces.
      *
      * @param root the document root
      * @param sets the parsed artifact-set registry, for {@code match} expansion
