@@ -56,7 +56,10 @@ The top-level keys are `issuers`, `signers`, `artifact-sets`, `rules`, `defaults
 `verification` and `tools`. Any other key is an error, with the nearest known key suggested —
 an ignored key would silently drop what you wrote. The same holds inside every section, and a
 value of the wrong shape — a list where one value is expected, `"true"` for `true` — is an
-error rather than read as something else. The schema of earlier versions (`trust`,
+error rather than read as something else. Values are read as written: only `true`, `false`,
+`null` and plain numbers are typed, so `yes`, `on` and `~` are words, and `0x12345678` or `0123`
+stays text rather than becoming a number. Quote fingerprints and key IDs anyway, as the examples
+do. The schema of earlier versions (`trust`,
 `signature-optional`, `policy`, `artifacts`, `version`) is rejected with a message saying what
 replaces it.
 

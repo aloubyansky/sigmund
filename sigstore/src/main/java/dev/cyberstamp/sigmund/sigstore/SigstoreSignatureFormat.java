@@ -1,14 +1,13 @@
 package dev.cyberstamp.sigmund.sigstore;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.cyberstamp.sigmund.core.Claim;
 import dev.cyberstamp.sigmund.core.Evidence;
 import dev.cyberstamp.sigmund.core.SignatureFormat;
 import dev.cyberstamp.sigmund.core.SigstoreClaim;
 import java.time.Instant;
 import java.util.List;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Signature format for Sigstore bundles ({@code .sigstore.json}).
@@ -139,7 +138,7 @@ public class SigstoreSignatureFormat implements SignatureFormat {
                 return null;
             }
             return Instant.ofEpochSecond(integratedTime.asLong());
-        } catch (JsonProcessingException | RuntimeException e) {
+        } catch (RuntimeException e) {
             return null;
         }
     }

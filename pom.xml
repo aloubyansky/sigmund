@@ -37,7 +37,7 @@
         <project.build.outputTimestamp>2026-08-21T15:31:12Z</project.build.outputTimestamp>
         <bouncycastle.version>1.86</bouncycastle.version>
         <sigstore-java.version>2.3.0</sigstore-java.version>
-        <jackson.version>2.22.4</jackson.version>
+        <jackson.version>3.2.4</jackson.version>
         <json-schema-validator.version>3.0.8</json-schema-validator.version>
         <cli-assured.version>0.2.2</cli-assured.version>
         <compiler-plugin.version>3.16.0</compiler-plugin.version>
@@ -71,7 +71,7 @@
                 <version>${bouncycastle.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.fasterxml.jackson.dataformat</groupId>
+                <groupId>tools.jackson.dataformat</groupId>
                 <artifactId>jackson-dataformat-yaml</artifactId>
                 <version>${jackson.version}</version>
             </dependency>

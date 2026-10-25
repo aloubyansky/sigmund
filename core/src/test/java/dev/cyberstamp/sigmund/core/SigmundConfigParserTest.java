@@ -714,7 +714,7 @@ class SigmundConfigParserTest {
         @Test
         void nullAnyOfEntryIsError() {
             assertThatThrownBy(() -> parse(
-                    "rules: [{ match: [\"*\"], requires: [{any-of: [alice, ~]}] }]"))
+                    "rules: [{ match: [\"*\"], requires: [{any-of: [alice, null]}] }]"))
                     .isInstanceOf(PolicyConfigException.class)
                     .hasMessageContaining("must be signer ids");
         }
@@ -990,6 +990,14 @@ class SigmundConfigParserTest {
                     .hasMessageContaining("verification.resolve-signers must be true or false");
         }
 
+        /** In YAML 1.2 {@code yes} and {@code on} are words, not booleans. */
+        @Test
+        void yesIsNotTrue() {
+            assertThatThrownBy(() -> parse("verification: { resolve-signers: yes }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("verification.resolve-signers must be true or false, not 'yes'");
+        }
+
         @Test
         void keyserversThatAreAMappingAreErrorRatherThanEmpty() {
             assertThatThrownBy(() -> parse("verification: { keyservers: { url: hkps://keys.openpgp.org } }"))
@@ -1037,6 +1045,19 @@ class SigmundConfigParserTest {
             assertThatThrownBy(() -> parse("tools: { bc: { gnupg-home: [/a, /b] } }"))
                     .isInstanceOf(PolicyConfigException.class)
                     .hasMessageContaining("tools.bc.gnupg-home must be a single value, not a list");
+        }
+
+        /**
+         * The file is read as YAML 1.2, as editors read it: an unquoted {@code 0x…} key ID or a
+         * number with a leading zero stays as written. Read as YAML 1.1, {@code 0x12345678}
+         * reached gpg as {@code 305419896}, and {@code 0123} as the octal {@code 83}.
+         */
+        @Test
+        void anUnquotedHexOrLeadingZeroValueStaysAsWritten() {
+            var settings = parse("tools: { gpg: { key-name: 0x12345678, executable: 0123 } }")
+                    .toolsConfig().get("gpg").settings();
+
+            assertThat(settings).containsEntry("key-name", "0x12345678").containsEntry("executable", "0123");
         }
 
         @Test

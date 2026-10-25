@@ -1,8 +1,5 @@
 package dev.cyberstamp.sigmund.core;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
@@ -16,6 +13,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.dataformat.yaml.YAMLMapper;
 
 /**
  * Parses {@code sigmund.yaml} configuration files into {@link SigmundConfig}.
@@ -37,7 +38,7 @@ import java.util.Set;
  */
 class SigmundConfigParser {
 
-    private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
+    private static final ObjectMapper YAML = new YAMLMapper();
 
     private SigmundConfigParser() {
     }
@@ -66,10 +67,24 @@ class SigmundConfigParser {
      * @throws PolicyConfigException if the content is invalid
      */
     static SigmundConfig parse(String source, Reader reader) {
+        return parseRoot(readTree(source, reader));
+    }
+
+    /**
+     * Reads a {@code sigmund.yaml} into a tree, as YAML 1.2 with the JSON schema: only
+     * {@code true}, {@code false}, {@code null} and JSON numbers are typed, so {@code yes},
+     * {@code ~}, {@code 0x12345678} and {@code 0123} stay as written instead of becoming a
+     * boolean, a null or a number the author did not mean.
+     *
+     * @param source a human-readable description of the source, for the error message
+     * @param reader the YAML source
+     * @return the document's tree, a missing node when the document is empty
+     * @throws PolicyConfigException if the content is not well-formed YAML
+     */
+    static JsonNode readTree(String source, Reader reader) {
         try {
-            JsonNode root = YAML.readTree(reader);
-            return parseRoot(root);
-        } catch (IOException e) {
+            return YAML.readTree(reader);
+        } catch (JacksonException e) {
             throw new PolicyConfigException(
                     "Failed to parse config " + source + ": " + e.getMessage(), e);
         }
@@ -163,8 +178,8 @@ class SigmundConfigParser {
     }
 
     private static SignerIdentity parseSigner(String id, JsonNode node) {
-        if (node.isTextual()) {
-            return parseMinimalSigner(id, node.asText());
+        if (node.isString()) {
+            return parseMinimalSigner(id, node.asString());
         }
         if (!node.isObject()) {
             throw new PolicyConfigException("Signer '" + id + "' must be a string or object");
@@ -284,7 +299,7 @@ class SigmundConfigParser {
             return;
         }
         for (JsonNode fingerprint : fingerprintNodes(value, signerId, yamlKey)) {
-            creds.add(keyCredential(fingerprint.asText(), signerId, yamlKey, keyType));
+            creds.add(keyCredential(fingerprint.asString(), signerId, yamlKey, keyType));
         }
     }
 
@@ -299,7 +314,7 @@ class SigmundConfigParser {
             value.forEach(fingerprints::add);
         }
         for (JsonNode fingerprint : fingerprints) {
-            if (!fingerprint.isTextual()) {
+            if (!fingerprint.isString()) {
                 throw new PolicyConfigException("Signer '" + signerId + "': '" + yamlKey
                         + "' must be a fingerprint or a list of fingerprints, not " + describe(value));
             }
@@ -326,11 +341,11 @@ class SigmundConfigParser {
         if (email == null || email.isNull()) {
             return;
         }
-        if (!email.isTextual()) {
+        if (!email.isString()) {
             throw new PolicyConfigException("Signer '" + signerId
                     + "': 'email' must be an address; to name its issuer, use 'identities'");
         }
-        creds.add(identity(signerId, null, Map.of(IdentityCredential.EMAIL, email.asText())));
+        creds.add(identity(signerId, null, Map.of(IdentityCredential.EMAIL, email.asString())));
     }
 
     /**
@@ -358,7 +373,7 @@ class SigmundConfigParser {
         Map<String, String> attributes = new LinkedHashMap<>();
         for (Map.Entry<String, JsonNode> field : entry.properties()) {
             if (!ISSUER.equals(field.getKey())) {
-                attributes.put(field.getKey(), field.getValue().asText());
+                attributes.put(field.getKey(), field.getValue().asString());
             }
         }
         return attributes;
@@ -411,10 +426,10 @@ class SigmundConfigParser {
         if (node == null || node.isNull()) {
             return null;
         }
-        if (!node.isTextual()) {
+        if (!node.isString()) {
             throw new PolicyConfigException("signing.signer must be a signer id, not " + describe(node));
         }
-        return node.asText();
+        return node.asString();
     }
 
     private static Map<String, List<String>> parseProfiles(JsonNode node) {
@@ -485,7 +500,7 @@ class SigmundConfigParser {
                 throw new PolicyConfigException(location + "." + entry.getKey()
                         + " must be a single value, not " + describe(value));
             }
-            settings.put(entry.getKey(), value.asText());
+            settings.put(entry.getKey(), value.asString());
         }
         return new ToolConfig(settings);
     }
@@ -604,7 +619,7 @@ class SigmundConfigParser {
         if (node == null || node.isNull()) {
             return List.of();
         }
-        if (node.isTextual()) {
+        if (node.isString()) {
             return List.of(Set.of(signerReference(node, location)));
         }
         if (!node.isArray()) {
@@ -623,7 +638,7 @@ class SigmundConfigParser {
     }
 
     private static Set<String> parseClause(JsonNode node, String location) {
-        if (node.isTextual()) {
+        if (node.isString()) {
             return Set.of(signerReference(node, location));
         }
         if (node.isObject()) {
@@ -669,7 +684,7 @@ class SigmundConfigParser {
     }
 
     private static String signerReference(JsonNode node, String location) {
-        String id = node.asText();
+        String id = node.asString();
         if (id.isBlank()) {
             throw new PolicyConfigException(location
                     + ": a signer reference must not be blank");
@@ -684,7 +699,7 @@ class SigmundConfigParser {
         if (node.isArray()) {
             return "a list";
         }
-        return node.isNull() ? "an empty value" : "'" + node.asText() + "'";
+        return node.isNull() ? "an empty value" : "'" + node.asString() + "'";
     }
 
     private static Map<ArtifactOutcome, EnforcementAction> parseEnforcementOverrides(JsonNode node,
@@ -701,7 +716,7 @@ class SigmundConfigParser {
                         + " override");
             }
             enforcement.put(outcomeForEnforcementKey(key, location),
-                    EnforcementAction.parse(field.getValue().asText()));
+                    EnforcementAction.parse(field.getValue().asString()));
         }
         return enforcement;
     }
@@ -750,7 +765,7 @@ class SigmundConfigParser {
                         + "'; expected 'extra-claims' or an 'on-*' enforcement default");
             }
             defaults.put(outcomeForEnforcementKey(key, "defaults"),
-                    EnforcementAction.parse(field.getValue().asText()));
+                    EnforcementAction.parse(field.getValue().asString()));
         }
         return defaults;
     }
@@ -836,7 +851,7 @@ class SigmundConfigParser {
             return List.of();
         }
         if (node.isValueNode()) {
-            String text = node.asText();
+            String text = node.asString();
             return text.isEmpty() ? List.of() : List.of(text);
         }
         if (!node.isArray()) {
@@ -844,11 +859,11 @@ class SigmundConfigParser {
         }
         List<String> result = new ArrayList<>();
         for (JsonNode el : node) {
-            if (el.isContainerNode()) {
+            if (el.isContainer()) {
                 throw notAStringList(location, el);
             }
             if (!el.isNull()) {
-                result.add(el.asText());
+                result.add(el.asString());
             }
         }
         return Collections.unmodifiableList(result);
@@ -861,7 +876,7 @@ class SigmundConfigParser {
 
     private static String textField(JsonNode node, String field) {
         JsonNode child = node.get(field);
-        return child != null && !child.isNull() && child.isValueNode() ? child.asText() : null;
+        return child != null && !child.isNull() && child.isValueNode() ? child.asString() : null;
     }
 
     private static boolean flag(JsonNode node, String field, boolean defaultValue) {

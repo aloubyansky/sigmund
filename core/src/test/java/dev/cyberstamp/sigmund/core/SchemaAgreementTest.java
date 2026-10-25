@@ -3,7 +3,6 @@ package dev.cyberstamp.sigmund.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -14,6 +13,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import tools.jackson.databind.JsonNode;
 
 /**
  * The published schema and Sigmund agree on what a {@code sigmund.yaml} may contain.
@@ -45,6 +45,7 @@ class SchemaAgreementTest {
         return Stream.of(
                 "",
                 "rules: []",
+                "tools: { gpg: { key-name: 0x12345678, executable: 0123 } }",
                 """
                         issuers: [keys.openpgp.org, "https://token.actions.githubusercontent.com"]
                         signers:
@@ -152,6 +153,7 @@ class SchemaAgreementTest {
                 "signing: { profiles: { hybrid: [pgp4, pqc] } }",
                 "verification: { resolve-signer: false }",
                 "verification: { resolve-signers: \"true\" }",
+                "verification: { resolve-signers: yes }",
                 "verification: { keyservers: { url: hkps://keys.openpgp.org } }",
                 "verification: { toolchain: [bcc] }",
                 "tools: [bc]",
@@ -231,13 +233,13 @@ class SchemaAgreementTest {
             JsonNode properties = node.get("properties");
             assertThat(properties).as("properties of %s", node).isNotNull();
             Set<String> names = new HashSet<>();
-            properties.fieldNames().forEachRemaining(names::add);
+            names.addAll(properties.propertyNames());
             return names;
         }
 
         private Set<String> enumValues(JsonNode node) {
             List<String> values = new ArrayList<>();
-            node.get("enum").forEach(value -> values.add(value.asText()));
+            node.get("enum").forEach(value -> values.add(value.asString()));
             return new HashSet<>(values);
         }
     }

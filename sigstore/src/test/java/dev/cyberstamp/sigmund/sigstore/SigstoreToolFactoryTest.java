@@ -3,8 +3,6 @@ package dev.cyberstamp.sigmund.sigstore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.SigmundSchema;
 import dev.cyberstamp.sigmund.core.SignatureToolFactory;
@@ -20,6 +18,8 @@ import java.util.ServiceLoader;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 class SigstoreToolFactoryTest {
 
@@ -48,9 +48,8 @@ class SigstoreToolFactoryTest {
             try (InputStream in = SigmundSchema.class.getResourceAsStream("/" + SigmundSchema.RESOURCE)) {
                 schema = new ObjectMapper().readTree(in);
             }
-            List<String> listed = new ArrayList<>();
-            schema.at("/properties/tools/properties/sigstore/properties").fieldNames()
-                    .forEachRemaining(listed::add);
+            List<String> listed = new ArrayList<>(
+                    schema.at("/properties/tools/properties/sigstore/properties").propertyNames());
 
             assertThat(factory.acceptedSettings()).containsExactlyInAnyOrderElementsOf(listed);
         }
