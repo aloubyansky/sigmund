@@ -650,7 +650,7 @@ public class Sigmund implements AutoCloseable {
          *
          * @throws PolicyConfigException naming the unknown tool or setting and the nearest known one
          */
-        private void checkToolConfiguration() {
+        void checkToolConfiguration() {
             for (String toolName : toolsConfig.toolNames()) {
                 SignatureToolFactory factory = factoryFor("tools", toolName);
                 checkSettings(toolName, toolsConfig.get(toolName).settings().keySet(),

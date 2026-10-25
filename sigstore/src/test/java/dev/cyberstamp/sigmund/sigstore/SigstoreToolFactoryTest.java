@@ -3,18 +3,20 @@ package dev.cyberstamp.sigmund.sigstore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.cyberstamp.sigmund.core.IdentityCredential;
+import dev.cyberstamp.sigmund.core.SigmundSchema;
 import dev.cyberstamp.sigmund.core.SignatureToolFactory;
 import dev.cyberstamp.sigmund.core.ToolExecutionException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -37,23 +39,20 @@ class SigstoreToolFactoryTest {
         }
 
         /**
-         * The settings Sigstore accepts are exactly those its table in {@code configuration.md}
-         * lists, as core checks for the built-in tools.
+         * The settings Sigstore accepts are exactly those the published schema lists for
+         * {@code tools.sigstore}, as core checks for the built-in tools.
          */
         @Test
-        void acceptsTheSettingsItsTableDocuments() throws IOException {
-            String text = Files.readString(Path.of("..", "docs", "configuration.md"));
-            Matcher section = Pattern.compile(
-                    "(?ms)^### Sigstore\\n.*?Configured in the top-level `tools\\.sigstore` section\\.(.*?)(?=^##)")
-                    .matcher(text);
-            assertThat(section.find()).as("Sigstore settings table").isTrue();
-            List<String> documented = new ArrayList<>();
-            Matcher row = Pattern.compile("(?m)^\\| `([\\w-]+)` \\|").matcher(section.group(1));
-            while (row.find()) {
-                documented.add(row.group(1));
+        void acceptsTheSettingsTheSchemaLists() throws IOException {
+            JsonNode schema;
+            try (InputStream in = SigmundSchema.class.getResourceAsStream("/" + SigmundSchema.RESOURCE)) {
+                schema = new ObjectMapper().readTree(in);
             }
+            List<String> listed = new ArrayList<>();
+            schema.at("/properties/tools/properties/sigstore/properties").fieldNames()
+                    .forEachRemaining(listed::add);
 
-            assertThat(factory.acceptedSettings()).containsExactlyInAnyOrderElementsOf(documented);
+            assertThat(factory.acceptedSettings()).containsExactlyInAnyOrderElementsOf(listed);
         }
     }
 
