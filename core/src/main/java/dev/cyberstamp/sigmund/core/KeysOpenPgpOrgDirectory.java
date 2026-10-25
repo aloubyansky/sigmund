@@ -28,7 +28,9 @@ import org.bouncycastle.openpgp.operator.bc.BcKeyFingerprintCalculator;
  * serves a key's other data without unverified user IDs, so every address on a key it returns
  * is one it vouches for. Keys are looked up with {@code GET /vks/v1/by-fingerprint/<FPR>}, which
  * accepts the fingerprint of a primary key or any subkey in upper-case hex; the returned key is
- * checked to hold that fingerprint before any address on it is believed.
+ * checked to hold that fingerprint before any address on it is believed. The service serves
+ * OpenPGP v4 keys only and rejects a v6 fingerprint, so a v6 key is not asked about: the
+ * directory vouches for no address on it, which is an answer, not a lookup that failed.
  *
  * <p>
  * Lookups, including failed ones, are cached for the life of the instance: the directory
@@ -40,6 +42,7 @@ final class KeysOpenPgpOrgDirectory implements OpenPgpDirectory {
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
     private static final int NOT_FOUND = 404;
     private static final int OK = 200;
+    private static final int V4_FINGERPRINT_LENGTH = 40;
 
     private final String endpoint;
     private HttpClient httpClient;
@@ -70,6 +73,9 @@ final class KeysOpenPgpOrgDirectory implements OpenPgpDirectory {
 
     @Override
     public List<String> verifiedAddresses(String fingerprint) throws IOException {
+        if (fingerprint.length() != V4_FINGERPRINT_LENGTH) {
+            return List.of();
+        }
         String key = fingerprint.toUpperCase(Locale.ROOT);
         Lookup lookup = lookups.computeIfAbsent(key, this::lookUp);
         if (lookup.failure() != null) {

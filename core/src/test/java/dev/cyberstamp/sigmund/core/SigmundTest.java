@@ -8,6 +8,7 @@ import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -480,7 +481,7 @@ class SigmundTest {
         }
 
         @Test
-        void verifierAssessTrusted() throws IOException {
+        void verifierAssessTrusted() {
             var claim = new OpenPgpClaim("armored", 4, null, 1, null);
             var result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Alice <alice@example.com>", "RSA",
                     4, "4AEE18F83AFDEB23", "4AEE18F83AFDEB23000000000000000000000000");
@@ -503,7 +504,7 @@ class SigmundTest {
         }
 
         @Test
-        void verifierAssessUntrusted() throws IOException {
+        void verifierAssessUntrusted() {
             var claim = new OpenPgpClaim("armored", 4, null, 1, null);
             var result = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "Bob <bob@example.com>", "RSA",
                     4, "0000000018F83AFD", "0000000018F83AFD000000000000000000000000");
@@ -525,7 +526,7 @@ class SigmundTest {
         }
 
         @Test
-        void verifierAssessNotConfigured() throws IOException {
+        void verifierAssessNotConfigured() {
             try (var sigmund = Sigmund.builder()
                     .addTool(mockTool("gpg", true, false, Set.of("pgp4")))
                     .build()) {
@@ -591,6 +592,52 @@ class SigmundTest {
                 assertThat(sigmund.tool("bc"))
                         .as("bc tool should always be available (pure Java)").isNotNull();
             }
+        }
+    }
+
+    /**
+     * The addresses a directory vouches for a key, asked for outside verification — by an update
+     * deciding whether a new key belongs to a signer named by address.
+     */
+    @Nested
+    class DirectoryIdentities {
+
+        private static final String KEY = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
+
+        private final List<String> asked = new ArrayList<>();
+
+        private Sigmund withDirectory(List<String> addresses) {
+            OpenPgpDirectory directory = new OpenPgpDirectory() {
+                @Override
+                public String name() {
+                    return IssuerKind.KEYS_OPENPGP_ORG;
+                }
+
+                @Override
+                public List<String> verifiedAddresses(String fingerprint) {
+                    asked.add(fingerprint);
+                    return addresses;
+                }
+            };
+            return Sigmund.builder().addTool(mockTool("bc", true, false, Set.of("pgp4")))
+                    .verificationConfig(onlyTools("bc")).openPgpDirectory(directory).build();
+        }
+
+        @Test
+        void eachVerifiedAddressIsAnEmailIdentityFromTheDirectory() throws IOException {
+            try (Sigmund sigmund = withDirectory(List.of("alice@example.com"))) {
+                assertThat(sigmund.directoryIdentities(KeyCredential.openPgp(KEY), List.of("keys.openpgp.org")))
+                        .containsExactly(IdentityCredential.email(IssuerKind.KEYS_OPENPGP_ORG, "alice@example.com"));
+            }
+        }
+
+        @Test
+        void anIssuerThatIsNotADirectoryIsNotAsked() throws IOException {
+            try (Sigmund sigmund = withDirectory(List.of("alice@example.com"))) {
+                assertThat(sigmund.directoryIdentities(KeyCredential.openPgp(KEY),
+                        List.of("https://token.actions.githubusercontent.com"))).isEmpty();
+            }
+            assertThat(asked).isEmpty();
         }
     }
 

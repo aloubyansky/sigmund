@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed. Revised 2026-10-24: key rotation is recorded in the policy rather than
+Proposed. Revised 2026-10-25: bootstrap names a signer by the address the
+directory verified and trusts the directory in the generated file. Revised
+2026-10-24: key rotation is recorded in the policy rather than
 in stored binding history, and `pgp4`/`pgp6` accept a list of fingerprints.
 
 ## Context
@@ -303,8 +305,12 @@ another keyserver, or from the evidence.
   fingerprints for the keys already seen, which prove old signatures offline and
   forever, and the identity for keys to come. `pgp4` and `pgp6` accept a list,
   so a signer that rotated keeps every key it signed with. Bootstrap emits the
-  fingerprints, and adds the identity — listing the directory — when the
-  directory served a verified address for the key; an update pins a new key
+  fingerprints, and names the signer by `email:` when the directory served a
+  verified address for the key, listing the directory under `issuers` in the
+  generated file — trust a reviewer sees and can delete, never a default in
+  code, so `issuers` stays empty when the file says nothing; an update that adds
+  a signer to a file not listing the directory names it inline under
+  `identities` instead, so it never widens the listed grant. An update pins a new key
   the directory confirms for a signer's address onto that signer, as a reviewed
   change to the file. Stored first- and last-seen binding times were rejected:
   they made a verdict depend on what one machine happened to observe, so a

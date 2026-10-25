@@ -101,24 +101,32 @@ mvn sigmund:dependency-signers \
   -Dsigmund.generateTrustConfig=true
 ```
 
-This creates a `sigmund.yaml` file in your project root based on actual dependency signatures. It has two sections.
+This creates a `sigmund.yaml` file in your project root based on actual dependency signatures.
 
-**signers** — Declares known signers by their full key fingerprints, with the user ID each key carries as a comment:
+**signers** — Declares known signers by their full key fingerprints. When `keys.openpgp.org` has verified an address for a signer's key — its owner confirmed the address before the directory published it — the signer is named by that address too, and the file trusts the directory under `issuers`. A key without one shows the user ID it carries as a comment on its fingerprint, to help you recognize it:
 
 ```yaml
+issuers: [keys.openpgp.org]
+
 signers:
-  alice-developer:  # user ID on the key, unverified: Alice Developer <alice@example.com>
+  alice-developer:
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+    email: "alice@example.com"
+  bob-builder:
+    pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"  # user ID on the key, unverified: Bob Builder <bob@example.org>
 ```
 
-The user ID is not used for matching — anyone can put any address on a key. To also accept keys Alice generates later, add `email: "alice@example.com"` and list `keys.openpgp.org` under `issuers`; see [issuers](configuration.md#issuers).
+The comment is unverified because a user ID is self-certified; it is also kept when the key's user ID shows a different address from the one the directory verified. The fingerprint proves the key already seen, offline. The address accepts a key Alice generates later, once she verifies the address for it, and the next update pins that key's fingerprint too. The user ID itself is never used for matching — anyone can put any address on a key. What the address trusts is the directory's verification and Alice's mailbox; to rely on fingerprints only, remove the `email:` lines and `issuers`. A signer whose key has no verified address, or a run with `-Dsigmund.resolveSigners=false`, gets the fingerprint alone. See [issuers](configuration.md#issuers).
 
 **rules** — What each group of artifacts must satisfy. A requirement rule per group of artifacts signed alike, and one rule listing the modules that carried no signature:
 
 ```yaml
+issuers: [keys.openpgp.org]
+
 signers:
-  alice-developer:  # user ID on the key, unverified: Alice Developer <alice@example.com>
+  alice-developer:
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+    email: "alice@example.com"
 
 rules:
   - match: com.example.*
@@ -206,7 +214,7 @@ This adds what the policy does not cover yet, preserving all existing content in
 - an artifact no rule matches gets a requirement on its signers, or, if it carries no signature, a rule tolerating that;
 - a module that was listed as unsigned and is now signed moves out of that list into a requirement rule of its own.
 
-It never rewrites what a requirement already covers. An artifact whose rule requires one signer but which is now signed by another is listed under **Needs review** instead — a changed signer is exactly what verification exists to catch, so accepting it is your decision. The update is checked before it is written: a result that would not load is not written.
+It never rewrites what a requirement already covers, with one exception: a rotated key. When an artifact is signed by a new key that the directory confirms for the address of the signer its rule requires — the publisher verified the address for the new key — the update adds the fingerprint to that signer, so the signatures keep verifying after the publisher rotates again. Any other new signer is listed under **Needs review** instead — a changed signer is exactly what verification exists to catch, so accepting it is your decision. The update is checked before it is written: a result that would not load is not written.
 
 Review changes before committing:
 

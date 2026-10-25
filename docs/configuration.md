@@ -324,6 +324,8 @@ signers:
 
   It matches, ignoring case, an address that a directory served for the signing key, or the address in a Sigstore certificate from that issuer. A user ID on an OpenPGP key is **never** matched on its own: anyone can put any address on a key they generate. When a key is not already pinned by a fingerprint, the directory is asked for the addresses it has verified for that key; if it cannot be reached, the artifact is `INDETERMINATE` (`key-unavailable`), never accepted.
 
+  keys.openpgp.org serves OpenPGP v4 keys only, so it vouches for no address on a v6 key: a v6 key is accepted by its fingerprint, and a publisher's new v6 key needs adding by hand.
+
   An address is what lets a policy accept a key the publisher generates later. Its limit is that directory bindings are current state: after a publisher verifies the address for a new key, the directory serves the old key without it, so old signatures can no longer be tied to the address by a verifier that never saw them. Pair addresses with fingerprints — fingerprints for the keys already seen, the address for keys to come. What an address trusts is the directory's verification and the security of the email account.
 
 - **`identities`** — A list of complete identities, each an `issuer` (optional; otherwise the listed [`issuers`](#issuers)) and the attributes that issuer must have attested. Only the attributes you name need to match, and at least one besides `issuer` is required. One signer may carry several, for example the same address from two issuers:

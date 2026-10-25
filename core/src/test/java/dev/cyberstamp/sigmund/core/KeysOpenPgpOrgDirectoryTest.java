@@ -7,24 +7,21 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.bouncycastle.bcpg.PublicKeyPacket;
 import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPPublicKeyRing;
+import org.bouncycastle.openpgp.api.bc.BcOpenPGPApi;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 class KeysOpenPgpOrgDirectoryTest {
-
-    @TempDir
-    Path tempDir;
 
     private HttpServer server;
     private final Map<String, byte[]> keys = new ConcurrentHashMap<>();
@@ -85,6 +82,20 @@ class KeysOpenPgpOrgDirectoryTest {
         assertThat(directory.verifiedAddresses("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12")).isEmpty();
     }
 
+    /**
+     * keys.openpgp.org serves v4 keys only, and answers a 64-hex fingerprint with HTTP 400. It
+     * vouches for no address on a v6 key, which is an answer rather than a failure: a failure
+     * would leave the claim key-unavailable, as if asking again could help.
+     */
+    @Test
+    void aV6KeyHasNoAddressesAndIsNotAskedAbout() throws Exception {
+        String v6 = "D62AAB339E45E5EA2FD036872B01D46A517A299115599CCADD4C50A956F8E707";
+        statuses.put(v6, 400);
+
+        assertThat(directory.verifiedAddresses(v6)).isEmpty();
+        assertThat(requests).isEmpty();
+    }
+
     @Test
     void anAnswerAboutAnotherKeyVouchesForNothing() throws Exception {
         PGPPublicKeyRing ring = generate("Someone Else <else@example.org>");
@@ -137,11 +148,14 @@ class KeysOpenPgpOrgDirectoryTest {
         assertThat(KeysOpenPgpOrgDirectory.standard().name()).isEqualTo(IssuerKind.KEYS_OPENPGP_ORG);
     }
 
-    private PGPPublicKeyRing generate(String userId) throws Exception {
-        BcKeyStore store = new BcKeyStore(null, tempDir.resolve("cert-d-" + keys.size() + requests.size()),
-                tempDir.resolve("bc-" + keys.size()));
-        String fingerprint = new BcRunner(store, null, null).generateKey(userId, "ed25519");
-        return store.findPublicKey(fingerprint).ring();
+    /** A v4 key, the only version keys.openpgp.org serves. */
+    private static PGPPublicKeyRing generate(String userId) throws Exception {
+        return new BcOpenPGPApi().generateKey(PublicKeyPacket.VERSION_4)
+                .ed25519x25519Key(userId)
+                .addSigningSubkey()
+                .build()
+                .toCertificate()
+                .getPGPPublicKeyRing();
     }
 
     private static String primaryFingerprint(PGPPublicKeyRing ring) {
