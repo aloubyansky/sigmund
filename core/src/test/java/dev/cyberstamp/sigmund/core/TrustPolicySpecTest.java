@@ -20,7 +20,7 @@ class TrustPolicySpecTest {
     @Test
     void defensiveCopyOfRules() {
         var rules = new java.util.ArrayList<RuleSpec>();
-        rules.add(new RuleSpec(List.of(), List.of(), Map.of(), "rules[0]"));
+        rules.add(new RuleSpec(List.of(), List.of(), Map.of(), "rules[0]", null));
         var spec = new TrustPolicySpec(rules, ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
         rules.clear();
         assertThat(spec.rules()).hasSize(1);

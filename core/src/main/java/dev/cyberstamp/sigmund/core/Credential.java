@@ -20,17 +20,19 @@ package dev.cyberstamp.sigmund.core;
  * the proven one. A key never matches an identity, whatever either says.
  *
  * <p>
- * The type constants double as the names of the signature types a signing tool produces, as
- * used by {@code signing.credential-types}.
+ * The type constants are spelled as {@code sigmund.yaml} writes them — the key types as signer
+ * entries name them, {@code pgp4} and {@code pgp6} — and double as the names of the signature
+ * types a signing tool produces, as used by {@code signing.credential-types}. A report naming a
+ * credential's type therefore names it the way the policy that accepts it does.
  *
  * @see SignerIdentity
  */
 public sealed interface Credential permits KeyCredential, IdentityCredential {
 
     /** OpenPGP v4 key material. */
-    String TYPE_OPENPGP_V4 = "openpgp4";
+    String TYPE_PGP4 = "pgp4";
     /** OpenPGP v6 key material. */
-    String TYPE_OPENPGP_V6 = "openpgp6";
+    String TYPE_PGP6 = "pgp6";
     /** An issuer-asserted identity. */
     String TYPE_IDENTITY = "identity";
     /** Signature type produced by Sigstore keyless signing. */

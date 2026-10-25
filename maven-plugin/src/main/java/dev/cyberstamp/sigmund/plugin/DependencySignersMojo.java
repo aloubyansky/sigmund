@@ -747,7 +747,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             String fingerprint = SignerInfo.fullFingerprint(opvr);
             return fingerprint == null ? List.of()
                     : List.of(new KeyCredential(
-                            opvr.version() >= 6 ? Credential.TYPE_OPENPGP_V6 : Credential.TYPE_OPENPGP_V4,
+                            opvr.version() >= 6 ? Credential.TYPE_PGP6 : Credential.TYPE_PGP4,
                             fingerprint));
         }
         if (vr instanceof SigstoreVerifyResult svr && svr.identity() != null) {
@@ -875,7 +875,9 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
      * <p>
      * The ordering is stable: trust requirements first (sorted by pattern), then a single tolerant
      * rule for the unsigned modules. Each item is a two-space-indented {@code - match:} entry, so the
-     * lines slot directly under a {@code rules:} header.
+     * lines slot directly under a {@code rules:} header. A requirement's single pattern, and a
+     * single required signer, are written as strings; the unsigned modules' rule keeps a flow list
+     * of any length, the shape {@link RuleListEditor} edits when one of them starts being signed.
      *
      * @param trustPatterns artifact patterns mapped to the signer ids that must sign them
      * @param unsignedCoords module patterns tolerated via {@code on-no-claim: ignore}
@@ -887,8 +889,8 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         trustPatterns.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
                 .forEach(entry -> {
-                    ruleLines.add("  - match: [" + entry.getKey() + "]");
-                    ruleLines.add("    requires: [" + String.join(", ", entry.getValue()) + "]");
+                    ruleLines.add("  - match: " + entry.getKey());
+                    ruleLines.add("    requires: " + stringOrFlowList(entry.getValue()));
                 });
         if (!unsignedCoords.isEmpty()) {
             ruleLines.add("  - match: [" + unsignedCoords.stream().distinct().sorted()
@@ -896,6 +898,14 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             ruleLines.add("    on-no-claim: ignore");
         }
         return ruleLines;
+    }
+
+    /**
+     * Writes a single value as a string and several as a flow list, the way a person would write
+     * them.
+     */
+    private static String stringOrFlowList(List<String> values) {
+        return values.size() == 1 ? values.get(0) : "[" + String.join(", ", values) + "]";
     }
 
     /**

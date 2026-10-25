@@ -144,7 +144,7 @@ class ClaimIdentityResolverTest {
         var signers = new SignersConfig(Map.of(signer.id(), signer));
         var spec = new TrustPolicySpec(
                 List.of(new RuleSpec(List.of(ArtifactPattern.parse("org.example")),
-                        List.of(Set.of(signer.id())), Map.of(), "rules[0]")),
+                        List.of(Set.of(signer.id())), Map.of(), "rules[0]", null)),
                 ClaimSetMode.ALL_CLAIMS, Map.of(), issuers, true);
         return RulePolicy.compile(spec, signers);
     }

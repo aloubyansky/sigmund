@@ -85,7 +85,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
     private static final String SOURCE_HKP = "hkp";
 
     private static final Set<String> SUPPORTED_CREDENTIAL_TYPES = Set.of(
-            Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6);
+            Credential.TYPE_PGP4, Credential.TYPE_PGP6);
 
     /**
      * The algorithm policy for verification, shared with the other OpenPGP backends: see
@@ -200,8 +200,8 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
             String userId = keyStore.findPrimaryUserId(fp);
             int version = pub.getVersion();
             Set<String> types = version >= 6
-                    ? Set.of(Credential.TYPE_OPENPGP_V6)
-                    : Set.of(Credential.TYPE_OPENPGP_V4);
+                    ? Set.of(Credential.TYPE_PGP6)
+                    : Set.of(Credential.TYPE_PGP4);
             return List.of(new SigningInfo(NAME, fp, algo, userId, types));
         } catch (IOException | PGPException e) {
             String fp = signingFingerprint != null ? signingFingerprint

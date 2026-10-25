@@ -72,7 +72,7 @@ class SignatureEvidenceAdapterTest {
         @Test
         void singleClaimVerifiedAndCredentialsExtracted() {
             var tool = mockTool("gpg", true, true, passVerifyResult(),
-                    List.of(new KeyCredential("openpgp4", FP)));
+                    List.of(new KeyCredential("pgp4", FP)));
             var adapter = adapterWith(singleClaimFormat(), List.of(tool));
 
             List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
@@ -80,7 +80,7 @@ class SignatureEvidenceAdapterTest {
             assertThat(results).hasSize(1);
             assertThat((results.get(0).outcome() == ClaimOutcome.VERIFIED)).isTrue();
             assertThat(results.get(0).attesterCredentials()).hasSize(1);
-            assertThat(results.get(0).attesterCredentials().get(0).type()).isEqualTo("openpgp4");
+            assertThat(results.get(0).attesterCredentials().get(0).type()).isEqualTo("pgp4");
             assertThat(results.get(0).kind()).isEqualTo("openpgp");
         }
 
@@ -103,7 +103,7 @@ class SignatureEvidenceAdapterTest {
                             4, null, null),
                     List.of());
             var passing = mockTool("gpg", true, true, passVerifyResult(),
-                    List.of(new KeyCredential("openpgp4", FP)));
+                    List.of(new KeyCredential("pgp4", FP)));
             var adapter = adapterWith(singleClaimFormat(), List.of(skipping, passing));
 
             List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
@@ -137,16 +137,16 @@ class SignatureEvidenceAdapterTest {
                     List.of(V4_CLAIM, new OpenPgpClaim("armored2", 6,
                             "CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9", 1, null)));
             var v4Tool = mockToolForVersion("gpg", 4, passVerifyResult(),
-                    List.of(new KeyCredential("openpgp4", FP)));
+                    List.of(new KeyCredential("pgp4", FP)));
             var v6Tool = mockToolForVersion("sq", 6, passVerifyResult(),
-                    List.of(new KeyCredential("openpgp6", "CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9")));
+                    List.of(new KeyCredential("pgp6", "CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9")));
             var adapter = adapterWith(format, List.of(v4Tool, v6Tool));
 
             List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
 
             assertThat(results).hasSize(2);
-            assertThat(results.get(0).attesterCredentials().get(0).type()).isEqualTo("openpgp4");
-            assertThat(results.get(1).attesterCredentials().get(0).type()).isEqualTo("openpgp6");
+            assertThat(results.get(0).attesterCredentials().get(0).type()).isEqualTo("pgp4");
+            assertThat(results.get(1).attesterCredentials().get(0).type()).isEqualTo("pgp6");
         }
     }
 
@@ -239,7 +239,7 @@ class SignatureEvidenceAdapterTest {
         void failContinuesToNextTool() {
             var failTool = mockTool("bc", true, true, failVerifyResult(), List.of());
             var passingTool = mockTool("gpg", true, true, passVerifyResult(),
-                    List.of(new KeyCredential("openpgp4", FP)));
+                    List.of(new KeyCredential("pgp4", FP)));
             var adapter = adapterWith(singleClaimFormat(), List.of(failTool, passingTool));
 
             List<ClaimResult> results = adapter.verify(ARTIFACT, Evidence.read(EVIDENCE, Evidence.SOURCE_SIDECAR));
@@ -387,7 +387,7 @@ class SignatureEvidenceAdapterTest {
 
             @Override
             public Set<String> supportedCredentialTypes() {
-                return Set.of("openpgp4");
+                return Set.of("pgp4");
             }
 
             @Override
@@ -450,7 +450,7 @@ class SignatureEvidenceAdapterTest {
 
             @Override
             public Set<String> supportedCredentialTypes() {
-                return Set.of("openpgp4");
+                return Set.of("pgp4");
             }
 
             @Override
@@ -500,7 +500,7 @@ class SignatureEvidenceAdapterTest {
 
             @Override
             public Set<String> supportedCredentialTypes() {
-                return Set.of("openpgp6");
+                return Set.of("pgp6");
             }
 
             @Override
@@ -561,7 +561,7 @@ class SignatureEvidenceAdapterTest {
 
         @Override
         public Set<String> supportedCredentialTypes() {
-            return Set.of("openpgp4");
+            return Set.of("pgp4");
         }
 
         @Override
@@ -586,7 +586,7 @@ class SignatureEvidenceAdapterTest {
         @Override
         public List<Credential> extractCredentials(VerifyResult r) {
             if (r.isVerified()) {
-                return List.of(new KeyCredential("openpgp4", FP));
+                return List.of(new KeyCredential("pgp4", FP));
             }
             return List.of();
         }

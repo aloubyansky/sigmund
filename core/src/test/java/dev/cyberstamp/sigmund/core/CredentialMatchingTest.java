@@ -15,19 +15,14 @@ class CredentialMatchingTest {
             DigestSet.sha256("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
             Evidence.SOURCE_SIDECAR);
 
-    private static final VerifyResult PGP_PASS = new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, null, null, 4, null,
-            null);
-    private static final VerifyResult SIGSTORE_PASS = new SigstoreVerifyResult(ClaimOutcome.VERIFIED, null, null, null, null,
-            null, -1);
-
     private static final String FP = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
 
     @Test
     void fingerprintMatchV4() {
         var signer = new SignerIdentity("alice", List.of(
-                new KeyCredential("openpgp4", FP)));
+                new KeyCredential("pgp4", FP)));
 
-        var evidence = claim(List.of(new KeyCredential("openpgp4", FP.toLowerCase())));
+        var evidence = claim(List.of(new KeyCredential("pgp4", FP.toLowerCase())));
 
         assertThat(matchesAny(signer, evidence)).isTrue();
     }
@@ -35,9 +30,9 @@ class CredentialMatchingTest {
     @Test
     void fingerprintSharingOnlyAKeyIdDoesNotMatch() {
         var signer = new SignerIdentity("alice", List.of(
-                new KeyCredential("openpgp4", FP)));
+                new KeyCredential("pgp4", FP)));
 
-        var evidence = claim(List.of(new KeyCredential("openpgp4",
+        var evidence = claim(List.of(new KeyCredential("pgp4",
                 "000000000000000000000000" + FP.substring(24))));
 
         assertThat(matchesAny(signer, evidence)).isFalse();
@@ -111,7 +106,7 @@ class CredentialMatchingTest {
     @Test
     void noOverlapDifferentCredentialTypes() {
         var signer = new SignerIdentity("alice", List.of(
-                new KeyCredential("openpgp4", "4AEE18F83AFDEB23000000000000000000000000")));
+                new KeyCredential("pgp4", "4AEE18F83AFDEB23000000000000000000000000")));
 
         var evidence = claim(List.of(
                 IdentityCredential.email(null, "alice@example.com")));
@@ -122,12 +117,12 @@ class CredentialMatchingTest {
     @Test
     void multipleCredentialsOneMatches() {
         var signer = new SignerIdentity("alice", List.of(
-                new KeyCredential("openpgp4", "4AEE18F83AFDEB23000000000000000000000000"),
-                new KeyCredential("openpgp6", "ABCD1234ABCD1234000000000000000000000000000000000000000000000000"),
+                new KeyCredential("pgp4", "4AEE18F83AFDEB23000000000000000000000000"),
+                new KeyCredential("pgp6", "ABCD1234ABCD1234000000000000000000000000000000000000000000000000"),
                 IdentityCredential.email(null, "alice@example.com")));
 
         var evidence = claim(List.of(
-                new KeyCredential("openpgp6", "ABCD1234ABCD1234000000000000000000000000000000000000000000000000")));
+                new KeyCredential("pgp6", "ABCD1234ABCD1234000000000000000000000000000000000000000000000000")));
 
         assertThat(matchesAny(signer, evidence)).isTrue();
     }

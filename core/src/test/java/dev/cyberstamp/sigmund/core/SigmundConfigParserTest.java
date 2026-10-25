@@ -40,14 +40,14 @@ class SigmundConfigParserTest {
                     signers:
                       alice:
                         email: "alice@example.com"
-                        openpgp4: "4AEE18F83AFDEB23000000000000000000000000"
-                        openpgp6: "ABCD1234ABCD1234000000000000000000000000000000000000000000000000"
+                        pgp4: "4AEE18F83AFDEB23000000000000000000000000"
+                        pgp6: "ABCD1234ABCD1234000000000000000000000000000000000000000000000000"
                     """);
             var alice = config.signers().get("alice");
             assertThat(alice.credentials().size()).isEqualTo(3);
 
             var types = alice.credentials().stream().map(Credential::type).toList();
-            assertThat(types).contains("openpgp4", "openpgp6", Credential.TYPE_IDENTITY);
+            assertThat(types).contains("pgp4", "pgp6", Credential.TYPE_IDENTITY);
         }
 
         @Test
@@ -366,7 +366,7 @@ class SigmundConfigParserTest {
                         pgp4: "4AEE18F83AFDEB23000000000000000000000000"
                     """);
             var fp = (KeyCredential) config.signers().get("alice").credentials().get(0);
-            assertThat(fp.type()).isEqualTo("openpgp4");
+            assertThat(fp.type()).isEqualTo("pgp4");
         }
 
         @Test
@@ -377,29 +377,81 @@ class SigmundConfigParserTest {
                         pgp6: "ABCD1234ABCD1234000000000000000000000000000000000000000000000000"
                     """);
             var fp = (KeyCredential) config.signers().get("alice").credentials().get(0);
-            assertThat(fp.type()).isEqualTo("openpgp6");
+            assertThat(fp.type()).isEqualTo("pgp6");
         }
 
         @Test
-        void openpgp4Alias() {
-            var config = parse("""
+        void openpgp4IsNotASignerKey() {
+            assertThatThrownBy(() -> parse("""
                     signers:
                       alice:
                         openpgp4: "4AEE18F83AFDEB23000000000000000000000000"
-                    """);
-            var fp = (KeyCredential) config.signers().get("alice").credentials().get(0);
-            assertThat(fp.type()).isEqualTo("openpgp4");
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("unknown key 'openpgp4'")
+                    .hasMessageContaining("pgp4");
         }
 
         @Test
-        void openpgp6Alias() {
-            var config = parse("""
+        void openpgp6IsNotASignerKey() {
+            assertThatThrownBy(() -> parse("""
                     signers:
                       alice:
                         openpgp6: "ABCD1234ABCD1234000000000000000000000000000000000000000000000000"
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("unknown key 'openpgp6'");
+        }
+
+        @Test
+        void aSignerThatRotatedKeysListsEveryFingerprint() {
+            var config = parse("""
+                    signers:
+                      jane:
+                        pgp4: ["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"]
+                        pgp6: ["ABCD1234ABCD1234000000000000000000000000000000000000000000000000"]
+                        email: "jane@example.com"
                     """);
-            var fp = (KeyCredential) config.signers().get("alice").credentials().get(0);
-            assertThat(fp.type()).isEqualTo("openpgp6");
+            assertThat(config.signers().get("jane").credentials())
+                    .filteredOn(KeyCredential.class::isInstance)
+                    .extracting(credential -> ((KeyCredential) credential).fingerprint())
+                    .containsExactly("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                            "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+                            "ABCD1234ABCD1234000000000000000000000000000000000000000000000000");
+        }
+
+        @Test
+        void aMemberMayListSeveralFingerprints() {
+            var config = parse("""
+                    signers:
+                      acme:
+                        members:
+                          - pgp4: ["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"]
+                    """);
+            assertThat(config.signers().get("acme").credentials()).hasSize(2);
+        }
+
+        @Test
+        void aFingerprintThatIsAMappingIsErrorRatherThanDropped() {
+            assertThatThrownBy(() -> parse("""
+                    signers:
+                      jane:
+                        pgp4: { fingerprint: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }
+                        email: "jane@example.com"
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("Signer 'jane': 'pgp4' must be a fingerprint or a list of fingerprints");
+        }
+
+        @Test
+        void aFingerprintListEntryThatIsNotAStringIsError() {
+            assertThatThrownBy(() -> parse("""
+                    signers:
+                      jane:
+                        pgp6: [["ABCD1234ABCD1234000000000000000000000000000000000000000000000000"]]
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("Signer 'jane': 'pgp6' must be a fingerprint or a list of fingerprints");
         }
 
         @Test
@@ -425,9 +477,9 @@ class SigmundConfigParserTest {
                     signers:
                       apache:
                         members:
-                          - openpgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+                          - pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
                             email: "dev@maven.apache.org"
-                          - openpgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
+                          - pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
                     """);
             var apache = config.signers().get("apache");
             assertThat(apache.credentials().size()).isEqualTo(3);
@@ -453,15 +505,15 @@ class SigmundConfigParserTest {
                     signers:
                       team:
                         members:
-                          - openpgp4: "AAAA1111AAAA1111000000000000000000000000"
-                            openpgp6: "BBBB2222BBBB2222000000000000000000000000000000000000000000000000"
+                          - pgp4: "AAAA1111AAAA1111000000000000000000000000"
+                            pgp6: "BBBB2222BBBB2222000000000000000000000000000000000000000000000000"
                             email: "alice@example.com"
                     """);
             var team = config.signers().get("team");
             assertThat(team.credentials().size()).isEqualTo(3);
 
             var types = team.credentials().stream().map(Credential::type).toList();
-            assertThat(types).contains("openpgp4", "openpgp6", Credential.TYPE_IDENTITY);
+            assertThat(types).contains("pgp4", "pgp6", Credential.TYPE_IDENTITY);
         }
 
         @Test
@@ -472,7 +524,7 @@ class SigmundConfigParserTest {
                       org:
                         email: "org@example.com"
                         members:
-                          - openpgp4: "CCCC3333CCCC3333000000000000000000000000"
+                          - pgp4: "CCCC3333CCCC3333000000000000000000000000"
                     """);
             var org = config.signers().get("org");
             assertThat(org.credentials().size()).isEqualTo(2);
@@ -502,9 +554,9 @@ class SigmundConfigParserTest {
                     signers:
                       bad-org:
                         members:
-                          - openpgp4: "AAAA1111AAAA1111000000000000000000000000"
+                          - pgp4: "AAAA1111AAAA1111000000000000000000000000"
                             members:
-                              - openpgp4: "BBBB2222BBBB2222000000000000000000000000"
+                              - pgp4: "BBBB2222BBBB2222000000000000000000000000"
                     """))
                     .isInstanceOf(PolicyConfigException.class);
         }
@@ -593,9 +645,13 @@ class SigmundConfigParserTest {
         }
 
         @Test
-        void defaultsAloneIsAPolicy() {
-            assertThat(parse("defaults: { on-no-claim: warn }").trustPolicySpec().declared())
-                    .isTrue();
+        void defaultsWithoutRulesIsErrorRatherThanSwitchingEnforcementOn() {
+            assertThatThrownBy(() -> parse("""
+                    signing: { toolchain: [bc] }
+                    defaults: { extra-claims: ignore }
+                    """))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("'defaults' has no effect without 'rules'");
         }
 
         @Test
@@ -688,9 +744,16 @@ class SigmundConfigParserTest {
         }
 
         @Test
-        void scalarRequiresIsError() {
-            assertThatThrownBy(() -> parse("rules: [{ match: [\"*\"], requires: a }]"))
-                    .isInstanceOf(PolicyConfigException.class);
+        void scalarRequiresIsOneClause() {
+            var rule = parse("rules: [{ match: \"*\", requires: a }]").trustPolicySpec().rules().get(0);
+            assertThat(rule.clauseIds()).containsExactly(Set.of("a"));
+        }
+
+        @Test
+        void requiresThatIsAMappingIsError() {
+            assertThatThrownBy(() -> parse("rules: [{ match: [\"*\"], requires: { a: b } }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("'requires' must be a signer id or a list of clauses");
         }
 
         @Test
@@ -724,6 +787,27 @@ class SigmundConfigParserTest {
         void extraClaimsDefaultsToReject() {
             assertThat(parse("rules: [{ match: [\"*\"], requires: [a] }]")
                     .trustPolicySpec().extraClaims()).isEqualTo(ClaimSetMode.ALL_CLAIMS);
+        }
+
+        @Test
+        void aRuleMayOverrideExtraClaims() {
+            var rules = parse("""
+                    rules:
+                      - match: "org.example:*"
+                        requires: a
+                        extra-claims: ignore
+                      - match: "*"
+                        requires: a
+                    """).trustPolicySpec().rules();
+            assertThat(rules).extracting(RuleSpec::extraClaims)
+                    .containsExactly(ClaimSetMode.ANY_CLAIM, null);
+        }
+
+        @Test
+        void aRuleExtraClaimsValueIsChecked() {
+            assertThatThrownBy(() -> parse("rules: [{ match: \"*\", requires: a, extra-claims: allow }]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("rules[0]: 'extra-claims' must be 'reject' or 'ignore'");
         }
 
         @Test
@@ -769,10 +853,33 @@ class SigmundConfigParserTest {
                     """);
             var signing = config.signingConfig();
             assertThat(signing.signer()).isEqualTo("alice");
-            assertThat(signing.credentialTypes()).isEqualTo(List.of("pgp4", "pgp6"));
-            assertThat(signing.profiles().get("classic")).isEqualTo(List.of("pgp4"));
+            assertThat(signing.credentialTypes()).isEqualTo(
+                    List.of(Credential.TYPE_PGP4, Credential.TYPE_PGP6));
+            assertThat(signing.profiles().get("classic")).isEqualTo(List.of(Credential.TYPE_PGP4));
             assertThat(signing.toolchain()).isEqualTo(List.of("sq"));
             assertThat(config.toolsConfig().get("sq").settings().get("cipher-suite")).isEqualTo("mldsa87-ed448");
+        }
+
+        @Test
+        void sigstoreIsACredentialType() {
+            assertThat(parse("signing: { credential-types: [sigstore] }").signingConfig().credentialTypes())
+                    .containsExactly(Credential.TYPE_SIGSTORE);
+        }
+
+        @Test
+        void credentialTypesUseTheSignerKeySpelling() {
+            assertThatThrownBy(() -> parse("signing: { credential-types: [openpgp4] }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing: unknown credential type 'openpgp4'")
+                    .hasMessageContaining("expected pgp4, pgp6, sigstore");
+        }
+
+        @Test
+        void aProfileNamingAnUnknownCredentialTypeIsError() {
+            assertThatThrownBy(() -> parse("signing: { profiles: { hybrid: [pgp4, pqc] } }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing: unknown credential type 'pqc'")
+                    .hasMessageContaining("pgp4, pgp6, sigstore");
         }
 
         @Test

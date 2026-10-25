@@ -19,9 +19,12 @@ import java.util.Set;
  * @param clauseIds the clause structure: list of sets of signer IDs in CNF form
  * @param enforcement enforcement action overrides for artifact outcomes
  * @param location the rule's location in the policy file, for diagnostic messages
+ * @param extraClaims the rule's own {@code extra-claims} setting, or {@code null} when it follows
+ *        the policy's {@code defaults}
  */
 public record RuleSpec(List<ArtifactPattern> patterns, List<Set<String>> clauseIds,
-        Map<ArtifactOutcome, EnforcementAction> enforcement, String location) {
+        Map<ArtifactOutcome, EnforcementAction> enforcement, String location,
+        ClaimSetMode extraClaims) {
 
     /**
      * Creates a rule spec with defensive copies.
@@ -30,6 +33,7 @@ public record RuleSpec(List<ArtifactPattern> patterns, List<Set<String>> clauseI
      * @param clauseIds the clause structure in CNF form
      * @param enforcement enforcement action overrides
      * @param location the rule's location in the policy file
+     * @param extraClaims the rule's own extra-claims setting, or {@code null}
      */
     public RuleSpec {
         patterns = patterns == null ? List.of() : List.copyOf(patterns);

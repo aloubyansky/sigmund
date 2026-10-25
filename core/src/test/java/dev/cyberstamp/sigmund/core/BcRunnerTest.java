@@ -252,7 +252,7 @@ class BcRunnerTest {
     @Test
     void supportedCredentialTypesBothV4AndV6() {
         BcRunner runner = createVerifyOnly(Path.of(System.getProperty("java.io.tmpdir")));
-        assertThat(runner.supportedCredentialTypes()).isEqualTo(Set.of("openpgp4", "openpgp6"));
+        assertThat(runner.supportedCredentialTypes()).isEqualTo(Set.of("pgp4", "pgp6"));
     }
 
     @Test
@@ -275,7 +275,7 @@ class BcRunnerTest {
                 4, "AABBCCDD", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD");
         var creds = runner.extractCredentials(result);
         assertThat(creds).containsExactly(
-                new KeyCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"));
+                new KeyCredential("pgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"));
     }
 
     @Test
@@ -285,7 +285,7 @@ class BcRunnerTest {
                 6, null, "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD");
         var creds = runner.extractCredentials(result);
         assertThat(creds).hasSize(1);
-        assertThat(creds.get(0).type()).isEqualTo("openpgp6");
+        assertThat(creds.get(0).type()).isEqualTo("pgp6");
     }
 
     @Test

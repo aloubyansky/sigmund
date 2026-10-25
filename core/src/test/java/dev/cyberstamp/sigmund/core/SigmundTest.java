@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -24,8 +25,8 @@ class SigmundTest {
 
         @Test
         void signerReturnsAllSigningTools() throws IOException {
-            var signing = mockTool("gpg", true, true, Set.of("openpgp4"));
-            var verifyOnly = mockTool("sq", true, false, Set.of("openpgp6"));
+            var signing = mockTool("gpg", true, true, Set.of("pgp4"));
+            var verifyOnly = mockTool("sq", true, false, Set.of("pgp6"));
             try (var sigmund = Sigmund.builder().addTool(signing).addTool(verifyOnly).build()) {
 
                 Signer signer = sigmund.signer();
@@ -39,8 +40,8 @@ class SigmundTest {
 
         @Test
         void signerExcludesUnconfiguredTools() throws IOException {
-            var bc = mockTool("bc", true, true, Set.of("openpgp4"));
-            var gpg = mockTool("gpg", true, true, Set.of("openpgp4"));
+            var bc = mockTool("bc", true, true, Set.of("pgp4"));
+            var gpg = mockTool("gpg", true, true, Set.of("pgp4"));
             var config = new SigmundConfig(null, null, null,
                     new SigningConfig(null, List.of("bc"), List.of(), Map.of()),
                     null, null);
@@ -58,7 +59,7 @@ class SigmundTest {
 
         @Test
         void signerThrowsWhenConfiguredToolCannotSign() {
-            var bc = mockTool("bc", true, false, Set.of("openpgp4"));
+            var bc = mockTool("bc", true, false, Set.of("pgp4"));
             var config = new SigmundConfig(null, null, null,
                     new SigningConfig(null, List.of("bc"), List.of(), Map.of()),
                     null, null);
@@ -74,10 +75,10 @@ class SigmundTest {
 
         @Test
         void signerWithCredentialTypes() {
-            var v4Tool = mockTool("gpg", true, true, Set.of("openpgp4"));
-            var v6Tool = mockTool("sq", true, true, Set.of("openpgp6"));
+            var v4Tool = mockTool("gpg", true, true, Set.of("pgp4"));
+            var v6Tool = mockTool("sq", true, true, Set.of("pgp6"));
             var config = new SigmundConfig(null, null, null,
-                    new SigningConfig(null, List.of(), List.of("openpgp6"), Map.of()),
+                    new SigningConfig(null, List.of(), List.of("pgp6"), Map.of()),
                     null, null);
             try (var sigmund = Sigmund.builder().config(config)
                     .addTool(v4Tool).addTool(v6Tool).build()) {
@@ -92,13 +93,28 @@ class SigmundTest {
         }
 
         @Test
+        void credentialTypesWrittenAsInTheDocsSelectTheirTools() throws IOException {
+            var v4Tool = mockTool("gpg", true, true, Set.of("pgp4"));
+            var v6Tool = mockTool("sq", true, true, Set.of("pgp6"));
+            var config = SigmundConfigParser.parse("<test>",
+                    new StringReader("signing: { credential-types: [pgp6] }"));
+            try (var sigmund = Sigmund.builder().config(config)
+                    .addTool(v4Tool).addTool(v6Tool).build()) {
+
+                SigningOutput output = sigmund.signer().sign(createTempFile("documented.jar"), tempDir);
+
+                assertThat(output.files()).extracting(SignedFile::toolName).containsExactly("sq");
+            }
+        }
+
+        @Test
         void signerWithNamedProfile() {
-            var v4Tool = mockTool("gpg", true, true, Set.of("openpgp4"));
-            var v6Tool = mockTool("sq", true, true, Set.of("openpgp6"));
+            var v4Tool = mockTool("gpg", true, true, Set.of("pgp4"));
+            var v6Tool = mockTool("sq", true, true, Set.of("pgp6"));
             var config = new SigmundConfig(null, null, null,
                     new SigningConfig(null, List.of(), List.of(),
-                            Map.of("v6-only", List.of("openpgp6"),
-                                    "classical", List.of("openpgp4"))),
+                            Map.of("v6-only", List.of("pgp6"),
+                                    "classical", List.of("pgp4"))),
                     null, null);
             try (var sigmund = Sigmund.builder().config(config)
                     .addTool(v4Tool).addTool(v6Tool).build()) {
@@ -122,10 +138,10 @@ class SigmundTest {
         void signerWithUnknownProfileThrows() {
             var config = new SigmundConfig(null, null, null,
                     new SigningConfig(null, List.of(), List.of(),
-                            Map.of("v6-only", List.of("openpgp6"))),
+                            Map.of("v6-only", List.of("pgp6"))),
                     null, null);
             try (var sigmund = Sigmund.builder().config(config)
-                    .addTool(mockTool("gpg", true, true, Set.of("openpgp4"))).build()) {
+                    .addTool(mockTool("gpg", true, true, Set.of("pgp4"))).build()) {
 
                 assertThatThrownBy(() -> sigmund.signer("nonexistent"))
                         .isInstanceOf(SigmundException.class)
@@ -136,7 +152,7 @@ class SigmundTest {
         @Test
         void signerWithNoSigningConfigThrows() {
             try (var sigmund = Sigmund.builder()
-                    .addTool(mockTool("gpg", true, true, Set.of("openpgp4"))).build()) {
+                    .addTool(mockTool("gpg", true, true, Set.of("pgp4"))).build()) {
 
                 assertThatThrownBy(() -> sigmund.signer("any-profile"))
                         .isInstanceOf(SigmundException.class);
@@ -347,7 +363,7 @@ class SigmundTest {
 
         @Test
         void signatureFileExtensionsReturnsRegisteredFormats() {
-            var tool = mockTool("gpg", true, false, Set.of("openpgp4"));
+            var tool = mockTool("gpg", true, false, Set.of("pgp4"));
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
                 Set<String> extensions = sigmund.signatureFileExtensions();
@@ -361,7 +377,7 @@ class SigmundTest {
         void signatureFileExtensionsFromMultipleFormats() {
             var openpgpFormat = mockFormat("openpgp", ".asc", true, List.of());
             var sigstoreFormat = mockFormat("sigstore", ".sigstore.json", false, List.of());
-            var pgpTool = mockToolWithFormat("gpg", openpgpFormat, true, false, Set.of("openpgp4"));
+            var pgpTool = mockToolWithFormat("gpg", openpgpFormat, true, false, Set.of("pgp4"));
             var sigstoreTool = mockToolWithFormat("sigstore", sigstoreFormat, true, false, Set.of("sigstore"));
             try (var sigmund = Sigmund.builder().addTool(pgpTool).addTool(sigstoreTool).build()) {
 
@@ -375,7 +391,7 @@ class SigmundTest {
 
         @Test
         void signatureFileExtensionsIsImmutable() {
-            var tool = mockTool("gpg", true, false, Set.of("openpgp4"));
+            var tool = mockTool("gpg", true, false, Set.of("pgp4"));
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
                 assertThatThrownBy(() -> sigmund.signatureFileExtensions().add(".sig"))
@@ -389,8 +405,8 @@ class SigmundTest {
 
         @Test
         void toolByName() {
-            var gpg = mockTool("gpg", true, false, Set.of("openpgp4"));
-            var sq = mockTool("sq", true, false, Set.of("openpgp6"));
+            var gpg = mockTool("gpg", true, false, Set.of("pgp4"));
+            var sq = mockTool("sq", true, false, Set.of("pgp6"));
             try (var sigmund = Sigmund.builder().addTool(gpg).addTool(sq).build()) {
 
                 assertThat(sigmund.tool("gpg")).isNotNull();
@@ -473,7 +489,7 @@ class SigmundTest {
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
                 var policy = ruleForNamespace("alice",
-                        new KeyCredential("openpgp4", "4AEE18F83AFDEB23000000000000000000000000"));
+                        new KeyCredential("pgp4", "4AEE18F83AFDEB23000000000000000000000000"));
                 TrustVerifier verifier = sigmund.verifier(policy);
 
                 Path artifact = createTempFile("test.jar");
@@ -496,7 +512,7 @@ class SigmundTest {
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
                 var policy = ruleForNamespace("alice",
-                        new KeyCredential("openpgp4", "4AEE18F83AFDEB23000000000000000000000000"));
+                        new KeyCredential("pgp4", "4AEE18F83AFDEB23000000000000000000000000"));
                 TrustVerifier verifier = sigmund.verifier(policy);
 
                 Path artifact = createTempFile("test2.jar");
@@ -511,7 +527,7 @@ class SigmundTest {
         @Test
         void verifierAssessNotConfigured() throws IOException {
             try (var sigmund = Sigmund.builder()
-                    .addTool(mockTool("gpg", true, false, Set.of("openpgp4")))
+                    .addTool(mockTool("gpg", true, false, Set.of("pgp4")))
                     .build()) {
                 TrustVerifier verifier = sigmund.verifier(RulePolicy.EMPTY);
 
@@ -529,8 +545,8 @@ class SigmundTest {
 
         @Test
         void rejectsUnavailableExplicitTool() {
-            var available = mockTool("gpg", true, false, Set.of("openpgp4"));
-            var unavailable = mockTool("sq", false, false, Set.of("openpgp6"));
+            var available = mockTool("gpg", true, false, Set.of("pgp4"));
+            var unavailable = mockTool("sq", false, false, Set.of("pgp6"));
             assertThatThrownBy(() -> Sigmund.builder().addTool(available).addTool(unavailable).build())
                     .isInstanceOf(SigmundException.class)
                     .hasMessageContaining("sq")
@@ -539,7 +555,7 @@ class SigmundTest {
 
         @Test
         void unknownToolInPriorityDoesNotPreventBuild() {
-            var tool = mockTool("gpg", true, false, Set.of("openpgp4"));
+            var tool = mockTool("gpg", true, false, Set.of("pgp4"));
             var verificationConfig = new VerificationConfig(false, false, List.of(),
                     List.of("nonexistent", "gpg"));
             try (var sigmund = Sigmund.builder().addTool(tool)
@@ -551,8 +567,8 @@ class SigmundTest {
 
         @Test
         void addToolReplacesExistingByName() {
-            var tool1 = mockTool("gpg", true, false, Set.of("openpgp4"));
-            var tool2 = mockTool("gpg", true, true, Set.of("openpgp4"));
+            var tool1 = mockTool("gpg", true, false, Set.of("pgp4"));
+            var tool2 = mockTool("gpg", true, true, Set.of("pgp4"));
             try (var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2)
                     .verificationConfig(noAutoDiscovery()).build()) {
 
@@ -583,8 +599,8 @@ class SigmundTest {
 
         @Test
         void exclusiveSignerRemovesOtherSigningTools() {
-            var bc = mockTool("bc", true, true, Set.of("openpgp4"));
-            var gpg = mockTool("gpg", true, true, Set.of("openpgp4"));
+            var bc = mockTool("bc", true, true, Set.of("pgp4"));
+            var gpg = mockTool("gpg", true, true, Set.of("pgp4"));
             var builder = Sigmund.builder().verificationConfig(noAutoDiscovery());
             builder.addTool(bc);
             builder.addTool(gpg);
@@ -601,8 +617,8 @@ class SigmundTest {
 
         @Test
         void exclusiveSignerKeepsVerifyOnlyTools() {
-            var bc = mockTool("bc", true, true, Set.of("openpgp4"));
-            var gpgVerifyOnly = mockTool("gpg", true, false, Set.of("openpgp4"));
+            var bc = mockTool("bc", true, true, Set.of("pgp4"));
+            var gpgVerifyOnly = mockTool("gpg", true, false, Set.of("pgp4"));
             var builder = Sigmund.builder().verificationConfig(noAutoDiscovery());
             builder.addTool(bc);
             builder.addTool(gpgVerifyOnly);
@@ -618,8 +634,8 @@ class SigmundTest {
 
         @Test
         void noOpWhenSigningToolsExplicitlyConfigured() {
-            var bc = mockTool("bc", true, true, Set.of("openpgp4"));
-            var gpg = mockTool("gpg", true, true, Set.of("openpgp4"));
+            var bc = mockTool("bc", true, true, Set.of("pgp4"));
+            var gpg = mockTool("gpg", true, true, Set.of("pgp4"));
             var config = new SigmundConfig(null, null, null,
                     new SigningConfig(null, List.of("gpg"), List.of(), Map.of()),
                     null, null);
@@ -638,8 +654,8 @@ class SigmundTest {
 
         @Test
         void clearsSigningConfigAfterEnforcement() throws IOException {
-            var bc = mockTool("bc", true, true, Set.of("openpgp4"));
-            var gpg = mockTool("gpg", true, true, Set.of("openpgp4"));
+            var bc = mockTool("bc", true, true, Set.of("pgp4"));
+            var gpg = mockTool("gpg", true, true, Set.of("pgp4"));
             var config = new SigmundConfig(null, null, null,
                     new SigningConfig(null, List.of(), List.of(), Map.of()),
                     null, null);
@@ -661,8 +677,8 @@ class SigmundTest {
         @Test
         void multipleExclusiveSignersThrows() {
             var builder = Sigmund.builder().verificationConfig(noAutoDiscovery());
-            builder.addTool(mockTool("bc", true, true, Set.of("openpgp4")));
-            builder.addTool(mockTool("sq", true, true, Set.of("openpgp6")));
+            builder.addTool(mockTool("bc", true, true, Set.of("pgp4")));
+            builder.addTool(mockTool("sq", true, true, Set.of("pgp6")));
 
             var factories = List.<SignatureToolFactory> of(
                     exclusiveFactory("bc"), exclusiveFactory("sq"));
@@ -672,7 +688,7 @@ class SigmundTest {
         }
 
         private SignatureToolFactory exclusiveFactory(String name) {
-            var tool = mockTool(name, true, true, Set.of("openpgp4"));
+            var tool = mockTool(name, true, true, Set.of("pgp4"));
             return new SignatureToolFactory() {
                 @Override
                 public String toolName() {
@@ -681,7 +697,7 @@ class SigmundTest {
 
                 @Override
                 public Set<String> supportedCredentialTypes() {
-                    return Set.of("openpgp4");
+                    return Set.of("pgp4");
                 }
 
                 @Override
@@ -709,7 +725,7 @@ class SigmundTest {
         @Test
         void closeCallsAutoCloseableTools() throws Exception {
             var closeable = new MockCloseableSignatureTool("closeable");
-            var regular = mockTool("regular", true, false, Set.of("openpgp4"));
+            var regular = mockTool("regular", true, false, Set.of("pgp4"));
             var sigmund = Sigmund.builder()
                     .addTool(closeable)
                     .addTool(regular)
@@ -817,7 +833,7 @@ class SigmundTest {
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
                 var report = sigmund.inspectSigner(
-                        new KeyCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                        new KeyCredential("pgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
                         null);
 
                 assertThat(report).isNotNull();
@@ -833,7 +849,7 @@ class SigmundTest {
             try (var sigmund = Sigmund.builder().addTool(bc).addTool(gpg).build()) {
 
                 var report = sigmund.inspectSigner(
-                        new KeyCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                        new KeyCredential("pgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
                         "gpg");
 
                 assertThat(report).isNotNull();
@@ -843,11 +859,11 @@ class SigmundTest {
 
         @Test
         void inspectSignerReturnsEmptyWhenNoCapableTool() {
-            var tool = mockTool("bc", true, false, Set.of("openpgp4"));
+            var tool = mockTool("bc", true, false, Set.of("pgp4"));
             try (var sigmund = Sigmund.builder().addTool(tool).build()) {
 
                 var report = sigmund.inspectSigner(
-                        new KeyCredential("openpgp4", "AABB000000000000000000000000000000000000"), null);
+                        new KeyCredential("pgp4", "AABB000000000000000000000000000000000000"), null);
 
                 assertThat(report).isNotNull();
                 assertThat(report.results().isEmpty()).isTrue();
@@ -861,7 +877,7 @@ class SigmundTest {
             try (var sigmund = Sigmund.builder().addTool(bc).addTool(sq).build()) {
 
                 var report = sigmund.inspectSigner(
-                        new KeyCredential("openpgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
+                        new KeyCredential("pgp4", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"),
                         null);
 
                 assertThat(report.results().size()).isEqualTo(2);
@@ -1022,7 +1038,7 @@ class SigmundTest {
 
             @Override
             public Set<String> supportedCredentialTypes() {
-                return Set.of("openpgp4");
+                return Set.of("pgp4");
             }
 
             @Override
@@ -1043,7 +1059,7 @@ class SigmundTest {
             @Override
             public List<Credential> extractCredentials(VerifyResult r) {
                 if (r instanceof OpenPgpVerifyResult opvr && opvr.fingerprint() != null) {
-                    return List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, opvr.fingerprint()));
+                    return List.of(new KeyCredential(Credential.TYPE_PGP4, opvr.fingerprint()));
                 }
                 return List.of();
             }
@@ -1110,7 +1126,7 @@ class SigmundTest {
 
         @Override
         public Set<String> supportedCredentialTypes() {
-            return Set.of("openpgp4");
+            return Set.of("pgp4");
         }
 
         @Override
@@ -1181,7 +1197,7 @@ class SigmundTest {
 
         @Override
         public Set<String> supportedCredentialTypes() {
-            return Set.of("openpgp6");
+            return Set.of("pgp6");
         }
 
         @Override
@@ -1218,7 +1234,7 @@ class SigmundTest {
         var signer = new SignerIdentity(signerId, List.of(credential));
         var spec = new TrustPolicySpec(
                 List.of(new RuleSpec(List.of(ArtifactPattern.parse("org.example:*")),
-                        List.of(Set.of(signerId)), Map.of(), "rules[0]")),
+                        List.of(Set.of(signerId)), Map.of(), "rules[0]", null)),
                 ClaimSetMode.ANY_CLAIM, Map.of(), List.of(), true);
         return RulePolicy.compile(spec, new SignersConfig(Map.of(signerId, signer)));
     }
@@ -1265,7 +1281,7 @@ class SigmundTest {
 
         @Override
         public Set<String> supportedCredentialTypes() {
-            return Set.of("openpgp4");
+            return Set.of("pgp4");
         }
 
         @Override
@@ -1327,7 +1343,7 @@ class SigmundTest {
 
         @Override
         public Set<String> supportedCredentialTypes() {
-            return Set.of("openpgp4");
+            return Set.of("pgp4");
         }
 
         @Override

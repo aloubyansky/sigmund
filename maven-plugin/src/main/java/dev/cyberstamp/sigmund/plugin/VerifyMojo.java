@@ -235,7 +235,7 @@ public class VerifyMojo extends AbstractDependencyMojo {
             return SigmundConfig.EMPTY;
         }
         if (!config.trustPolicySpec().declared()) {
-            getLog().info(trustConfigFile.getName() + " declares no policy (rules or defaults); "
+            getLog().info(trustConfigFile.getName() + " declares no policy (no rules); "
                     + OBSERVING);
         }
         return config;

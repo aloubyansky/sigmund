@@ -17,7 +17,7 @@ class InspectSignerMojoTest {
         var credential = mojo.buildCredential();
 
         assertThat(credential).isInstanceOf(KeyCredential.class);
-        assertThat(credential.type()).isEqualTo("openpgp4");
+        assertThat(credential.type()).isEqualTo("pgp4");
     }
 
     @Test
@@ -28,7 +28,7 @@ class InspectSignerMojoTest {
         var credential = mojo.buildCredential();
 
         assertThat(credential).isInstanceOf(KeyCredential.class);
-        assertThat(credential.type()).isEqualTo("openpgp6");
+        assertThat(credential.type()).isEqualTo("pgp6");
     }
 
     @Test

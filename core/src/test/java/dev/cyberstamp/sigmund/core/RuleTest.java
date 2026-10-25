@@ -13,7 +13,7 @@ class RuleTest {
     void ruleScoresByBestMatchingPattern() {
         var rule = new Rule(
                 List.of(ArtifactPattern.parse("com.acme.*"), ArtifactPattern.parse("com.acme:lib")),
-                new Requirement(List.of(), List.of()), Map.of(), "rules[0]");
+                new Requirement(List.of(), List.of()), Map.of(), "rules[0]", ClaimSetMode.ALL_CLAIMS);
         var c = new ArtifactCoords("com.acme", "lib", "", "jar", "1.0");
         assertThat(rule.matches(c)).isTrue();
         assertThat(rule.specificity(c)).isEqualTo(ArtifactPattern.parse("com.acme:lib").specificity());
@@ -24,7 +24,7 @@ class RuleTest {
         var rule = new Rule(
                 List.of(ArtifactPattern.parse("org.apache.maven.*"),
                         ArtifactPattern.parse("org.apache.commons.*")),
-                new Requirement(List.of(), List.of()), Map.of(), "rules[4]");
+                new Requirement(List.of(), List.of()), Map.of(), "rules[4]", ClaimSetMode.ALL_CLAIMS);
         var commons = new ArtifactCoords("org.apache.commons", "commons-lang3", "", "jar", "3.14.0");
 
         MatchedRule matched = rule.toMatchedRule(commons);
@@ -37,7 +37,7 @@ class RuleTest {
     void matchedRuleNamesTheMostSpecificOfSeveralMatchingPatterns() {
         var rule = new Rule(
                 List.of(ArtifactPattern.parse("com.acme.*"), ArtifactPattern.parse("com.acme:lib")),
-                new Requirement(List.of(), List.of()), Map.of(), "rules[0]");
+                new Requirement(List.of(), List.of()), Map.of(), "rules[0]", ClaimSetMode.ALL_CLAIMS);
         var lib = new ArtifactCoords("com.acme", "lib", "", "jar", "1.0");
 
         assertThat(rule.toMatchedRule(lib).pattern()).isEqualTo("com.acme:lib");

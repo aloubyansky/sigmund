@@ -14,14 +14,14 @@ class CredentialParserTest {
     @Test
     void fromFingerprintV4() {
         var cred = CredentialParser.fromFingerprint(FP40);
-        assertThat(cred.type()).isEqualTo("openpgp4");
+        assertThat(cred.type()).isEqualTo("pgp4");
         assertThat(cred.fingerprint()).isEqualTo(FP40);
     }
 
     @Test
     void fromFingerprintV6() {
         var cred = CredentialParser.fromFingerprint(FP64);
-        assertThat(cred.type()).isEqualTo("openpgp6");
+        assertThat(cred.type()).isEqualTo("pgp6");
         assertThat(cred.fingerprint()).isEqualTo(FP64);
     }
 
@@ -67,14 +67,14 @@ class CredentialParserTest {
     void parseDetectsFingerprint40() {
         var cred = CredentialParser.parse(FP40);
         assertThat(cred).isInstanceOf(KeyCredential.class);
-        assertThat(cred.type()).isEqualTo("openpgp4");
+        assertThat(cred.type()).isEqualTo("pgp4");
     }
 
     @Test
     void parseDetectsFingerprint64() {
         var cred = CredentialParser.parse(FP64);
         assertThat(cred).isInstanceOf(KeyCredential.class);
-        assertThat(cred.type()).isEqualTo("openpgp6");
+        assertThat(cred.type()).isEqualTo("pgp6");
     }
 
     @Test

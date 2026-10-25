@@ -92,7 +92,7 @@ public interface SignatureTool {
      * {@link #canVerify(Claim)} handles that based on claim content.
      *
      * @return the supported credential type strings
-     *         (e.g., {@code ["openpgp4"]}, {@code ["openpgp4", "openpgp6"]})
+     *         (e.g., {@code ["pgp4"]}, {@code ["pgp4", "pgp6"]})
      */
     Set<String> supportedCredentialTypes();
 
@@ -155,8 +155,8 @@ public interface SignatureTool {
      * <p>
      * The tool knows what credentials its results prove. For OpenPGP tools, this maps
      * the verified packet version to the credential type:
-     * {@code version < 6} → {@code KeyCredential("openpgp4", ...)},
-     * {@code version >= 6} → {@code KeyCredential("openpgp6", ...)}.
+     * {@code version < 6} → {@code KeyCredential("pgp4", ...)},
+     * {@code version >= 6} → {@code KeyCredential("pgp6", ...)}.
      * <p>
      * Returns an empty list unless the result is {@link ClaimOutcome#VERIFIED}: an
      * unverified claim proves no credential.

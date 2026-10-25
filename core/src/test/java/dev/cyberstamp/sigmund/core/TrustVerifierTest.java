@@ -18,7 +18,7 @@ class TrustVerifierTest {
 
     private static final String FP = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
     private static final SignerIdentity ALICE = new SignerIdentity("alice",
-            List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)));
+            List.of(new KeyCredential(Credential.TYPE_PGP4, FP)));
     private static final ArtifactCoords COORDS = new ArtifactCoords("org.example", "lib", "", "jar", "1.0");
 
     @TempDir
@@ -83,7 +83,7 @@ class TrustVerifierTest {
         var signers = new SignersConfig(Map.of(signer.id(), signer));
         var spec = new TrustPolicySpec(
                 List.of(new RuleSpec(List.of(ArtifactPattern.parse(COORDS.namespace())),
-                        List.of(Set.of(signer.id())), Map.of(), "rules[0]")),
+                        List.of(Set.of(signer.id())), Map.of(), "rules[0]", null)),
                 extraClaims, Map.of(), List.of(), true);
         return RulePolicy.compile(spec, signers);
     }
@@ -102,10 +102,37 @@ class TrustVerifierTest {
         @Test
         void aClaimFromAnotherSignerIsUnsatisfied() {
             SignerIdentity mallory = new SignerIdentity("mallory",
-                    List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, "DEADBEEF00000000000000000000000000000000")));
+                    List.of(new KeyCredential(Credential.TYPE_PGP4, "DEADBEEF00000000000000000000000000000000")));
 
             ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS),
                     List.of(evidenceFile), verifiedBy(mallory));
+
+            assertThat(result.outcome()).isEqualTo(ArtifactOutcome.UNSATISFIED);
+        }
+
+        @Test
+        void aRuleMayAcceptSurplusSignersThatTheDefaultsReject() {
+            SignerIdentity mallory = new SignerIdentity("mallory",
+                    List.of(new KeyCredential(Credential.TYPE_PGP4, "DEADBEEF00000000000000000000000000000000")));
+            var spec = new TrustPolicySpec(
+                    List.of(new RuleSpec(List.of(ArtifactPattern.parse(COORDS.namespace())),
+                            List.of(Set.of(ALICE.id())), Map.of(), "rules[0]", ClaimSetMode.ANY_CLAIM)),
+                    ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
+            TrustPolicy policy = RulePolicy.compile(spec, new SignersConfig(Map.of(ALICE.id(), ALICE)));
+
+            ArtifactResult result = assess(policy, List.of(evidenceFile), verifiedBy(ALICE),
+                    verifiedBy(mallory));
+
+            assertThat(result.outcome()).isEqualTo(ArtifactOutcome.SATISFIED);
+        }
+
+        @Test
+        void aRuleWithoutItsOwnExtraClaimsFollowsTheDefaults() {
+            SignerIdentity mallory = new SignerIdentity("mallory",
+                    List.of(new KeyCredential(Credential.TYPE_PGP4, "DEADBEEF00000000000000000000000000000000")));
+
+            ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS),
+                    List.of(evidenceFile), verifiedBy(ALICE), verifiedBy(mallory));
 
             assertThat(result.outcome()).isEqualTo(ArtifactOutcome.UNSATISFIED);
         }
@@ -137,7 +164,7 @@ class TrustVerifierTest {
         void anUnsignedArtifactUnderARequiresLessCatchAllIsNoClaimAndTolerated() {
             var spec = new TrustPolicySpec(
                     List.of(new RuleSpec(List.of(ArtifactPattern.parse("*")), List.of(),
-                            Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), "rules[0]")),
+                            Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), "rules[0]", null)),
                     ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
             TrustPolicy policy = RulePolicy.compile(spec, SignersConfig.EMPTY);
 
@@ -160,7 +187,7 @@ class TrustVerifierTest {
         void aSignedStragglerUnderARequiresLessCatchAllIsUnsatisfiedAndBlocks() {
             var spec = new TrustPolicySpec(
                     List.of(new RuleSpec(List.of(ArtifactPattern.parse("*")), List.of(),
-                            Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), "rules[0]")),
+                            Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), "rules[0]", null)),
                     ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
             TrustPolicy policy = RulePolicy.compile(spec, SignersConfig.EMPTY);
 
@@ -188,7 +215,7 @@ class TrustVerifierTest {
         @Test
         void allClaimsRejectsEvidenceFromAnUnlistedSigner() {
             SignerIdentity stranger = new SignerIdentity("stranger",
-                    List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, "BEEF000000000000000000000000000000000000")));
+                    List.of(new KeyCredential(Credential.TYPE_PGP4, "BEEF000000000000000000000000000000000000")));
 
             ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ALL_CLAIMS),
                     List.of(evidenceFile), verifiedBy(ALICE), verifiedBy(stranger));
@@ -199,7 +226,7 @@ class TrustVerifierTest {
         @Test
         void anyClaimAcceptsOnTheStrengthOfTheOneItNeeded() {
             SignerIdentity stranger = new SignerIdentity("stranger",
-                    List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, "BEEF000000000000000000000000000000000000")));
+                    List.of(new KeyCredential(Credential.TYPE_PGP4, "BEEF000000000000000000000000000000000000")));
 
             ArtifactResult result = assess(expecting(ALICE, ClaimSetMode.ANY_CLAIM),
                     List.of(evidenceFile), verifiedBy(ALICE), verifiedBy(stranger));

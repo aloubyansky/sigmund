@@ -7,7 +7,7 @@ Sigmund uses a `sigmund.yaml` file for configuration. This reference documents e
 - [File Location](#file-location)
 - [Complete Example](#complete-example)
 - [Policy and Enforcement](#policy-and-enforcement)
-  - [When a policy is present](#when-a-policy-is-present)
+  - [When a policy is declared](#when-a-policy-is-declared)
   - [Outcomes](#outcomes)
   - [How enforcement is resolved](#how-enforcement-is-resolved)
 - [Section Reference](#section-reference)
@@ -163,15 +163,17 @@ The **policy** is the part of the file that decides what verification accepts: `
 `signing`, `verification`, `tools` — configures how Sigmund runs. Only the policy can change
 whether an artifact is accepted, and none of it can be set from the command line.
 
-### When a policy is present
+### When a policy is declared
 
-A file **declares a policy** when it has a `rules` or a `defaults` section — an empty
-`rules: []` included. That single switch decides how strict verification is:
+A file **declares a policy** when it has a `rules` section — an empty `rules: []` included.
+That single switch decides how strict verification is. `defaults` without `rules` is an error:
+with no rule every artifact is `NOT_CONFIGURED`, so defaults alone could only fail everything
+or change nothing, and adding them must not turn enforcement on by accident.
 
 - **No policy** — a missing file, or one that only configures signing, tools or signers.
   Verification observes: every dependency is verified and reported, and only a signature that
   does not verify (`FAILED`) blocks the build. The goal logs that it is observing only.
-- **A policy present** enforces: every outcome other than `SATISFIED` blocks, unless the policy
+- **A declared policy** enforces: every outcome other than `SATISFIED` blocks, unless the policy
   relaxes it. An artifact no rule matches is `NOT_CONFIGURED` and blocks too, which makes
   coverage a deliberate decision — add a rule, or a catch-all.
 
@@ -274,8 +276,17 @@ signers:
 
 **Credential types:**
 
-- **`pgp4`** — OpenPGP v4 fingerprint, the full 40 hexadecimal characters. Alias: `openpgp4`.
-- **`pgp6`** — OpenPGP v6 fingerprint, the full 64 hexadecimal characters. Alias: `openpgp6`.
+- **`pgp4`** — OpenPGP v4 fingerprint, the full 40 hexadecimal characters.
+- **`pgp6`** — OpenPGP v6 fingerprint, the full 64 hexadecimal characters.
+
+  Each takes one fingerprint or a list of them. A signer that rotated keys keeps every key it signed with, so its old signatures still verify:
+
+  ```yaml
+  signers:
+    jane:
+      pgp4: ["DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF", "CAFEBABECAFEBABECAFEBABECAFEBABECAFEBABE"]
+      email: "jane@example.com"
+  ```
 
   Fingerprints match exactly, ignoring case, against the key that made the signature or the primary key it belongs to. A 64-bit key ID is rejected at load: colliding key IDs can be generated, so a key ID would accept any key that shares it.
 
@@ -360,7 +371,7 @@ group pattern matching nothing.
 ### `rules`
 
 **Type:** Array of rules  
-**Default:** none — and without `rules` or `defaults` there is [no policy](#when-a-policy-is-present)
+**Default:** none — and without `rules` there is [no policy](#when-a-policy-is-declared)
 
 Each rule says what the artifacts it matches must satisfy:
 
@@ -385,18 +396,23 @@ rules:
 
 #### Fields
 
-- **`match`** (required) — a list of [artifact patterns](#artifact-patterns) and
-  [artifact-set](#artifact-sets) names. The rule matches an artifact when any of them does.
-- **`requires`** (optional) — a list of clauses, **all** of which must be satisfied. A clause
+- **`match`** (required) — an [artifact pattern](#artifact-patterns) or
+  [artifact-set](#artifact-sets) name, or a list of them. The rule matches an artifact when any
+  of them does.
+- **`requires`** (optional) — a signer ID, or a list of clauses, **all** of which must be
+  satisfied. A clause
   is a signer ID, satisfied by a verified claim proving one of that signer's credentials, or
   `{any-of: [...]}`, satisfied by any one of the listed signers. So
   `[acme-release, {any-of: [acme-ci, acme-ci-eu]}]` reads "acme-release, and acme-ci or
-  acme-ci-eu". `requires` is always a list; an empty list is an error — a rule that tolerates
-  artifacts says so through its `on-…` settings instead. `any-of` entries are signer IDs and
+  acme-ci-eu", and `requires: acme-release` is the same as `[acme-release]`. An empty list is
+  an error — a rule that tolerates artifacts says so through its `on-…` settings instead. `any-of` entries are signer IDs and
   cannot nest. Signer IDs must be defined under `signers`.
 - **`on-unsatisfied`**, **`on-no-claim`**, **`on-indeterminate`**, **`on-not-configured`**
   (optional) — `fail`, `warn` or `ignore` for this rule's artifacts, overriding
   [`defaults`](#defaults). See [How enforcement is resolved](#how-enforcement-is-resolved).
+- **`extra-claims`** (optional, `reject` or `ignore`) — this rule's handling of a verified claim
+  from a signer it does not name, overriding [`defaults`](#defaults). One rule can accept
+  surplus signers without loosening the whole policy.
 
 #### Which rule applies
 
@@ -430,10 +446,15 @@ unsigned. It matches, so its artifacts are not `NOT_CONFIGURED`, but it requires
 **Type:** Object  
 **Default:** `extra-claims: reject`, built-in enforcement
 
-Policy-wide settings. Declaring `defaults` — even with only `extra-claims` — makes the file a
-[policy](#when-a-policy-is-present).
+Policy-wide settings, for every rule that does not set its own. `defaults` needs `rules`: on
+its own it is an error, since it would apply to no rule (see
+[When a policy is declared](#when-a-policy-is-declared)).
 
 ```yaml
+rules:
+  - match: "org.apache.*"
+    on-no-claim: ignore
+
 defaults:
   extra-claims: reject
   on-no-claim: warn
@@ -449,6 +470,8 @@ defaults:
   a claim that fails — that is always `FAILED`.
 - **`on-unsatisfied`**, **`on-no-claim`**, **`on-indeterminate`**, **`on-not-configured`** —
   `fail`, `warn` or `ignore` for every rule that does not set its own. There is no `on-failed`.
+
+A rule may set `extra-claims` and the `on-…` keys itself, which overrides these.
 
 ### `signing`
 
@@ -479,8 +502,8 @@ signing:
 
 - **`signer`** (string, optional) — References a signer ID from the `signers` section. This identity will be used for signing operations.
 - **`toolchain`** (array of strings, optional) — Lists which tools to use for signing and in what order. Only the listed tools are initialized. Tool names: `bc`, `sq`, `gpg`, `sigstore`. Per-tool settings are configured in the top-level `tools` section.
-- **`credential-types`** (array of strings, optional) — The default set of credential types to produce. Only tools whose supported credential types intersect this list are used. When omitted, all available signing tools are used. Values: `pgp4`, `pgp6`, `sigstore`.
-- **`profiles`** (map, optional) — Named profiles for explicit switching (e.g., `--profile classic`). Each profile maps a name to a list of credential type strings. When a profile is requested by name, it takes precedence over `credential-types`.
+- **`credential-types`** (array of strings, optional) — The default set of credential types to produce. Only tools whose supported credential types intersect this list are used. When omitted, all available signing tools are used. Values: `pgp4`, `pgp6`, `sigstore` — the names signer entries use; any other value is an error.
+- **`profiles`** (map, optional) — Named profiles for explicit switching (e.g., `--profile classic`). Each profile maps a name to a list of credential types, the same values as `credential-types`; any other value is an error. When a profile is requested by name, it takes precedence over `credential-types`.
 
 ### `verification`
 

@@ -13,7 +13,7 @@ final class SqToolFactory implements SignatureToolFactory {
 
     @Override
     public Set<String> supportedCredentialTypes() {
-        return Set.of(Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6);
+        return Set.of(Credential.TYPE_PGP4, Credential.TYPE_PGP6);
     }
 
     @Override

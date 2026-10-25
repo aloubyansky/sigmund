@@ -34,7 +34,7 @@ class BcRunnerSignerInspectionTest {
     void canInspectKeyCredential() {
         BcRunner runner = createRunner(false, List.of());
         assertThat(runner.canInspect(
-                new KeyCredential("openpgp4", "AABB000000000000000000000000000000000000"))).isTrue();
+                new KeyCredential("pgp4", "AABB000000000000000000000000000000000000"))).isTrue();
     }
 
     @Test
@@ -55,7 +55,7 @@ class BcRunnerSignerInspectionTest {
     void inspectLocalStoreNotFoundReturnsPerSourceResults() {
         BcRunner runner = createRunner(false, List.of());
         var results = runner.inspect(
-                new KeyCredential("openpgp4",
+                new KeyCredential("pgp4",
                         "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"));
         assertThat(results.isEmpty()).isFalse();
         assertThat(results.stream().allMatch(r -> !r.found())).isTrue();

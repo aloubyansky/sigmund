@@ -133,7 +133,7 @@ sq: ML-DSA-87+Ed448 D62AAB339E45E5EA2FD036872B01D46A517A2991... (Alice <alice@ex
 
 Verifies project dependencies against the policy in `sigmund.yaml`: each artifact's most specific rule says which signers it requires. Matching is by full key fingerprint, or by an identity — an email address or a CI workflow — vouched for by an issuer the policy trusts. What each outcome does to the build is set in the policy, per rule or in `defaults`; see [Policy and Enforcement](configuration.md#policy-and-enforcement).
 
-Without a `sigmund.yaml` at the default location, or with one that declares neither `rules` nor `defaults`, the goal runs without a policy: it verifies and reports every dependency, fails only on a signature that does not verify, and logs that it is observing only. A file given with `-Dsigmund.trustConfig` that does not exist is an error.
+Without a `sigmund.yaml` at the default location, or with one that declares no `rules`, the goal runs without a policy: it verifies and reports every dependency, fails only on a signature that does not verify, and logs that it is observing only. A file given with `-Dsigmund.trustConfig` that does not exist is an error.
 
 The report groups results by outcome, then by who attested them. Each artifact line is logged at the severity of what its outcome does and tagged `[blocks]`, `[warning]` or `[ignored]`; ignored artifacts are counted in their outcome's heading, with the rule or `defaults` that tolerated them, and listed only with `-Dsigmund.detail`.
 
@@ -191,7 +191,7 @@ checked against, and each artifact the evidence it was read from:
 ```
 SATISFIED (2)
   openpgp VERIFIED by bc (Ed25519) - Jane Doe <jane@example.com>
-    credential openpgp4 DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF
+    credential pgp4 DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF
     trust root openpgp-cert-d /home/jane/.local/share/pgp.cert.d
     com.example:lib:1.0
       evidence lib-1.0.jar.asc sha256:ba7816bf8f01 (sidecar)
@@ -202,7 +202,7 @@ A claim no installed tool can check also shows the key its signature packet
 names, which nothing has proven:
 
 ```
-    declared issuer openpgp6 CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9 (not verified)
+    declared issuer pgp6 CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9 (not verified)
 ```
 
 See [Outcomes](trust-verification.md#outcomes) for what each outcome means.
