@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed
+Proposed. Revised 2026-10-24: key rotation is recorded in the policy rather than
+in stored binding history, and `pgp4`/`pgp6` accept a list of fingerprints.
 
 ## Context
 
@@ -290,23 +291,26 @@ another keyserver, or from the evidence.
 - **It is queried only when needed**: when no key credential of the signer
   already satisfies the clause. A signer carrying fingerprints and an email
   stays offline for the keys already pinned, and only a new key costs a lookup.
-- **A binding proves the identity for signatures made before it was last
-  observed.** The key store (P4.6) records each binding with the time it was
-  first and last seen, refreshed under the key-freshness TTL. A refresh that
-  still shows the address moves the last-seen time forward; one that no longer
-  shows it stops it there. Rotation therefore does not erase history for a
-  verifier that saw the binding, and nothing signed after the address left the
-  key is covered — which also lets an owner withdraw an address. OpenPGP claim
-  time is chosen by the signer, so this inherits the backdating risk stated in
-  §1.1: someone holding a leaked, unrevoked old key can date a signature into
-  the window.
-- **Offline with no stored binding**, an identity requirement is
+- **A binding is current state and proves the identity only while the directory
+  serves it.** Answers are cached under the key-freshness TTL (P4.6) to spare
+  the network, never as history: a cached answer means what a fresh one would,
+  and an address the directory no longer serves for a key stops covering that
+  key, which also lets an owner withdraw an address.
+- **Offline with no cached answer**, an identity requirement is
   `INDETERMINATE(KEY_UNAVAILABLE)`, never a pass.
-- **Rotation unbinds history for first-time verifiers**, so a signer carries
-  both: fingerprints for the keys already seen, which prove old signatures
-  offline and forever, and the identity for keys to come. Bootstrap emits the
+- **Rotation is recorded in the policy, not in a store.** Rotation unbinds the
+  old key from the address for every verifier, so a signer carries both:
+  fingerprints for the keys already seen, which prove old signatures offline and
+  forever, and the identity for keys to come. `pgp4` and `pgp6` accept a list,
+  so a signer that rotated keeps every key it signed with. Bootstrap emits the
   fingerprints, and adds the identity — listing the directory — when the
-  directory served a verified address for the key.
+  directory served a verified address for the key; an update pins a new key
+  the directory confirms for a signer's address onto that signer, as a reviewed
+  change to the file. Stored first- and last-seen binding times were rejected:
+  they made a verdict depend on what one machine happened to observe, so a
+  fresh CI runner and a long-lived workstation could disagree on the same
+  policy and artifact, and they put trust in state no one reviews — against
+  design §3.7, under which anything that affects the verdict lives in the file.
 
 What this trusts, stated plainly: the directory's email verification and the
 security of the email account. Whoever controls `alice@example.org` can verify a
@@ -429,6 +433,7 @@ address no longer satisfies anything; a publisher's new key is accepted without
 a policy change once they verify it at the directory; `sigmund inspect-signer`
 reports the source that supplied each key.
 
-**Ordering:** implemented in roadmap phase P2, with binding storage and
-freshness landing in P4.6. ADR-007 defines requirements, policy schema and
-enforcement on top of these credentials.
+**Ordering:** implemented in roadmap phase P2, with the key cache and
+freshness landing in P4.6 and update pinning rotated keys in P2.19. ADR-007
+defines requirements, policy schema and enforcement on top of these
+credentials.

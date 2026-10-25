@@ -13,19 +13,19 @@ import java.util.Map;
  * are normalized to upper case, so comparison ignores the case they were written in.
  *
  * <p>
- * The type is named after the key version ({@code openpgp4}, {@code openpgp6}), not the tool
+ * The type is named after the key version ({@code pgp4}, {@code pgp6}), not the tool
  * or algorithm, so policy written for a v4 key does not silently accept a v6 one. Types other
  * than the OpenPGP ones are accepted with any hex fingerprint, for backends that bring their
  * own key material.
  *
- * @param type the key type, such as {@link Credential#TYPE_OPENPGP_V4}
+ * @param type the key type, such as {@link Credential#TYPE_PGP4}
  * @param fingerprint the full fingerprint, upper-case hex
  */
 public record KeyCredential(String type, String fingerprint) implements Credential {
 
     private static final Map<String, Integer> OPENPGP_LENGTHS = Map.of(
-            TYPE_OPENPGP_V4, 40,
-            TYPE_OPENPGP_V6, 64);
+            TYPE_PGP4, 40,
+            TYPE_PGP6, 64);
 
     /**
      * Validates and normalizes the fingerprint.

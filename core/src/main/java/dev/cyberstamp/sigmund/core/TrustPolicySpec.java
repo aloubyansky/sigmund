@@ -12,7 +12,7 @@ import java.util.Map;
  * instances.
  * <p>
  * The {@link #declared()} flag records whether the configuration declares a policy — a
- * {@code rules} or {@code defaults} section — so that the absence of policy can be told apart
+ * {@code rules} section, an empty one included — so that the absence of policy can be told apart
  * from an empty one. It is the single observe/enforce switch: with no policy, verification
  * observes and only {@link ArtifactOutcome#FAILED} blocks; with one, every outcome other than
  * {@link ArtifactOutcome#SATISFIED} blocks unless the policy relaxes it. A configuration that
@@ -22,7 +22,7 @@ import java.util.Map;
  * @param extraClaims how to handle verified claims that no requirement accepted
  * @param defaults default enforcement actions for artifact outcomes
  * @param issuers the list of trusted issuers (certificate authorities)
- * @param declared whether the configuration declares a policy ({@code rules} or {@code defaults})
+ * @param declared whether the configuration declares a policy (a {@code rules} section)
  */
 public record TrustPolicySpec(List<RuleSpec> rules, ClaimSetMode extraClaims,
         Map<ArtifactOutcome, EnforcementAction> defaults, List<String> issuers, boolean declared) {

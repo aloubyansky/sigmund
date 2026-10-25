@@ -121,13 +121,13 @@ signers:
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
 
 rules:
-  - match: [com.example.*]
-    requires: [alice-developer]
+  - match: com.example.*
+    requires: alice-developer
   - match: [com.internal:util]
     on-no-claim: ignore
 ```
 
-`com.example.*` covers the group and every group below it. An artifact signed by several parties gets them all in `requires`, and every one must keep signing. A publisher's classic and post-quantum keys — the same user ID, signing exactly the same artifacts — become one signer with both fingerprints, so either signature satisfies its rule. The last rule tolerates `com.internal:util` being unsigned — it is still verified, so a signature that does appear on it must verify. See [rules](configuration.md#rules) for the full syntax.
+`com.example.*` covers the group and every group below it. An artifact signed by several parties gets them all in `requires`, as a list such as `[alice-developer, bob]`, and every one must keep signing. A publisher's classic and post-quantum keys — the same user ID, signing exactly the same artifacts — become one signer with both fingerprints, so either signature satisfies its rule. The last rule tolerates `com.internal:util` being unsigned; it stays a list even with one module, since an update removes a module from it once that module starts being signed. It is still verified, so a signature that does appear on it must verify. See [rules](configuration.md#rules) for the full syntax.
 
 The generated file deliberately has no catch-all rule: a dependency you add later matches no rule, fails verification as `NOT_CONFIGURED`, and enters the policy only through an update you review.
 
@@ -181,8 +181,8 @@ signers:
     pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
 
 rules:
-  - match: [com.example.*]
-    requires: [alice-developer]
+  - match: com.example.*
+    requires: alice-developer
 
 defaults:
   on-no-claim: warn

@@ -106,7 +106,7 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
         return null;
     }
 
-    private static final Set<String> SUPPORTED_CREDENTIAL_TYPES = Set.of(Credential.TYPE_OPENPGP_V4);
+    private static final Set<String> SUPPORTED_CREDENTIAL_TYPES = Set.of(Credential.TYPE_PGP4);
 
     /**
      * Result of a GPG signature verification.

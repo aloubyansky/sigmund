@@ -25,7 +25,7 @@ class BcToolFactoryTest {
     @Test
     void supportedCredentialTypes() {
         assertThat(new BcToolFactory().supportedCredentialTypes())
-                .isEqualTo(Set.of("openpgp4", "openpgp6"));
+                .isEqualTo(Set.of("pgp4", "pgp6"));
     }
 
     @Test

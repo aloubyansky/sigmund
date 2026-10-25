@@ -24,7 +24,7 @@ class ToolFactoryTest {
 
         @Test
         void supportedCredentialTypes() {
-            assertThat(factory.supportedCredentialTypes()).isEqualTo(Set.of(Credential.TYPE_OPENPGP_V4));
+            assertThat(factory.supportedCredentialTypes()).isEqualTo(Set.of(Credential.TYPE_PGP4));
         }
 
         @Test
@@ -48,7 +48,7 @@ class ToolFactoryTest {
 
         @Test
         void createWithCredentialFallback() {
-            var cred = new KeyCredential(Credential.TYPE_OPENPGP_V4, "ABCD1234ABCD1234000000000000000000000000");
+            var cred = new KeyCredential(Credential.TYPE_PGP4, "ABCD1234ABCD1234000000000000000000000000");
             SignatureTool tool = factory.createSigning(cred, Map.of());
             assertThat(tool.canSign()).isTrue();
         }
@@ -76,7 +76,7 @@ class ToolFactoryTest {
         @Test
         void supportedCredentialTypes() {
             assertThat(factory.supportedCredentialTypes())
-                    .isEqualTo(Set.of(Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6));
+                    .isEqualTo(Set.of(Credential.TYPE_PGP4, Credential.TYPE_PGP6));
         }
 
         @Test
@@ -102,7 +102,7 @@ class ToolFactoryTest {
 
         @Test
         void createWithCredentialFallback() {
-            var cred = new KeyCredential(Credential.TYPE_OPENPGP_V6,
+            var cred = new KeyCredential(Credential.TYPE_PGP6,
                     "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
             SignatureTool tool = factory.createSigning(cred, Map.of("home", tempDir.toString()));
             assertThat(tool.canSign()).isTrue();
@@ -134,7 +134,7 @@ class ToolFactoryTest {
         @Test
         void supportedCredentialTypes() {
             assertThat(factory.supportedCredentialTypes())
-                    .isEqualTo(Set.of(Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V6));
+                    .isEqualTo(Set.of(Credential.TYPE_PGP4, Credential.TYPE_PGP6));
         }
 
         @Test
@@ -162,7 +162,7 @@ class ToolFactoryTest {
 
         @Test
         void createWithCredentialFallback() {
-            var cred = new KeyCredential(Credential.TYPE_OPENPGP_V6,
+            var cred = new KeyCredential(Credential.TYPE_PGP6,
                     "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
             SignatureTool tool = factory.createSigning(cred, Map.of());
             assertThat(tool.canSign()).isTrue();

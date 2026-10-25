@@ -41,10 +41,11 @@ public interface TrustPolicy {
     Rule matchRule(ArtifactCoords coords);
 
     /**
-     * Returns what to do with verified claims beyond those the applicable rule's requirements
-     * accepted.
+     * Returns the policy's default for verified claims beyond those a rule's requirements
+     * accepted: the {@code extra-claims} setting in {@code defaults}. A rule may set its own,
+     * which {@link Rule#extraClaims()} carries already resolved against this default.
      *
-     * @return the claim-set mode
+     * @return the default claim-set mode
      */
     ClaimSetMode claimSetMode();
 
@@ -61,8 +62,8 @@ public interface TrustPolicy {
     /**
      * Returns whether this policy was declared, as opposed to standing in for its absence.
      * <p>
-     * A configuration declares a policy only when it has a {@code rules} or {@code defaults}
-     * section; one that only sets up signing, tools or signers declares none. Without a declared
+     * A configuration declares a policy only when it has a {@code rules} section, an empty one
+     * included; one that only sets up signing, tools or signers declares none. Without a declared
      * policy verification observes: every artifact is verified and reported, and only
      * {@link ArtifactOutcome#FAILED} blocks. Being declared is what makes coverage enforced — see
      * {@link #enforcementFor(ArtifactOutcome, MatchedRule)}. It is carried by the policy itself

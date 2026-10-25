@@ -104,8 +104,8 @@ A signer carries key material, identities, or both:
 
 | Type | YAML Key | Description | Example |
 |------|----------|-------------|---------|
-| OpenPGP v4 | `pgp4` (alias: `openpgp4`) | 40-character v4 fingerprint | `4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12` |
-| OpenPGP v6 | `pgp6` (alias: `openpgp6`) | 64-character v6 fingerprint | `D62AAB339E45E5EA2FD036872B01D46A517A2991EF8B8F67C32CF07A49CBDAA0` |
+| OpenPGP v4 | `pgp4` | 40-character v4 fingerprint, or a list of them | `4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12` |
+| OpenPGP v6 | `pgp6` | 64-character v6 fingerprint, or a list of them | `D62AAB339E45E5EA2FD036872B01D46A517A2991EF8B8F67C32CF07A49CBDAA0` |
 | Email | `email` | Address vouched for by an issuer | `dev@example.com` |
 | Identities | `identities` | List of complete identities: an issuer and the attributes it attested | (see below) |
 
@@ -113,7 +113,7 @@ Fingerprints must be full; a 64-bit key ID is rejected at load because colliding
 
 An **email address is only as good as whoever vouches for it**. A user ID on an OpenPGP key proves nothing — anyone can put any address on a key they generate — so an address matches only when an issuer vouched for it: a directory that verifies addresses before publishing them (`keys.openpgp.org`), or the OIDC provider behind a Sigstore certificate. Issuers are listed once in the top-level `issuers` section, which a bare `email:` uses, or named on an entry under `identities`. See [issuers](configuration.md#issuers).
 
-**Fingerprints for the keys already seen, an address for keys to come.** A fingerprint is stable, works offline and proves every signature the key ever made, but it covers only that key. An address lets the policy accept a key the publisher generates later: when a signature's key is not pinned, the directory is asked which verified addresses it serves for that key. Directory bindings are current state — after a rotation the directory serves the old key without the address — so keep the old fingerprints alongside the address.
+**Fingerprints for the keys already seen, an address for keys to come.** A fingerprint is stable, works offline and proves every signature the key ever made, but it covers only that key. An address lets the policy accept a key the publisher generates later: when a signature's key is not pinned, the directory is asked which verified addresses it serves for that key. Directory bindings are current state — after a rotation the directory serves the old key without the address — so keep the old fingerprints alongside the address — `pgp4` and `pgp6` take a list.
 
 **Identities** — each entry is complete: who vouched (`issuer`) and what they attested. A CI workflow attested by a Sigstore certificate:
 ```yaml
@@ -199,8 +199,8 @@ policy loads, so the outcome never depends on the order rules are written in.
 
 **Signers the rule does not name.** Once the requirements are met, a verified claim from a signer
 no clause names makes the artifact `UNSATISFIED` under the default `extra-claims: reject` — the
-rule's signers are taken as the complete list. Set `extra-claims: ignore` in
-[`defaults`](configuration.md#defaults) to let the requirements alone decide.
+rule's signers are taken as the complete list. Set `extra-claims: ignore` on the rule, or in
+[`defaults`](configuration.md#defaults) for every rule, to let the requirements alone decide.
 
 **Rules without `requires`.** A rule may require nothing, typically for artifacts known to be
 published unsigned. It still matches, so those artifacts are verified and reported:
@@ -234,10 +234,10 @@ defaults:
   on-no-claim: warn
 ```
 
-With a policy present, every outcome other than `SATISFIED` fails the build unless the policy
+With a policy declared, every outcome other than `SATISFIED` fails the build unless the policy
 relaxes it, and an artifact no rule matches (`NOT_CONFIGURED`) fails too. `FAILED` always fails,
-and a setting for it is an error. A file that declares no `rules` and no `defaults` is not a
-policy: verification only observes, failing on `FAILED` alone. See
+and a setting for it is an error. A file without `rules` is not a policy: verification only
+observes, failing on `FAILED` alone. `defaults` without `rules` is an error. See
 [Policy and Enforcement](configuration.md#policy-and-enforcement) for the full resolution order.
 
 These settings live only in `sigmund.yaml`. They change what is accepted, so they belong in the
@@ -636,8 +636,10 @@ rules:
 **Option 4: Warn instead of failing while you investigate** — relax the outcome in the policy,
 for that rule or in `defaults`, and restore it once resolved:
 ```yaml
-defaults:
-  on-unsatisfied: warn
+rules:
+  - match: ["com.example.*"]
+    requires: [new-signer]
+    on-unsatisfied: warn
 ```
 
 ## Troubleshooting
@@ -651,7 +653,7 @@ runs without a policy.
 ### The build observes but never fails
 
 The log says the run is observing only: no file was found at the default location, or the file
-declares neither `rules` nor `defaults`. Only a file with a policy enforces.
+declares no `rules`. Only a file with a policy enforces.
 
 ### An artifact is UNSATISFIED for a signer you trust
 

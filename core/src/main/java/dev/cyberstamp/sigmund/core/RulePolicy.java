@@ -59,13 +59,14 @@ public final class RulePolicy implements TrustPolicy {
         IdentityEntryValidator.validate(signers, doc.issuers());
         List<Rule> rules = new ArrayList<>(doc.rules().size());
         for (RuleSpec spec : doc.rules()) {
-            rules.add(compileRule(spec, signers, doc.issuers()));
+            rules.add(compileRule(spec, signers, doc.issuers(), doc.extraClaims()));
         }
         rejectSpecificityTies(rules);
         return new RulePolicy(rules, doc.extraClaims(), doc.defaults(), doc.issuers(), doc.declared());
     }
 
-    private static Rule compileRule(RuleSpec spec, SignersConfig signers, List<String> issuers) {
+    private static Rule compileRule(RuleSpec spec, SignersConfig signers, List<String> issuers,
+            ClaimSetMode defaultExtraClaims) {
         List<Clause> clauses = new ArrayList<>(spec.clauseIds().size());
         for (Set<String> clauseId : spec.clauseIds()) {
             List<SignerIdentity> clauseSigners = new ArrayList<>(clauseId.size());
@@ -75,7 +76,8 @@ public final class RulePolicy implements TrustPolicy {
             clauses.add(new Clause(clauseSigners));
         }
         Requirement requirement = new Requirement(clauses, issuers);
-        return new Rule(spec.patterns(), requirement, spec.enforcement(), spec.location());
+        ClaimSetMode extraClaims = spec.extraClaims() == null ? defaultExtraClaims : spec.extraClaims();
+        return new Rule(spec.patterns(), requirement, spec.enforcement(), spec.location(), extraClaims);
     }
 
     private static SignerIdentity resolve(SignersConfig signers, String id, String location) {

@@ -819,12 +819,12 @@ public class Sigmund implements AutoCloseable {
          * Returns whether the given factory supports any OpenPGP credential type.
          *
          * @param factory the factory to check
-         * @return {@code true} if the factory supports {@code openpgp4} or {@code openpgp6}
+         * @return {@code true} if the factory supports {@code pgp4} or {@code pgp6}
          */
         private static boolean supportsOpenPgp(SignatureToolFactory factory) {
             Set<String> types = factory.supportedCredentialTypes();
-            return types.contains(Credential.TYPE_OPENPGP_V4)
-                    || types.contains(Credential.TYPE_OPENPGP_V6);
+            return types.contains(Credential.TYPE_PGP4)
+                    || types.contains(Credential.TYPE_PGP6);
         }
 
         /**

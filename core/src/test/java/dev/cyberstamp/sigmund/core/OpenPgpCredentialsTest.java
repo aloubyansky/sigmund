@@ -50,7 +50,7 @@ class OpenPgpCredentialsTest {
                     "Alice <alice@example.com>", "RSA", 4, FP, FP);
 
             assertThat(OpenPgpCredentials.from(result)).containsExactly(
-                    new KeyCredential(Credential.TYPE_OPENPGP_V4, FP));
+                    new KeyCredential(Credential.TYPE_PGP4, FP));
         }
 
         @Test
@@ -58,7 +58,7 @@ class OpenPgpCredentialsTest {
             VerifyResult result = OpenPgpVerifyResult.verified(null, "Ed25519", 6, FP6, FP6);
 
             assertThat(OpenPgpCredentials.from(result))
-                    .containsExactly(new KeyCredential(Credential.TYPE_OPENPGP_V6, FP6));
+                    .containsExactly(new KeyCredential(Credential.TYPE_PGP6, FP6));
         }
 
         @Test
@@ -76,8 +76,8 @@ class OpenPgpCredentialsTest {
                     .withKeyFingerprints(subkey, FP);
 
             assertThat(OpenPgpCredentials.from(result)).containsExactly(
-                    new KeyCredential(Credential.TYPE_OPENPGP_V4, subkey),
-                    new KeyCredential(Credential.TYPE_OPENPGP_V4, FP));
+                    new KeyCredential(Credential.TYPE_PGP4, subkey),
+                    new KeyCredential(Credential.TYPE_PGP4, FP));
         }
 
         @Test

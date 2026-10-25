@@ -294,7 +294,7 @@ issuers:
 signers:
   release-lead:
     email: "release@example.com"
-    openpgp4: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+    pgp4: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
 
 rules:
   - match: ["com.example.*"]

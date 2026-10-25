@@ -66,8 +66,8 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
     /** Default cipher suite for PQC key generation (ML-DSA-87 + Ed448 hybrid). */
     public static final String DEFAULT_CIPHER_SUITE = "mldsa87-ed448";
 
-    private static final Set<String> SUPPORTED_CREDENTIAL_TYPES = Set.of(Credential.TYPE_OPENPGP_V4,
-            Credential.TYPE_OPENPGP_V6);
+    private static final Set<String> SUPPORTED_CREDENTIAL_TYPES = Set.of(Credential.TYPE_PGP4,
+            Credential.TYPE_PGP6);
     private static final Pattern FINGERPRINT_PATTERN = Pattern.compile("(?i)(?:fingerprint:?\\s*)?([0-9A-F]{64})");
     private static final Pattern SIGNER_SELF_PATTERN = Pattern.compile("(?i)[0-9A-F]{40,64}");
     private static final Pattern INSPECT_ALGO_PATTERN = Pattern.compile("Public-key algo:\\s+(.+)");

@@ -507,9 +507,10 @@ address with a single key, and verifying it for a new key removes it from the
 previous one. Rotation therefore unbinds the old key's signatures for a
 verifier that never saw the binding. So a signer carries both: fingerprints for
 keys already seen, stable, offline and historically complete, and the identity
-for keys to come. A stored binding proves the identity for signatures made
-before it was last observed, so rotation does not change a verifier's view of
-old signatures and a withdrawn address stops covering new ones. Whole-key revocations are distributed for keys with no verified user
+for keys to come. Rotation is recorded in the policy: a signer lists every key
+it signed with, and updating the policy pins a new key the directory confirms
+for the signer's address, so every verifier reads old signatures the same way
+and a withdrawn address stops covering the key. Whole-key revocations are distributed for keys with no verified user
 ID, so revocation checking is unaffected.
 
 Sigstore inverts this. Short-lived certs mean there is nothing to revoke; the

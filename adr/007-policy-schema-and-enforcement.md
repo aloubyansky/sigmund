@@ -9,6 +9,9 @@ only), `by-scope` dropped, the enforcement model recast as *policy present
 enforces / zero-config observes*, an explicit catch-all pattern, and issuer
 validation moved wholly to config-load time. The superseded wording is preserved
 in git history; the roadmap decision log is updated alongside the P2 work.
+Revised 2026-10-24 after a configuration ergonomics review: only `rules`
+declares a policy, `defaults` without `rules` is an error, `extra-claims` may
+be set per rule, and a bare `requires` scalar is a one-clause list.
 
 ## Context
 
@@ -81,8 +84,8 @@ rules:
     on-no-claim: ignore
 
 defaults:
-  extra-claims: reject        # global only; an unlisted extra verified claim → UNSATISFIED
-  # relaxation overrides; the values below are the code defaults WHEN A POLICY IS PRESENT:
+  extra-claims: reject        # a rule may override; an unlisted extra verified claim → UNSATISFIED
+  # relaxation overrides; the values below are the code defaults WHEN A POLICY IS DECLARED:
   #   on-unsatisfied: fail
   #   on-no-claim: fail
   #   on-indeterminate: fail
@@ -165,7 +168,8 @@ requires:
   signer no clause named, *once the required clauses are already satisfied*:
   `reject` (default) makes such an extra claim `UNSATISFIED` — the listed signer
   set is treated as complete; `ignore` records and ignores it. It is set in
-  `defaults` only; a per-rule override is deferred until there is demand.
+  `defaults` or on a rule, which overrides `defaults` as the `on-…` keys do —
+  so one rule can accept surplus signers without loosening the whole policy.
   `reject` replaces `listed-evidence: all`; `ignore` replaces `any`.
   `unlisted-evidence` disappears, subsumed by this one setting. `extra-claims`
   does **not** govern a claim that *fails* cryptographically (always `FAILED`,
@@ -184,11 +188,14 @@ scope level; see "`by-scope` dropped" below.)
 | `UNSATISFIED` | fail | A claim exists and policy does not accept it |
 | `NO_CLAIM` | fail | Configured-only outcome (see roll-up); relax with `on-no-claim: ignore` |
 | `INDETERMINATE` | fail | Configured-only; transient infra, relax with `on-indeterminate: warn` once measured to matter |
-| `NOT_CONFIGURED` | **fail if a policy is present, `ignore` in zero-config** | The only outcome spanning both worlds |
+| `NOT_CONFIGURED` | **fail if a policy is declared, `ignore` in zero-config** | The only outcome spanning both worlds |
 
-The model is a single switch tied to **policy presence**. A policy is present
-when the configuration declares `rules` or `defaults` — an explicit `rules: []`
-included. A `sigmund.yaml` that only configures signing, tools or signers
+The model is a single switch tied to **a declared policy**. A policy is declared
+when the configuration has `rules` — an explicit `rules: []` included.
+`defaults` without `rules` is a load error: with no rule every artifact is
+`NOT_CONFIGURED`, so defaults alone could only fail everything or change
+nothing, and letting them switch enforcement on made a one-line edit — adding
+`extra-claims` to a signing-only file — flip a build into enforcing. A `sigmund.yaml` that only configures signing, tools or signers
 declares no policy, and neither does a missing file at the default location; a
 missing file at an explicitly given location is an error, so a mistyped path
 cannot turn an enforcing build into an observing one. Because a misspelled
@@ -199,11 +206,11 @@ errors. Whenever no policy is in force the run says so.
   occur are `NOT_CONFIGURED` (→ `ignore`) and `FAILED` (→ `fail`), so a build
   with no policy never fails except on a signature that does not
   cryptographically verify.
-- **A policy present enforces.** Every non-`SATISFIED` outcome defaults to
+- **A declared policy enforces.** Every non-`SATISFIED` outcome defaults to
   `fail`. The per-outcome settings are therefore *relaxation overrides* — an
   author reaches for `on-no-claim: ignore`, a catch-all, or `on-indeterminate:
   warn` to loosen a specific case deliberately. `NOT_CONFIGURED` failing when a
-  policy is present is the same observe/enforce switch applied to coverage: if
+  policy is declared is the same observe/enforce switch applied to coverage: if
   you wrote a policy, an artifact outside every rule is an unhandled case, fixed
   by a rule or a catch-all.
 
@@ -253,13 +260,13 @@ the location and the fix. It checks:
 - no two rules tie on specificity.
 
 `requires` has exactly two clause shapes, normalized to one model — a conjunction
-of disjunctions. Two edge cases are errors rather than readings:
+of disjunctions. A bare scalar, `requires: acme-release`, is a one-clause list,
+as a bare `match` is one pattern. One edge case is an error rather than a
+reading:
 
 - **An empty `requires`**, which would read as "a rule applies and nothing is
   required" and make every matched artifact vacuously `SATISFIED`. A rule that
   tolerates artifacts says so through enforcement, such as `on-no-claim: ignore`.
-- **A bare scalar**, `requires: acme-release`. `requires` is always a sequence;
-  its elements may be scalars.
 
 **Issuer validation is entirely load-time.** Issuer kind is inferred from the
 name — a known directory name → directory, another `https://` URL → OIDC,
@@ -298,11 +305,10 @@ rejected by the schema too.
 
 **Added:** `rules` with `match` and `requires` (`any-of` within a clause),
 `artifact-sets` (renamed from `artifacts`), `defaults`, per-rule enforcement
-overrides, `extra-claims`; the explicit catch-all `"*"`; a published JSON Schema
+overrides, `extra-claims` in `defaults` and per rule; the explicit catch-all `"*"`; a published JSON Schema
 for the document.
 
-**Not added:** `by-scope` enforcement (deferred to the extension); a per-rule
-`extra-claims` override (deferred to demand); threshold (m-of-n) clauses
+**Not added:** `by-scope` enforcement (deferred to the extension); threshold (m-of-n) clauses
 (deferred); attester roles.
 
 **`TrustPolicy` becomes** a rule lookup plus a `RequirementEvaluator`

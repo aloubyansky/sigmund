@@ -6,8 +6,8 @@ package dev.cyberstamp.sigmund.core;
  * Carries OpenPGP-specific fields: the signature packet version, the short key ID,
  * and the full fingerprint. The credential type produced by
  * {@link SignatureTool#extractCredentials(VerifyResult)} is determined by the packet
- * version — {@code version < 6} produces {@code "openpgp4"}, {@code version >= 6}
- * produces {@code "openpgp6"}.
+ * version — {@code version < 6} produces {@code "pgp4"}, {@code version >= 6}
+ * produces {@code "pgp6"}.
  *
  * @see VerifyResult
  */

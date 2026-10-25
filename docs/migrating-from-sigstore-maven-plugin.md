@@ -237,7 +237,7 @@ Sigmund can produce both `.asc` (OpenPGP) and `.sigstore.json` (Sigstore) in a s
 ```yaml
 signers:
   release:
-    openpgp4: "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"  # full 40-character fingerprint
+    pgp4: "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"  # full 40-character fingerprint
     identities:
       - issuer: "https://token.actions.githubusercontent.com"
         source-repository-uri: "https://github.com/myorg/myrepo"

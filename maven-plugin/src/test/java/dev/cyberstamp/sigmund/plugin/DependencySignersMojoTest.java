@@ -407,6 +407,58 @@ class DependencySignersMojoTest {
         }
     }
 
+    /**
+     * The shape of the rules bootstrap writes: a single pattern or signer is written as a string,
+     * the way a person would write it, and a list only when there are several. The rule tolerating
+     * unsigned modules stays a flow list whatever its length, because that is the shape an update
+     * edits when a module starts being signed.
+     */
+    @Nested
+    class GeneratedRules {
+
+        private final ArtifactCoords lib = ArtifactCoords.parse("com.example:lib:1.0");
+
+        private SignedArtifact signed(String userId, int version, String fingerprint) {
+            return new SignedArtifact(lib, "central",
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, userId,
+                            version == 6 ? "ML-DSA-87+Ed448" : "RSA", version,
+                            fingerprint.substring(fingerprint.length() - 16), fingerprint),
+                    null, null);
+        }
+
+        private List<String> generate(Path dir, SignedArtifact... results) throws Exception {
+            DependencySignersMojo mojo = new DependencySignersMojo();
+            mojo.setLog(new RecordingLog());
+            Path file = dir.resolve("sigmund.yaml");
+            mojo.writeTrustConfigYaml(List.of(results), file.toFile());
+            SigmundConfig config = SigmundConfig.parse(file);
+            RulePolicy.compile(config.trustPolicySpec(), config.signers());
+            return Files.readAllLines(file);
+        }
+
+        @Test
+        void aSinglePatternAndSignerAreWrittenAsStrings(@TempDir Path dir) throws Exception {
+            List<String> lines = generate(dir, signed("Alice <alice@example.com>", 4, FULL_FP));
+
+            assertThat(lines).contains("  - match: com.example:lib", "    requires: alice");
+        }
+
+        @Test
+        void severalRequiredSignersAreWrittenAsAList(@TempDir Path dir) throws Exception {
+            List<String> lines = generate(dir, signed("Alice <alice@example.com>", 4, FULL_FP),
+                    signed("Bob <bob@example.com>", 6, FP6));
+
+            assertThat(lines).contains("    requires: [alice, bob]");
+        }
+
+        @Test
+        void theUnsignedModulesRuleStaysAFlowListOfOne(@TempDir Path dir) throws Exception {
+            List<String> lines = generate(dir, SignedArtifact.noClaim(lib, "central"));
+
+            assertThat(lines).contains("  - match: [com.example:lib]");
+        }
+    }
+
     @Nested
     class UpdatingAConfig {
 
@@ -521,7 +573,7 @@ class DependencySignersMojoTest {
             assertThat(Files.readString(file)).isEqualTo(yaml);
             assertThat(log.lines).anyMatch(line -> line.contains("Needs review"))
                     .anyMatch(line -> line.contains("com.example:lib")
-                            && line.contains(OTHER_FP)
+                            && line.contains("signed by pgp4 " + OTHER_FP)
                             && line.contains("rules[0] 'com.example:lib' requires [alice]"));
         }
 

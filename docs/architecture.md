@@ -280,14 +280,14 @@ Sigmund implements a two-layer architecture separating cryptographic verificatio
 
 Layer 2 is the `SignatureTool` SPI, implemented by `BcRunner`, `SqRunner`, and `GpgRunner`. Each tool:
 
-1. Declares capabilities via `supportedCredentialTypes()` (e.g., `["openpgp4", "openpgp6"]`)
+1. Declares capabilities via `supportedCredentialTypes()` (e.g., `["pgp4", "pgp6"]`)
 2. Routes verification via `canVerify(Claim)` (packet version and algorithm)
 3. Performs cryptographic verification → `VerifyResult` (outcome, reason, and metadata)
 4. Extracts proven credentials via `extractCredentials(VerifyResult)` → `List<Credential>`
 
 The credential type is determined by the packet version that was cryptographically verified:
-- `version < 6` → `KeyCredential("openpgp4", fingerprint)`
-- `version >= 6` → `KeyCredential("openpgp6", fingerprint)`
+- `version < 6` → `KeyCredential("pgp4", fingerprint)`
+- `version >= 6` → `KeyCredential("pgp6", fingerprint)`
 
 Only full fingerprints are proven — the verifying key's and, when it is a subkey, its primary
 key's — and every OpenPGP backend proves the same ones.
@@ -345,7 +345,7 @@ extension cannot reach different outcomes from the same policy and the same evid
 ([ADR-006](../adr/006-identity-and-credential-model.md)):
 
 - `KeyCredential(type, fingerprint)` — key material, proven by the signature itself
-  - Type: `"openpgp4"` or `"openpgp6"`, by key version
+  - Type: `"pgp4"` or `"pgp6"`, by key version
   - Full fingerprints only, matched exactly; a 64-bit key ID is rejected
   - OpenPGP backends prove the verifying key and, when it is a subkey, its primary key
 - `IdentityCredential(issuer, attributes)` — an identity asserted by an issuer

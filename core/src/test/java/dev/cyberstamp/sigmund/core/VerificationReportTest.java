@@ -36,10 +36,10 @@ class VerificationReportTest {
 
     private static TrustPolicy requiring(String pattern, String signerId) {
         var signer = new SignerIdentity(signerId,
-                List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)));
+                List.of(new KeyCredential(Credential.TYPE_PGP4, FP)));
         var spec = new TrustPolicySpec(
                 List.of(new RuleSpec(List.of(ArtifactPattern.parse(pattern)),
-                        List.of(Set.of(signerId)), Map.of(), "rules[0]")),
+                        List.of(Set.of(signerId)), Map.of(), "rules[0]", null)),
                 ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
         return RulePolicy.compile(spec, new SignersConfig(Map.of(signerId, signer)));
     }
@@ -47,7 +47,7 @@ class VerificationReportTest {
     private static TrustPolicy catchAllIgnore() {
         var spec = new TrustPolicySpec(
                 List.of(new RuleSpec(List.of(ArtifactPattern.parse("*")), List.of(),
-                        Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), "rules[0]")),
+                        Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), "rules[0]", null)),
                 ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
         return RulePolicy.compile(spec, SignersConfig.EMPTY);
     }
@@ -64,9 +64,9 @@ class VerificationReportTest {
             var spec = new TrustPolicySpec(List.of(
                     new RuleSpec(List.of(ArtifactPattern.parse("org.example:a")), List.of(),
                             Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE),
-                            "rules[0]"),
+                            "rules[0]", null),
                     new RuleSpec(List.of(ArtifactPattern.parse("org.example:*")), List.of(),
-                            Map.of(), "rules[1]")),
+                            Map.of(), "rules[1]", null)),
                     ClaimSetMode.ALL_CLAIMS,
                     Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.IGNORE), List.of(), true);
             return RulePolicy.compile(spec, SignersConfig.EMPTY);
@@ -151,7 +151,7 @@ class VerificationReportTest {
         void artifactLineIsTaggedAsAWarningWhenTheRuleWarns() {
             var spec = new TrustPolicySpec(List.of(new RuleSpec(
                     List.of(ArtifactPattern.parse("*")), List.of(),
-                    Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.WARN), "rules[0]")),
+                    Map.of(ArtifactOutcome.NO_CLAIM, EnforcementAction.WARN), "rules[0]", null)),
                     ClaimSetMode.ALL_CLAIMS, Map.of(), List.of(), true);
             TrustPolicy policy = RulePolicy.compile(spec, SignersConfig.EMPTY);
             ArtifactResult warned = result("a", ArtifactOutcome.NO_CLAIM, null, matched(policy, "a"));
@@ -170,7 +170,7 @@ class VerificationReportTest {
 
         private static ClaimResult by(String attester, String fingerprint) {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
-                    List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, fingerprint)),
+                    List.of(new KeyCredential(Credential.TYPE_PGP4, fingerprint)),
                     attester,
                     TrustRootRef.certD(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
                     Instant.parse("2026-03-12T10:04:11Z"), ClaimTimeSource.SIGNER,
@@ -195,7 +195,7 @@ class VerificationReportTest {
                     List.of(result("lib", ArtifactOutcome.SATISFIED, null, by("Alice", FP))));
 
             assertThat(groups.get(0).detail()).containsExactly(
-                    "  credential openpgp4 " + FP,
+                    "  credential pgp4 " + FP,
                     "  trust root openpgp-cert-d /home/alice/.local/share/pgp.cert.d");
         }
 
@@ -282,7 +282,7 @@ class VerificationReportTest {
                     List.of(result("lib", ArtifactOutcome.UNSATISFIED, null, uncheckable)));
 
             assertThat(groups.get(0).detail()).containsExactly(
-                    "  declared issuer openpgp6 " + pqc + " (not verified)");
+                    "  declared issuer pgp6 " + pqc + " (not verified)");
         }
 
         @Test
@@ -295,7 +295,7 @@ class VerificationReportTest {
             List<VerificationReport.AttesterGroup> groups = VerificationReport.groupByAttester(
                     List.of(result("lib", ArtifactOutcome.SATISFIED, null, verified)));
 
-            assertThat(groups.get(0).detail()).containsExactly("  credential openpgp4 " + FP);
+            assertThat(groups.get(0).detail()).containsExactly("  credential pgp4 " + FP);
         }
 
         @Test
@@ -320,7 +320,7 @@ class VerificationReportTest {
 
         private static ClaimResult detailedClaim(Instant claimTime) {
             return new ClaimResult("openpgp", ClaimOutcome.VERIFIED, null,
-                    List.of(new KeyCredential(Credential.TYPE_OPENPGP_V4, FP)),
+                    List.of(new KeyCredential(Credential.TYPE_PGP4, FP)),
                     "Alice <alice@example.com>",
                     TrustRootRef.certD(Path.of("/home/alice/.local/share/pgp.cert.d")), REF,
                     claimTime, ClaimTimeSource.SIGNER, Instant.parse("2026-09-24T08:00:00Z"),

@@ -22,8 +22,8 @@ import java.util.Set;
  * <p>
  * Maps YAML signer keys to {@link Credential}s:
  * <ul>
- * <li>{@code openpgp4} / {@code pgp4}, {@code openpgp6} / {@code pgp6} → {@link KeyCredential},
- * full fingerprints only</li>
+ * <li>{@code pgp4}, {@code pgp6} → one {@link KeyCredential} per fingerprint, a single one or
+ * a list of them, full fingerprints only</li>
  * <li>{@code email} → an {@link IdentityCredential} asserting {@code email}, vouched for by
  * one of the top-level {@code issuers}</li>
  * <li>{@code identities} → one {@link IdentityCredential} per entry: an optional
@@ -179,12 +179,14 @@ class SigmundConfigParser {
         return new SignerIdentity(id, List.of(identity(id, null, Map.of(IdentityCredential.EMAIL, email))));
     }
 
+    private static final List<String> SIGNING_CREDENTIAL_TYPES = List.of(
+            Credential.TYPE_PGP4, Credential.TYPE_PGP6, Credential.TYPE_SIGSTORE);
+    private static final String EXTRA_CLAIMS = "extra-claims";
     private static final String MEMBERS = "members";
     private static final String IDENTITIES = "identities";
     private static final String ISSUER = "issuer";
     private static final List<String> CREDENTIAL_KEYS = List.of(
-            "pgp4", Credential.TYPE_OPENPGP_V4, "pgp6", Credential.TYPE_OPENPGP_V6,
-            IdentityCredential.EMAIL, IDENTITIES);
+            "pgp4", "pgp6", IdentityCredential.EMAIL, IDENTITIES);
 
     /**
      * Parses an object-form signer definition.
@@ -233,10 +235,8 @@ class SigmundConfigParser {
      */
     private static void addCredentialsFromNode(List<Credential> credentials, String signerId,
             JsonNode node) {
-        addKeyCredential(credentials, signerId, node, "pgp4", Credential.TYPE_OPENPGP_V4);
-        addKeyCredential(credentials, signerId, node, Credential.TYPE_OPENPGP_V4, Credential.TYPE_OPENPGP_V4);
-        addKeyCredential(credentials, signerId, node, "pgp6", Credential.TYPE_OPENPGP_V6);
-        addKeyCredential(credentials, signerId, node, Credential.TYPE_OPENPGP_V6, Credential.TYPE_OPENPGP_V6);
+        addKeyCredentials(credentials, signerId, node, "pgp4", Credential.TYPE_PGP4);
+        addKeyCredentials(credentials, signerId, node, "pgp6", Credential.TYPE_PGP6);
         addEmailCredential(credentials, signerId, node);
         addIdentities(credentials, signerId, node);
     }
@@ -277,14 +277,40 @@ class SigmundConfigParser {
         }
     }
 
-    private static void addKeyCredential(List<Credential> creds, String signerId,
+    private static void addKeyCredentials(List<Credential> creds, String signerId,
             JsonNode node, String yamlKey, String keyType) {
-        String value = textField(node, yamlKey);
-        if (value == null) {
+        JsonNode value = node.get(yamlKey);
+        if (value == null || value.isNull()) {
             return;
         }
+        for (JsonNode fingerprint : fingerprintNodes(value, signerId, yamlKey)) {
+            creds.add(keyCredential(fingerprint.asText(), signerId, yamlKey, keyType));
+        }
+    }
+
+    /**
+     * Returns the fingerprints a {@code pgp4} or {@code pgp6} value lists: the value itself when
+     * it is a single fingerprint, otherwise the elements of its list. Any other shape is an error
+     * rather than an empty result, which would silently drop the keys the author wrote.
+     */
+    private static List<JsonNode> fingerprintNodes(JsonNode value, String signerId, String yamlKey) {
+        List<JsonNode> fingerprints = value.isArray() ? new ArrayList<>() : List.of(value);
+        if (value.isArray()) {
+            value.forEach(fingerprints::add);
+        }
+        for (JsonNode fingerprint : fingerprints) {
+            if (!fingerprint.isTextual()) {
+                throw new PolicyConfigException("Signer '" + signerId + "': '" + yamlKey
+                        + "' must be a fingerprint or a list of fingerprints, not " + describe(value));
+            }
+        }
+        return fingerprints;
+    }
+
+    private static KeyCredential keyCredential(String fingerprint, String signerId, String yamlKey,
+            String keyType) {
         try {
-            creds.add(new KeyCredential(keyType, value));
+            return new KeyCredential(keyType, fingerprint);
         } catch (IllegalArgumentException e) {
             throw new PolicyConfigException(
                     "Signer '" + signerId + "': '" + yamlKey + "' " + e.getMessage(), e);
@@ -371,13 +397,32 @@ class SigmundConfigParser {
         }
         String signer = textField(node, "signer");
         List<String> toolchain = parseStringList(node.get("toolchain"));
-        List<String> credentialTypes = parseStringList(node.get("credential-types"));
+        List<String> credentialTypes = credentialTypes(parseStringList(node.get("credential-types")));
         Map<String, List<String>> profiles = parseProfiles(node.get("profiles"));
         return new SigningConfig(signer, toolchain, credentialTypes, profiles);
     }
 
     private static Map<String, List<String>> parseProfiles(JsonNode node) {
-        return parseStringListMap(node);
+        Map<String, List<String>> profiles = new LinkedHashMap<>();
+        parseStringListMap(node).forEach((name, types) -> profiles.put(name, credentialTypes(types)));
+        return profiles;
+    }
+
+    /**
+     * Checks credential types as written in {@code signing} against the types tools declare —
+     * {@code pgp4}, {@code pgp6} and {@code sigstore}, the spelling signer entries use — so that a
+     * misspelled type fails the load instead of silently selecting no tool.
+     */
+    private static List<String> credentialTypes(List<String> written) {
+        for (String name : written) {
+            if (!SIGNING_CREDENTIAL_TYPES.contains(name)) {
+                String suggestion = NearestName.among(name, SIGNING_CREDENTIAL_TYPES);
+                throw new PolicyConfigException("signing: unknown credential type '" + name + "'"
+                        + (suggestion == null ? "" : " — did you mean '" + suggestion + "'?")
+                        + "; expected " + String.join(", ", SIGNING_CREDENTIAL_TYPES));
+            }
+        }
+        return written;
     }
 
     // --- Top-level Tools Registry ---
@@ -431,24 +476,31 @@ class SigmundConfigParser {
      * signer id, and the enforcement and extra-claims settings are read. Signer references are not
      * resolved and issuer assertability is not checked — those happen when the policy is compiled on
      * the verification path. The policy is {@linkplain TrustPolicySpec#declared() declared} when
-     * the document declares {@code rules} or {@code defaults}; a file that only configures
+     * the document declares {@code rules}, an empty list included; a file that only configures
      * signing, tools or signers is zero-config for verification, which observes rather than
-     * enforces.
+     * enforces. {@code defaults} without {@code rules} is rejected: with no rule every artifact
+     * is {@code NOT_CONFIGURED}, so defaults alone could only fail everything or change
+     * nothing, and they must not switch enforcement on by themselves.
      *
      * @param root the document root
      * @param sets the parsed artifact-set registry, for {@code match} expansion
      * @param issuers the canonical default issuers
      * @return the raw trust policy spec
      * @throws PolicyConfigException if a rule, requirement, pattern or enforcement setting is
-     *         structurally invalid
+     *         structurally invalid, or {@code defaults} is declared without {@code rules}
      */
     private static TrustPolicySpec parseTrustPolicySpec(JsonNode root, ArtifactSetsConfig sets,
             List<String> issuers) {
+        boolean declared = root.has("rules");
         JsonNode defaultsNode = root.get("defaults");
+        if (!declared && defaultsNode != null) {
+            throw new PolicyConfigException("'defaults' has no effect without 'rules': with no rule"
+                    + " every artifact is NOT_CONFIGURED. Add 'rules' to declare a policy, or"
+                    + " remove 'defaults'");
+        }
         List<RuleSpec> rules = parseRules(root.get("rules"), sets);
         ClaimSetMode extraClaims = parseExtraClaims(defaultsNode);
         Map<ArtifactOutcome, EnforcementAction> defaults = parseDefaults(defaultsNode);
-        boolean declared = root.has("rules") || root.has("defaults");
         return new TrustPolicySpec(rules, extraClaims, defaults, issuers, declared);
     }
 
@@ -475,7 +527,7 @@ class SigmundConfigParser {
         List<ArtifactPattern> patterns = parseMatch(node.get("match"), sets, location);
         List<Set<String>> clauseIds = parseRequires(node.get("requires"), location);
         Map<ArtifactOutcome, EnforcementAction> enforcement = parseEnforcementOverrides(node, location);
-        return new RuleSpec(patterns, clauseIds, enforcement, location);
+        return new RuleSpec(patterns, clauseIds, enforcement, location, extraClaims(node, location));
     }
 
     private static List<ArtifactPattern> parseMatch(JsonNode node, ArtifactSetsConfig sets,
@@ -528,9 +580,12 @@ class SigmundConfigParser {
         if (node == null || node.isNull()) {
             return List.of();
         }
+        if (node.isTextual()) {
+            return List.of(Set.of(signerReference(node, location)));
+        }
         if (!node.isArray()) {
             throw new PolicyConfigException(location
-                    + ": 'requires' must be a list of clauses, not a scalar");
+                    + ": 'requires' must be a signer id or a list of clauses, not " + describe(node));
         }
         if (node.isEmpty()) {
             throw new PolicyConfigException(location + ": 'requires' must not be empty; to tolerate"
@@ -613,12 +668,13 @@ class SigmundConfigParser {
         Map<ArtifactOutcome, EnforcementAction> enforcement = new EnumMap<>(ArtifactOutcome.class);
         for (Map.Entry<String, JsonNode> field : node.properties()) {
             String key = field.getKey();
-            if ("match".equals(key) || "requires".equals(key)) {
+            if ("match".equals(key) || "requires".equals(key) || EXTRA_CLAIMS.equals(key)) {
                 continue;
             }
             if (!key.startsWith("on-")) {
                 throw new PolicyConfigException(location + ": unknown key '" + key
-                        + "'; expected 'match', 'requires' or an 'on-*' enforcement override");
+                        + "'; expected 'match', 'requires', 'extra-claims' or an 'on-*' enforcement"
+                        + " override");
             }
             enforcement.put(outcomeForEnforcementKey(key, location),
                     EnforcementAction.parse(field.getValue().asText()));
@@ -630,14 +686,24 @@ class SigmundConfigParser {
         if (defaultsNode == null || defaultsNode.isNull()) {
             return ClaimSetMode.ALL_CLAIMS;
         }
-        String value = textField(defaultsNode, "extra-claims");
+        ClaimSetMode mode = extraClaims(defaultsNode, "defaults");
+        return mode == null ? ClaimSetMode.ALL_CLAIMS : mode;
+    }
+
+    /**
+     * Reads an {@code extra-claims} setting, in {@code defaults} or on a rule.
+     *
+     * @return the mode, or {@code null} when the node does not set one
+     */
+    private static ClaimSetMode extraClaims(JsonNode node, String location) {
+        String value = textField(node, EXTRA_CLAIMS);
         if (value == null) {
-            return ClaimSetMode.ALL_CLAIMS;
+            return null;
         }
         return switch (value.trim().toLowerCase(Locale.ROOT)) {
             case "reject" -> ClaimSetMode.ALL_CLAIMS;
             case "ignore" -> ClaimSetMode.ANY_CLAIM;
-            default -> throw new PolicyConfigException("defaults: 'extra-claims' must be 'reject'"
+            default -> throw new PolicyConfigException(location + ": 'extra-claims' must be 'reject'"
                     + " or 'ignore', not '" + value + "'");
         };
     }
@@ -652,7 +718,7 @@ class SigmundConfigParser {
         Map<ArtifactOutcome, EnforcementAction> defaults = new EnumMap<>(ArtifactOutcome.class);
         for (Map.Entry<String, JsonNode> field : node.properties()) {
             String key = field.getKey();
-            if ("extra-claims".equals(key)) {
+            if (EXTRA_CLAIMS.equals(key)) {
                 continue;
             }
             if (!key.startsWith("on-")) {

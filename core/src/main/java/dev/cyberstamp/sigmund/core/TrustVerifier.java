@@ -81,7 +81,8 @@ public class TrustVerifier {
                 collectClaims(artifactFile, evidenceFiles));
         Rule matched = policy.matchRule(coords);
         OutcomeRollup.Result rollup = OutcomeRollup.derive(claims,
-                matched == null ? null : matched.requirement(), policy.claimSetMode());
+                matched == null ? null : matched.requirement(),
+                matched == null ? policy.claimSetMode() : matched.extraClaims());
         return new ArtifactResult(ArtifactSubject.of(coords, artifactFile), rollup.outcome(),
                 rollup.reason(), matched == null ? null : matched.toMatchedRule(coords), claims,
                 verifiedAt);

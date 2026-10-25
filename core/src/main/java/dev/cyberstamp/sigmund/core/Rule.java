@@ -14,15 +14,18 @@ import java.util.Map;
  * most specific wins, determined by {@link #specificity(ArtifactCoords)}.
  * <p>
  * The enforcement map holds outcome-specific overrides. When an outcome is not in the map,
- * the policy's default enforcement for that outcome applies.
+ * the policy's default enforcement for that outcome applies. The claim-set mode is already
+ * resolved: the rule's own {@code extra-claims}, or the policy's default when it sets none.
  *
  * @param patterns the artifact patterns this rule applies to
  * @param requirement the compiled requirement with resolved signers
  * @param enforcement enforcement action overrides for artifact outcomes
  * @param location the rule's location in the policy file, for diagnostic messages
+ * @param extraClaims what to do with verified claims beyond those the requirement accepted
  */
 public record Rule(List<ArtifactPattern> patterns, Requirement requirement,
-        Map<ArtifactOutcome, EnforcementAction> enforcement, String location) {
+        Map<ArtifactOutcome, EnforcementAction> enforcement, String location,
+        ClaimSetMode extraClaims) {
 
     /**
      * Creates a rule with defensive copies.
@@ -31,6 +34,7 @@ public record Rule(List<ArtifactPattern> patterns, Requirement requirement,
      * @param requirement the compiled requirement
      * @param enforcement enforcement overrides
      * @param location the rule's location
+     * @param extraClaims the resolved claim-set mode
      */
     public Rule {
         patterns = patterns == null ? List.of() : List.copyOf(patterns);

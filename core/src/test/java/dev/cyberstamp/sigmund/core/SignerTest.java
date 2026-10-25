@@ -111,9 +111,9 @@ class SignerTest {
         void aggregatesInfoFromAllTools() {
             var format = mockFormat("openpgp", ".asc", true);
             var gpg = mockSigningTool("gpg", format, "RSA",
-                    new SigningInfo("gpg", "AAAA", "RSA", "alice@example.com", Set.of("openpgp4")));
+                    new SigningInfo("gpg", "AAAA", "RSA", "alice@example.com", Set.of("pgp4")));
             var sq = mockSigningTool("sq", format, "ML-DSA-87+Ed448",
-                    new SigningInfo("sq", "BBBB", "ML-DSA-87+Ed448", "alice@example.com", Set.of("openpgp6")));
+                    new SigningInfo("sq", "BBBB", "ML-DSA-87+Ed448", "alice@example.com", Set.of("pgp6")));
             var signer = new Signer(List.of(gpg, sq));
 
             List<SigningInfo> infos = signer.signingInfo();
@@ -251,7 +251,7 @@ class SignerTest {
 
             @Override
             public Set<String> supportedCredentialTypes() {
-                return Set.of("openpgp4");
+                return Set.of("pgp4");
             }
 
             @Override
@@ -310,7 +310,7 @@ class SignerTest {
 
             @Override
             public Set<String> supportedCredentialTypes() {
-                return Set.of("openpgp4");
+                return Set.of("pgp4");
             }
 
             @Override

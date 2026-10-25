@@ -82,8 +82,8 @@ Rules the code relies on; breaking one is a defect even if tests pass.
   `BackendAgreementTest` and `KeyValidityAgreementTest` enforce this.
 - **Enforcement never changes an outcome.** Outcomes come from the roll-up; whether they block is
   resolved separately from the matched rule.
-- **A policy is declared only when the file has `rules` or `defaults`** (`TrustPolicy.declared()`). Without one,
-  verification observes: only `FAILED` blocks.
+- **A policy is declared only when the file has `rules`** (`TrustPolicy.declared()`); `defaults`
+  without `rules` is a load error. Without a policy, verification observes: only `FAILED` blocks.
 - **Signing never compiles the policy.** The parser produces `TrustPolicySpec`; `RulePolicy.compile`
   runs only on the verification path, so verification-only config errors cannot break signing.
 

@@ -42,8 +42,8 @@ public final class OpenPgpCredentials {
             return List.of();
         }
         String type = openPgp.version() < 6
-                ? Credential.TYPE_OPENPGP_V4
-                : Credential.TYPE_OPENPGP_V6;
+                ? Credential.TYPE_PGP4
+                : Credential.TYPE_PGP6;
         List<Credential> credentials = new ArrayList<>(2);
         addKey(credentials, type, openPgp.fingerprint());
         addKey(credentials, type, openPgp.primaryFingerprint());

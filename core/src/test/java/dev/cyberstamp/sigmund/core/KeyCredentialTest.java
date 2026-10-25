@@ -16,26 +16,26 @@ class KeyCredentialTest {
 
         @Test
         void normalizesToUppercase() {
-            var credential = new KeyCredential(Credential.TYPE_OPENPGP_V4, V4.toLowerCase());
+            var credential = new KeyCredential(Credential.TYPE_PGP4, V4.toLowerCase());
             assertThat(credential.fingerprint()).isEqualTo(V4);
         }
 
         @Test
         void rejectsKeyId() {
-            assertThatThrownBy(() -> new KeyCredential(Credential.TYPE_OPENPGP_V4, "4AEE18F83AFDEB23"))
+            assertThatThrownBy(() -> new KeyCredential(Credential.TYPE_PGP4, "4AEE18F83AFDEB23"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("full fingerprint");
         }
 
         @Test
         void rejectsV6LengthForV4() {
-            assertThatThrownBy(() -> new KeyCredential(Credential.TYPE_OPENPGP_V4, V6))
+            assertThatThrownBy(() -> new KeyCredential(Credential.TYPE_PGP4, V6))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
         void rejectsNonHex() {
-            assertThatThrownBy(() -> new KeyCredential(Credential.TYPE_OPENPGP_V4,
+            assertThatThrownBy(() -> new KeyCredential(Credential.TYPE_PGP4,
                     "ZZEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"))
                     .isInstanceOf(IllegalArgumentException.class);
         }
@@ -52,12 +52,12 @@ class KeyCredentialTest {
 
         @Test
         void infersV4FromLength() {
-            assertThat(KeyCredential.openPgp(V4).type()).isEqualTo(Credential.TYPE_OPENPGP_V4);
+            assertThat(KeyCredential.openPgp(V4).type()).isEqualTo(Credential.TYPE_PGP4);
         }
 
         @Test
         void infersV6FromLength() {
-            assertThat(KeyCredential.openPgp(V6).type()).isEqualTo(Credential.TYPE_OPENPGP_V6);
+            assertThat(KeyCredential.openPgp(V6).type()).isEqualTo(Credential.TYPE_PGP6);
         }
 
         @Test
@@ -85,7 +85,7 @@ class KeyCredentialTest {
 
         @Test
         void differentTypeDoesNotMatch() {
-            var v4 = new KeyCredential(Credential.TYPE_OPENPGP_V4, V4);
+            var v4 = new KeyCredential(Credential.TYPE_PGP4, V4);
             var custom = new KeyCredential("x509", V4);
             assertThat(v4.matches(custom)).isFalse();
         }

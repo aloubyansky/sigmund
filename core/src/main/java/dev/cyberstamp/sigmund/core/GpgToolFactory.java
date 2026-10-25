@@ -15,7 +15,7 @@ final class GpgToolFactory implements SignatureToolFactory {
 
     @Override
     public Set<String> supportedCredentialTypes() {
-        return Set.of(Credential.TYPE_OPENPGP_V4);
+        return Set.of(Credential.TYPE_PGP4);
     }
 
     @Override
