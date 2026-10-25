@@ -1,7 +1,9 @@
 package dev.cyberstamp.sigmund.core;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -221,6 +223,27 @@ public class Sigmund implements AutoCloseable {
         warnIfNoFetchCapableImporter();
         return new TrustVerifier(policy, evidenceProviders, new ClaimIdentityResolver(policy,
                 directories, verificationConfig.resolveSigners()));
+    }
+
+    /**
+     * Returns the identities directories vouch for a key: each address a directory among the
+     * given issuers has verified for it, as an email identity from that directory.
+     * <p>
+     * This is the question verification asks for a signer named by address, asked outside
+     * verification — by an update deciding whether a new key belongs to a signer the policy
+     * already names. Only issuers that are known directories are asked; any other is skipped.
+     * The directories are asked over the network whatever {@code verification.resolve-signers}
+     * says, so a caller honoring it does not call this when it is off.
+     *
+     * @param key the key whose addresses to ask for
+     * @param issuers issuer names, in any form {@link IssuerKind#canonicalName(String)} accepts
+     * @return the identities, empty when no directory among the issuers serves an address for it
+     * @throws IOException if a directory cannot be reached
+     */
+    public List<IdentityCredential> directoryIdentities(KeyCredential key, Collection<String> issuers)
+            throws IOException {
+        List<String> names = issuers.stream().map(IssuerKind::canonicalName).distinct().toList();
+        return ClaimIdentityResolver.directoryIdentities(directories, names, key.fingerprint());
     }
 
     private void warnIfNoFetchCapableImporter() {

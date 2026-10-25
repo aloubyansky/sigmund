@@ -3,9 +3,11 @@ package dev.cyberstamp.sigmund.plugin;
 import dev.cyberstamp.sigmund.core.Algorithms;
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ArtifactPattern;
+import dev.cyberstamp.sigmund.core.ClaimSetMode;
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
+import dev.cyberstamp.sigmund.core.IssuerKind;
 import dev.cyberstamp.sigmund.core.KeyCredential;
 import dev.cyberstamp.sigmund.core.MatchedRule;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
@@ -26,6 +28,7 @@ import java.io.PrintWriter;
 import java.io.StringReader;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -82,6 +85,21 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
     @Parameter(property = "sigmund.updateTrustConfig")
     private String updateTrustConfig;
 
+    /** The directory a generated config trusts for the addresses it names signers by. */
+    private static final String DIRECTORY = "keys.openpgp.org";
+    private static final String DIRECTORY_URL = IssuerKind.KEYS_OPENPGP_ORG;
+
+    private DirectoryLookup directoryLookup;
+
+    /**
+     * Sets how an update asks directories for a key's verified addresses.
+     *
+     * @param lookup the lookup, or {@code null} when directories are not asked
+     */
+    void directoryLookup(DirectoryLookup lookup) {
+        this.directoryLookup = lookup;
+    }
+
     @Override
     public void execute() throws MojoExecutionException {
         if (skip) {
@@ -101,6 +119,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             getLog().info("");
 
             List<SignedArtifact> results = inspector.inspectAll(artifacts);
+            directoryLookup = verificationConfig.resolveSigners() ? inspector::directoryIdentities : null;
 
             logReport(results);
 
@@ -387,7 +406,9 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
      * Artifacts are grouped by signer, with common groupId prefixes collapsed
      * into wildcard patterns. Versions are stripped from trust patterns. The first line points
      * YAML editors at the schema of this Sigmund version, so the file is reviewed and edited
-     * with completion and unknown-key errors.
+     * with completion and unknown-key errors. A signer whose key the directory has verified an
+     * address for is named by that address too, and the directory is then listed under
+     * {@code issuers} — trust stated in the file, where the review sees it.
      */
     void writeTrustConfigYaml(List<SignedArtifact> results, File configFile)
             throws MojoExecutionException {
@@ -444,11 +465,17 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
 
         combineCoSigningKeys(signersByKey, List.of(artifactSigners));
         dropSignersWithoutCredentials(List.of(artifactSigners), signersByKey);
+        attachDirectoryAddresses(signersByKey.values());
+        boolean directoryTrusted = signersByKey.values().stream().anyMatch(info -> info.directoryAddress != null);
         Map<String, List<String>> trustPatterns = TrustPatternCollapse.collapse(artifactSigners);
 
         try (PrintWriter w = new PrintWriter(Files.newBufferedWriter(configFile.toPath()))) {
             w.println(SigmundSchema.modeline());
-            writeSignersSection(w, signersByKey);
+            if (directoryTrusted) {
+                w.println("issuers: [" + DIRECTORY + "]");
+                w.println();
+            }
+            writeSignersSection(w, signersByKey, directoryTrusted);
             writeRulesSection(w, trustPatterns, unsignedModulePatterns);
             if (w.checkError()) {
                 throw new IOException("Error writing trust config");
@@ -495,6 +522,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         groupByArtifact(results).forEach((coords, entries) -> plan.consider(coords, entries,
                 trustPolicy.matchRule(coords), trustPolicy.issuers()));
         plan.moveOutOfTolerantRules(lines);
+        plan.review.addAll(plan.rotationPins.apply(lines));
         combineCoSigningKeys(plan.newSigners,
                 List.of(plan.newArtifactSigners, plan.movedArtifactSigners));
         dropSignersWithoutCredentials(
@@ -505,9 +533,12 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             getLog().info("Trust configuration is already up to date.");
             return;
         }
+        logPinned(plan.rotationPins.applied());
 
         spliceRules(lines, plan.newTrustPatterns(), plan.newUnsigned);
-        spliceSigners(lines, plan.referencedSigners());
+        Map<String, SignerInfo> addedSigners = plan.referencedSigners();
+        attachDirectoryAddresses(addedSigners.values());
+        spliceSigners(lines, addedSigners, existing.trustPolicySpec().issuers().contains(DIRECTORY_URL));
         compileUpdatable(configFile.getPath() + " (as updated)",
                 loadUpdatable(configFile.getPath() + " (as updated)", lines));
         writeConfigLines(configFile, lines);
@@ -564,6 +595,15 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         }
     }
 
+    private void logPinned(List<RotationPins.Pin> pinned) {
+        if (pinned.isEmpty()) {
+            return;
+        }
+        getLog().info("");
+        getLog().info("Rotated keys pinned (" + pinned.size() + "):");
+        pinned.forEach(pin -> getLog().info("  " + pin.describe()));
+    }
+
     private void logReview(List<String> review) {
         if (review.isEmpty()) {
             return;
@@ -583,6 +623,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         final Map<String, Set<String>> movedArtifactSigners = new LinkedHashMap<>();
         final List<String> newUnsigned = new ArrayList<>();
         final List<String> review = new ArrayList<>();
+        final RotationPins rotationPins = new RotationPins(directoryLookup);
         private final Map<Integer, Set<String>> leavingTolerantRule = new TreeMap<>(
                 Comparator.reverseOrder());
         private final Map<Integer, String> tolerantRuleNames = new HashMap<>();
@@ -619,23 +660,54 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
             }
         }
 
+        /**
+         * Lists for review the credentials an artifact proved that its rule does not name, after
+         * pinning those a directory confirms for a required signer. It mirrors the roll-up:
+         * under {@code extra-claims: reject} every verified claim must be accepted, so each
+         * unnamed credential is a change; under {@code ignore} one accepted claim is enough.
+         */
         private void reviewUnnamedSigner(ArtifactCoords coords, String module,
                 List<SignedArtifact> entries, Rule rule, List<String> issuers) {
-            List<Credential> proven = provenCredentials(entries);
-            if (proven.isEmpty() || namesAny(rule, proven, issuers)) {
+            List<Credential> proven = provenCredentials(entries).stream().distinct().toList();
+            List<Credential> unnamed = proven.stream()
+                    .filter(credential -> !namesAny(rule, List.of(credential), issuers))
+                    .toList();
+            boolean anyAccepted = unnamed.size() < proven.size();
+            if (unnamed.isEmpty() || anyAccepted && rule.extraClaims() == ClaimSetMode.ANY_CLAIM) {
                 return;
             }
+            List<Credential> left = new ArrayList<>();
+            StringBuilder note = new StringBuilder();
+            List<RotationPins.Pin> pinnedHere = new ArrayList<>();
+            for (Credential credential : unnamed) {
+                if (credential instanceof KeyCredential key) {
+                    String pinNote = rotationPins.pin(module, key, rule, issuers);
+                    if (pinNote == null) {
+                        anyAccepted = true;
+                        pinnedHere.add(rotationPins.pinned(key, rule));
+                        continue;
+                    }
+                    if (note.indexOf(pinNote) < 0) {
+                        note.append(pinNote);
+                    }
+                }
+                left.add(credential);
+            }
+            if (left.isEmpty() || anyAccepted && rule.extraClaims() == ClaimSetMode.ANY_CLAIM) {
+                return;
+            }
+            pinnedHere.forEach(pin -> note.append(pin.alongside()));
             String signers = rule.requirement().clauses().stream()
                     .flatMap(clause -> clause.signers().stream())
                     .map(SignerIdentity::id)
                     .distinct()
                     .collect(Collectors.joining(", "));
-            String provenNames = proven.stream()
+            String provenNames = left.stream()
                     .map(credential -> credential.type() + " " + credential.displayName())
                     .collect(Collectors.joining(", "));
             MatchedRule matched = rule.toMatchedRule(coords);
             review.add(module + " — signed by " + provenNames + ", but " + matched.location()
-                    + " '" + matched.pattern() + "' requires [" + signers + "]");
+                    + " '" + matched.pattern() + "' requires [" + signers + "]" + note);
         }
 
         private void recordSigners(List<SignedArtifact> entries, String module,
@@ -719,7 +791,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
 
         boolean isEmpty() {
             return newArtifactSigners.isEmpty() && movedArtifactSigners.isEmpty()
-                    && newUnsigned.isEmpty();
+                    && newUnsigned.isEmpty() && rotationPins.applied().isEmpty();
         }
     }
 
@@ -789,14 +861,21 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
                 || trimmed.charAt(afterColon) == '#';
     }
 
-    private void spliceSigners(List<String> lines, Map<String, SignerInfo> newSigners) {
+    /**
+     * Appends new signers to the {@code signers} section. A directory address is written as
+     * {@code email:} when the file already trusts the directory, and otherwise as an
+     * {@code identities} entry naming it, so that adding a signer never widens what the file's
+     * {@code issuers} vouch for.
+     */
+    private void spliceSigners(List<String> lines, Map<String, SignerInfo> newSigners,
+            boolean directoryTrusted) {
         if (newSigners.isEmpty()) {
             return;
         }
         List<String> newLines = new ArrayList<>();
         newSigners.values().stream()
                 .sorted(Comparator.comparing(i -> i.id, String.CASE_INSENSITIVE_ORDER))
-                .forEach(info -> appendSignerYaml(info, "  ", newLines::add));
+                .forEach(info -> appendSignerYaml(info, "  ", newLines::add, directoryTrusted));
         insertAtSectionEnd(lines, "signers", newLines);
     }
 
@@ -837,7 +916,8 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         }
     }
 
-    private void writeSignersSection(PrintWriter w, Map<String, SignerInfo> signersByKey) {
+    private void writeSignersSection(PrintWriter w, Map<String, SignerInfo> signersByKey,
+            boolean directoryTrusted) {
         if (signersByKey.isEmpty()) {
             return;
         }
@@ -846,7 +926,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
                 .sorted(Comparator.comparing(i -> i.id, String.CASE_INSENSITIVE_ORDER))
                 .toList();
         for (SignerInfo info : sorted) {
-            appendSignerYaml(info, "  ", w::println);
+            appendSignerYaml(info, "  ", w::println, directoryTrusted);
         }
         w.println();
     }
@@ -984,28 +1064,96 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         }
     }
 
-    private static void appendSignerYaml(SignerInfo info, String indent, Consumer<String> out) {
+    private static void appendSignerYaml(SignerInfo info, String indent, Consumer<String> out,
+            boolean directoryTrusted) {
         if (!info.hasCredentials()) {
             return;
         }
-        out.accept(indent + info.id + ":" + userIdComment(info.userId));
+        out.accept(indent + info.id + ":");
+        String comment = namedByAddressOnKey(info) ? "" : userIdComment(info.userId);
         if (info.pgp4Key != null) {
-            out.accept(indent + "  pgp4: \"" + info.pgp4Key + "\"");
+            out.accept(indent + "  pgp4: \"" + info.pgp4Key + "\"" + comment);
         }
         if (info.pgp6Key != null) {
-            out.accept(indent + "  pgp6: \"" + info.pgp6Key + "\"");
+            out.accept(indent + "  pgp6: \"" + info.pgp6Key + "\"" + comment);
         }
+        List<IdentityCredential> identities = new ArrayList<>();
         if (info.emailIdentity != null) {
+            identities.add(info.emailIdentity);
+        }
+        if (info.directoryAddress != null) {
+            if (directoryTrusted) {
+                out.accept(indent + "  email: \"" + info.directoryAddress + "\"");
+            } else {
+                identities.add(IdentityCredential.email(DIRECTORY_URL, info.directoryAddress));
+            }
+        }
+        if (!identities.isEmpty()) {
             out.accept(indent + "  identities:");
-            out.accept(indent + "    - issuer: \"" + info.emailIdentity.issuer() + "\"");
-            out.accept(indent + "      email: \""
-                    + info.emailIdentity.attribute(IdentityCredential.EMAIL) + "\"");
+            for (IdentityCredential identity : identities) {
+                out.accept(indent + "    - issuer: \"" + identity.issuer() + "\"");
+                out.accept(indent + "      email: \"" + identity.attribute(IdentityCredential.EMAIL) + "\"");
+            }
         }
     }
 
     /**
-     * Shows the user ID a key carries as a comment, never as config: it is self-certified,
-     * so it helps a reviewer recognize the signer but proves nothing.
+     * Asks the directory which addresses it has verified for each signer's keys, and names the
+     * signer by one of them: the address in the key's user ID when the directory verified it,
+     * otherwise the first. The address accepts keys the publisher rotates to; the fingerprints
+     * keep proving the keys already seen. Without directory lookups, or when the directory
+     * cannot be reached, signers are named by fingerprint only.
+     */
+    private void attachDirectoryAddresses(Collection<SignerInfo> signers) {
+        if (directoryLookup == null) {
+            return;
+        }
+        for (SignerInfo info : signers) {
+            List<String> addresses = new ArrayList<>();
+            for (String fingerprint : info.keys()) {
+                addresses.addAll(verifiedAddresses(info, fingerprint));
+            }
+            info.directoryAddress = preferredAddress(addresses.stream().distinct().toList(), info.userId);
+        }
+    }
+
+    private List<String> verifiedAddresses(SignerInfo info, String fingerprint) {
+        try {
+            return directoryLookup.identities(KeyCredential.openPgp(fingerprint), List.of(DIRECTORY_URL))
+                    .stream().map(identity -> identity.attribute(IdentityCredential.EMAIL)).toList();
+        } catch (IOException e) {
+            getLog().warn("Could not ask " + DIRECTORY + " for the addresses verified for " + fingerprint
+                    + ": " + e.getMessage() + "; signer " + info.id + " is named by fingerprint only");
+            return List.of();
+        }
+    }
+
+    private static String preferredAddress(List<String> addresses, String userId) {
+        if (addresses.isEmpty()) {
+            return null;
+        }
+        String onKey = addressOnKey(userId);
+        return addresses.stream().filter(address -> address.equalsIgnoreCase(onKey)).findFirst()
+                .orElse(addresses.get(0));
+    }
+
+    /**
+     * Whether the signer is named by the very address its key's user ID shows. Its
+     * {@code email:} line then says what the user ID would, and verified, so the user ID comment
+     * is left out rather than calling the same address unverified.
+     */
+    private static boolean namedByAddressOnKey(SignerInfo info) {
+        return info.directoryAddress != null && info.directoryAddress.equalsIgnoreCase(addressOnKey(info.userId));
+    }
+
+    private static String addressOnKey(String userId) {
+        return userId == null ? null : userId.replaceFirst("^.*<([^>]*)>.*$", "$1");
+    }
+
+    /**
+     * Shows the user ID a key carries as a comment on its fingerprint, never as config: it is
+     * self-certified, so it helps a reviewer recognize the key but proves nothing. It is left out
+     * for a signer named by the address it shows, which the directory verified.
      */
     private static String userIdComment(String userId) {
         return userId == null ? "" : "  # user ID on the key, unverified: " + userId.replaceAll("\\R", " ");
@@ -1054,6 +1202,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         String pgp6Key;
         String userId;
         IdentityCredential emailIdentity;
+        String directoryAddress;
 
         SignerInfo(String id, VerifyResult vr) {
             this.id = id;
@@ -1073,6 +1222,17 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
 
         boolean hasCredentials() {
             return pgp4Key != null || pgp6Key != null || emailIdentity != null;
+        }
+
+        List<String> keys() {
+            List<String> keys = new ArrayList<>(2);
+            if (pgp4Key != null) {
+                keys.add(pgp4Key);
+            }
+            if (pgp6Key != null) {
+                keys.add(pgp6Key);
+            }
+            return keys;
         }
 
         /**

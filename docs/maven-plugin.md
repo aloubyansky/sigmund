@@ -305,7 +305,7 @@ Use `-Dsigmund.generateTrustConfig=true` to create an initial `sigmund.yaml` fro
 
 **Updating a trust config:**
 
-Use `-Dsigmund.updateTrustConfig=true` to add what an existing `sigmund.yaml` does not cover yet. Existing content including comments and formatting is preserved. An artifact no rule matches — or only a catch-all or the rule tolerating unsigned modules — gets a requirement rule for its signers, and a module that started being signed moves out of the unsigned list. An artifact under a requirement that is now signed by someone the rule does not name is never rewritten; it is listed under **Needs review**. The updated file is checked before it is written, and nothing is written if it would not load. Review the changes with `git diff`; see [Updating Trust Configuration](trust-verification.md#updating-trust-configuration).
+Use `-Dsigmund.updateTrustConfig=true` to add what an existing `sigmund.yaml` does not cover yet. Existing content including comments and formatting is preserved. An artifact no rule matches — or only a catch-all or the rule tolerating unsigned modules — gets a requirement rule for its signers, and a module that started being signed moves out of the unsigned list. An artifact under a requirement that is now signed by a key the rule does not name is listed under **Needs review** — unless the directory confirms the key for the address of the signer the rule requires, in which case the fingerprint is added to that signer and the update lists it as a pinned rotated key. The updated file is checked before it is written, and nothing is written if it would not load. Review the changes with `git diff`; see [Updating Trust Configuration](trust-verification.md#updating-trust-configuration).
 
 ### sigmund:inspect-signer
 

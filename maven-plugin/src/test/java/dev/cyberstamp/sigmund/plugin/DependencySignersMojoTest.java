@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ClaimOutcome;
+import dev.cyberstamp.sigmund.core.Credential;
+import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
+import dev.cyberstamp.sigmund.core.IssuerKind;
 import dev.cyberstamp.sigmund.core.KeyCredential;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
 import dev.cyberstamp.sigmund.core.RulePolicy;
@@ -15,8 +18,10 @@ import dev.cyberstamp.sigmund.core.TrustPolicy;
 import dev.cyberstamp.sigmund.core.UnverifiedResult;
 import dev.cyberstamp.sigmund.core.VerifyResult;
 import dev.cyberstamp.sigmund.plugin.SignatureInspector.SignedArtifact;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -282,10 +287,10 @@ class DependencySignersMojoTest {
 
             generate(List.of(signed), configFile);
 
-            String yaml = Files.readString(configFile);
-            assertThat(yaml).contains("pgp4: \"" + FULL_FP + "\"",
-                    "# user ID on the key, unverified: User <user@example.com>")
-                    .doesNotContain("email:", "name:");
+            List<String> lines = Files.readAllLines(configFile);
+            assertThat(lines).contains("  user:",
+                    "    pgp4: \"" + FULL_FP + "\"  # user ID on the key, unverified: User <user@example.com>")
+                    .noneMatch(line -> line.contains("email:") || line.contains("name:"));
             SigmundConfig config = SigmundConfig.parse(configFile);
             TrustPolicy policy = RulePolicy.compile(config.trustPolicySpec(), config.signers());
             // Check that a rule exists for the artifact
@@ -312,6 +317,155 @@ class DependencySignersMojoTest {
             DependencySignersMojo mojo = new DependencySignersMojo();
             mojo.setLog(new RecordingLog());
             mojo.writeTrustConfigYaml(results, configFile.toFile());
+        }
+    }
+
+    /**
+     * A generated signer is named by the address the directory verified for its key, next to the
+     * fingerprint: the fingerprint proves the keys already seen, offline, and the address accepts
+     * the keys the publisher rotates to, which the next update pins. The directory is trusted in
+     * the file, under {@code issuers}, where the review sees it — never by a default in code.
+     */
+    @Nested
+    class DirectoryAddresses {
+
+        private final ArtifactCoords lib = ArtifactCoords.parse("com.example:lib:1.0");
+        private final RecordingLog log = new RecordingLog();
+
+        private SignedArtifact signed(String userId, int version, String fingerprint) {
+            return new SignedArtifact(lib, "central",
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, userId,
+                            version == 6 ? "ML-DSA-87+Ed448" : "RSA", version,
+                            fingerprint.substring(fingerprint.length() - 16), fingerprint),
+                    null, null);
+        }
+
+        private DirectoryLookup serving(Map<String, List<String>> addressesByKey) {
+            return (key, issuers) -> addressesByKey.getOrDefault(key.fingerprint(), List.of()).stream()
+                    .map(address -> IdentityCredential.email(IssuerKind.KEYS_OPENPGP_ORG, address))
+                    .toList();
+        }
+
+        private List<String> generate(Path dir, DirectoryLookup lookup, SignedArtifact... results)
+                throws Exception {
+            DependencySignersMojo mojo = new DependencySignersMojo();
+            mojo.setLog(log);
+            mojo.directoryLookup(lookup);
+            Path file = dir.resolve("sigmund.yaml");
+            mojo.writeTrustConfigYaml(List.of(results), file.toFile());
+            SigmundConfig config = SigmundConfig.parse(file);
+            RulePolicy.compile(config.trustPolicySpec(), config.signers());
+            return Files.readAllLines(file);
+        }
+
+        @Test
+        void aKeyWithAVerifiedAddressIsNamedByItAndTheDirectoryIsTrusted(@TempDir Path dir)
+                throws Exception {
+            List<String> lines = generate(dir, serving(Map.of(FULL_FP, List.of("alice@example.com"))),
+                    signed("Alice <alice@example.com>", 4, FULL_FP));
+
+            assertThat(lines).contains("issuers: [keys.openpgp.org]",
+                    "    pgp4: \"" + FULL_FP + "\"", "    email: \"alice@example.com\"");
+            assertThat(lines.get(0)).isEqualTo(SigmundSchema.modeline());
+        }
+
+        /**
+         * The user ID comment is a reviewer's only hint for a signer named by fingerprint alone.
+         * Once the directory has verified the address the user ID shows, the {@code email:} line
+         * says it, and calling the same address unverified would only read as a contradiction.
+         */
+        @Test
+        void aSignerNamedByTheAddressOnItsKeyNeedsNoUserIdComment(@TempDir Path dir) throws Exception {
+            List<String> lines = generate(dir, serving(Map.of(FULL_FP, List.of("alice@example.com"))),
+                    signed("Alice <Alice@Example.com>", 4, FULL_FP));
+
+            assertThat(lines).contains("  alice:").noneMatch(line -> line.contains("# user ID"));
+        }
+
+        @Test
+        void aUserIdShowingAnotherAddressKeepsItsComment(@TempDir Path dir) throws Exception {
+            List<String> lines = generate(dir, serving(Map.of(FULL_FP, List.of("alice@example.com"))),
+                    signed("Alice <alice@personal.example>", 4, FULL_FP));
+
+            assertThat(lines).contains("  alice:",
+                    "    pgp4: \"" + FULL_FP + "\"  # user ID on the key, unverified: Alice <alice@personal.example>",
+                    "    email: \"alice@example.com\"");
+        }
+
+        @Test
+        void withoutAVerifiedAddressNoIssuerIsTrusted(@TempDir Path dir) throws Exception {
+            List<String> lines = generate(dir, serving(Map.of()),
+                    signed("Alice <alice@example.com>", 4, FULL_FP));
+
+            assertThat(lines).noneMatch(line -> line.startsWith("issuers:") || line.contains("email:"));
+        }
+
+        @Test
+        void withoutDirectoryLookupsSignersAreFingerprintsOnly(@TempDir Path dir) throws Exception {
+            List<String> lines = generate(dir, null, signed("Alice <alice@example.com>", 4, FULL_FP));
+
+            assertThat(lines).noneMatch(line -> line.startsWith("issuers:") || line.contains("email:"));
+        }
+
+        @Test
+        void anUnreachableDirectoryLeavesFingerprintsOnly(@TempDir Path dir) throws Exception {
+            List<String> lines = generate(dir, (key, issuers) -> {
+                throw new IOException("connection refused");
+            }, signed("Alice <alice@example.com>", 4, FULL_FP));
+
+            assertThat(lines).noneMatch(line -> line.contains("email:"));
+            assertThat(log.lines).anyMatch(line -> line.startsWith("warn:") && line.contains("connection refused"));
+        }
+
+        @Test
+        void theAddressOnTheKeyIsPreferredAmongSeveralVerified(@TempDir Path dir) throws Exception {
+            List<String> lines = generate(dir,
+                    serving(Map.of(FULL_FP, List.of("old@example.com", "alice@example.com"))),
+                    signed("Alice <alice@example.com>", 4, FULL_FP));
+
+            assertThat(lines).contains("    email: \"alice@example.com\"");
+        }
+
+        @Test
+        void aPublishersClassicAndPqcKeysAreAskedForTogether(@TempDir Path dir) throws Exception {
+            List<String> lines = generate(dir, serving(Map.of(FP6, List.of("alice@example.com"))),
+                    signed("Alice <alice@example.com>", 4, FULL_FP),
+                    signed("Alice <alice@example.com>", 6, FP6));
+
+            assertThat(lines).contains("    email: \"alice@example.com\"");
+            assertThat(lines.stream().filter(line -> line.contains("email:"))).hasSize(1);
+        }
+
+        @Test
+        void anUpdateNamesANewSignerInlineWhenTheFileDoesNotTrustTheDirectory(@TempDir Path dir)
+                throws Exception {
+            Path file = dir.resolve("sigmund.yaml");
+            Files.writeString(file, "rules:\n  - match: [\"*\"]\n    on-no-claim: ignore\n");
+            DependencySignersMojo mojo = new DependencySignersMojo();
+            mojo.setLog(log);
+            mojo.directoryLookup(serving(Map.of(FULL_FP, List.of("alice@example.com"))));
+
+            mojo.updateExistingTrustConfig(List.of(signed("Alice <alice@example.com>", 4, FULL_FP)),
+                    file.toFile());
+
+            List<String> lines = Files.readAllLines(file);
+            assertThat(lines).noneMatch(line -> line.startsWith("issuers:"))
+                    .contains("      - issuer: \"" + IssuerKind.KEYS_OPENPGP_ORG + "\"",
+                            "        email: \"alice@example.com\"");
+        }
+
+        @Test
+        void anUpdateUsesTheShortFormWhenTheFileTrustsTheDirectory(@TempDir Path dir) throws Exception {
+            Path file = dir.resolve("sigmund.yaml");
+            Files.writeString(file, "issuers: [keys.openpgp.org]\nrules:\n  - match: [\"*\"]\n    on-no-claim: ignore\n");
+            DependencySignersMojo mojo = new DependencySignersMojo();
+            mojo.setLog(log);
+            mojo.directoryLookup(serving(Map.of(FULL_FP, List.of("alice@example.com"))));
+
+            mojo.updateExistingTrustConfig(List.of(signed("Alice <alice@example.com>", 4, FULL_FP)),
+                    file.toFile());
+
+            assertThat(Files.readAllLines(file)).contains("    email: \"alice@example.com\"");
         }
     }
 
@@ -359,6 +513,17 @@ class DependencySignersMojoTest {
                     KeyCredential.openPgp(CLASSIC), KeyCredential.openPgp(PQC));
             assertThat(config.trustPolicySpec().rules().get(0).clauseIds())
                     .containsExactly(Set.of("alice"));
+        }
+
+        /** The user ID is the key's, so each fingerprint carries it — both keys carry the same one. */
+        @Test
+        void eachOfThePublishersKeysCarriesItsUserId(@TempDir Path dir) throws Exception {
+            generate(dir, signed(lib, "Alice <alice@example.com>", 4, CLASSIC),
+                    signed(lib, "Alice <alice@example.com>", 6, PQC));
+
+            assertThat(Files.readAllLines(dir.resolve("sigmund.yaml"))).contains("  alice:",
+                    "    pgp4: \"" + CLASSIC + "\"  # user ID on the key, unverified: Alice <alice@example.com>",
+                    "    pgp6: \"" + PQC + "\"  # user ID on the key, unverified: Alice <alice@example.com>");
         }
 
         @Test
@@ -484,6 +649,13 @@ class DependencySignersMojoTest {
                     null, null);
         }
 
+        private SignedArtifact signedByV6(ArtifactCoords coords, String fingerprint) {
+            return new SignedArtifact(coords, "central",
+                    new OpenPgpVerifyResult(ClaimOutcome.VERIFIED, null, "User <user@example.com>",
+                            "ML-DSA-87+Ed448", 6, fingerprint.substring(48), fingerprint),
+                    null, null);
+        }
+
         private Path configWith(Path dir, String yaml) throws Exception {
             Path file = dir.resolve("sigmund.yaml");
             Files.writeString(file, yaml);
@@ -562,6 +734,211 @@ class DependencySignersMojoTest {
                             && line.contains("rules[0]"));
         }
 
+        /**
+         * A rotated key: the publisher's new key, which the directory confirms for the address of
+         * the signer the rule requires. Verification already accepts it through the address, but
+         * the binding is current state — once the publisher rotates again the directory serves
+         * this key without the address — so the update pins the fingerprint onto the signer,
+         * where it keeps proving these artifacts offline and for good.
+         */
+        @Nested
+        class PinningARotatedKey {
+
+            private static final String ALICE = """
+                    issuers: [keys.openpgp.org]
+                    signers:
+                      alice:
+                        pgp4: "%s"
+                        email: "alice@example.com"
+
+                    rules:
+                      - match: com.example:lib
+                        requires: alice
+                    """.formatted(FULL_FP);
+
+            private final List<String> asked = new ArrayList<>();
+
+            /** A directory confirming the address for every v4 key; like keys.openpgp.org, it serves no v6 keys. */
+            private DirectoryLookup confirming(String address) {
+                return (key, issuers) -> {
+                    asked.add(key.fingerprint());
+                    return issuers.contains(IssuerKind.KEYS_OPENPGP_ORG)
+                            && key.type().equals(Credential.TYPE_PGP4)
+                                    ? List.of(IdentityCredential.email(IssuerKind.KEYS_OPENPGP_ORG, address))
+                                    : List.of();
+                };
+            }
+
+            private TrustPolicy update(Path file, DirectoryLookup lookup, SignedArtifact... results)
+                    throws Exception {
+                DependencySignersMojo mojo = new DependencySignersMojo();
+                mojo.setLog(log);
+                mojo.directoryLookup(lookup);
+                mojo.updateExistingTrustConfig(List.of(results), file.toFile());
+                SigmundConfig config = SigmundConfig.parse(file);
+                return RulePolicy.compile(config.trustPolicySpec(), config.signers());
+            }
+
+            @Test
+            void aKeyTheDirectoryConfirmsForTheRequiredSignerIsPinnedOntoIt(@TempDir Path dir)
+                    throws Exception {
+                Path file = configWith(dir, ALICE);
+
+                update(file, confirming("alice@example.com"), signedBy(lib, OTHER_FP));
+
+                assertThat(Files.readAllLines(file)).containsSubsequence(
+                        "    pgp4:",
+                        "      - \"" + FULL_FP + "\"",
+                        "      - \"" + OTHER_FP + "\"  # pinned by update: " + IssuerKind.KEYS_OPENPGP_ORG
+                                + " confirmed alice@example.com");
+                assertThat(SigmundConfig.parse(file).signers().get("alice").credentials())
+                        .contains(KeyCredential.openPgp(OTHER_FP));
+                assertThat(log.lines).noneMatch(line -> line.contains("Needs review"))
+                        .anyMatch(line -> line.contains("com.example:lib") && line.contains(OTHER_FP)
+                                && line.contains("alice@example.com") && line.contains("'alice'"));
+            }
+
+            /**
+             * A hybrid publisher rotating both keys: the directory confirms the new v4 key, but
+             * serves no v6 keys, so the new v6 key cannot be confirmed. Under the default
+             * {@code extra-claims: reject} its claim alone would leave the artifact unsatisfied,
+             * so it is listed for review rather than passed over with the pinned v4 key.
+             */
+            @Test
+            void aHybridRotationPinsTheConfirmedKeyAndListsTheOtherForReview(@TempDir Path dir)
+                    throws Exception {
+                Path file = configWith(dir, ALICE);
+
+                update(file, confirming("alice@example.com"), signedBy(lib, OTHER_FP),
+                        signedByV6(lib, FP6));
+
+                assertThat(Files.readString(file)).contains(OTHER_FP).doesNotContain(FP6);
+                assertThat(log.lines).anyMatch(line -> line.contains("Needs review"))
+                        .anyMatch(line -> line.contains("signed by pgp6 " + FP6)
+                                && line.contains("; signed alongside pgp4 " + OTHER_FP
+                                        + ", which https://keys.openpgp.org confirmed for"
+                                        + " alice@example.com of signer 'alice' — signing alongside"
+                                        + " does not show who holds this key"));
+            }
+
+            @Test
+            void aKeyUsedForSeveralArtifactsIsPinnedOnce(@TempDir Path dir) throws Exception {
+                Path file = configWith(dir, ALICE.replace("match: com.example:lib", "match: com.example"));
+
+                update(file, confirming("alice@example.com"), signedBy(lib, OTHER_FP),
+                        signedBy(util, OTHER_FP));
+
+                assertThat(Files.readString(file).split(OTHER_FP, -1)).hasSize(2);
+            }
+
+            /**
+             * A pin adds the key to one signer. Under a rule requiring another signer the key is
+             * not accepted by it, so it is asked about again rather than passed over as pinned.
+             */
+            @Test
+            void aKeyPinnedForOneRuleIsStillReviewedUnderARuleRequiringAnotherSigner(@TempDir Path dir)
+                    throws Exception {
+                Path file = configWith(dir, """
+                        issuers: [keys.openpgp.org]
+                        signers:
+                          alice:
+                            pgp4: "%s"
+                            email: "alice@example.com"
+                          bob:
+                            pgp4: "%s"
+                            email: "bob@example.com"
+
+                        rules:
+                          - match: com.example:lib
+                            requires: alice
+                          - match: com.example:util
+                            requires: bob
+                        """.formatted(FULL_FP, "BBE7232D7991050B54C8EA0ADC08637CA615D22C"));
+
+                update(file, confirming("alice@example.com"), signedBy(lib, OTHER_FP),
+                        signedBy(util, OTHER_FP));
+
+                assertThat(Files.readString(file).split(OTHER_FP, -1)).hasSize(2);
+                assertThat(log.lines).anyMatch(line -> line.contains("Needs review"))
+                        .anyMatch(line -> line.contains("com.example:util") && line.contains(OTHER_FP)
+                                && line.contains("requires [bob]"));
+            }
+
+            @Test
+            void aKeyConfirmedForAnotherAddressIsLeftForReview(@TempDir Path dir) throws Exception {
+                Path file = configWith(dir, ALICE);
+
+                update(file, confirming("mallory@example.com"), signedBy(lib, OTHER_FP));
+
+                assertThat(Files.readString(file)).isEqualTo(ALICE);
+                assertThat(log.lines).anyMatch(line -> line.contains("Needs review"));
+            }
+
+            @Test
+            void withoutDirectoryLookupsTheKeyIsLeftForReview(@TempDir Path dir) throws Exception {
+                Path file = configWith(dir, ALICE);
+
+                update(file, null, signedBy(lib, OTHER_FP));
+
+                assertThat(Files.readString(file)).isEqualTo(ALICE);
+                assertThat(log.lines).anyMatch(line -> line.contains(OTHER_FP)
+                        && line.contains("directory not asked (resolve-signers: false)"));
+            }
+
+            @Test
+            void anUnreachableDirectoryLeavesTheKeyForReview(@TempDir Path dir) throws Exception {
+                Path file = configWith(dir, ALICE);
+
+                update(file, (key, issuers) -> {
+                    throw new IOException("connection refused");
+                }, signedBy(lib, OTHER_FP));
+
+                assertThat(Files.readString(file)).isEqualTo(ALICE);
+                assertThat(log.lines).anyMatch(line -> line.contains(OTHER_FP)
+                        && line.contains("directory unreachable"));
+            }
+
+            @Test
+            void aSignerNamedOnlyByFingerprintCostsNoLookup(@TempDir Path dir) throws Exception {
+                Path file = configWith(dir, ALICE.replace("    email: \"alice@example.com\"\n", ""));
+
+                update(file, confirming("alice@example.com"), signedBy(lib, OTHER_FP));
+
+                assertThat(asked).isEmpty();
+                assertThat(log.lines).anyMatch(line -> line.contains("Needs review"));
+            }
+
+            @Test
+            void anAddressTheFileLetsNoDirectoryVouchForCostsNoLookup(@TempDir Path dir) throws Exception {
+                Path file = configWith(dir, ALICE.replace("issuers: [keys.openpgp.org]",
+                        "issuers: [\"https://token.actions.githubusercontent.com\"]"));
+
+                update(file, confirming("alice@example.com"), signedBy(lib, OTHER_FP));
+
+                assertThat(log.lines).anyMatch(line -> line.contains("Needs review"));
+            }
+
+            @Test
+            void aSignerUpdateCannotEditIsLeftForReviewNamingTheKey(@TempDir Path dir) throws Exception {
+                String yaml = """
+                        issuers: [keys.openpgp.org]
+                        signers:
+                          alice: "alice@example.com"
+
+                        rules:
+                          - match: com.example:lib
+                            requires: alice
+                        """;
+                Path file = configWith(dir, yaml);
+
+                update(file, confirming("alice@example.com"), signedBy(lib, OTHER_FP));
+
+                assertThat(Files.readString(file)).isEqualTo(yaml);
+                assertThat(log.lines).anyMatch(line -> line.contains("Needs review"))
+                        .anyMatch(line -> line.contains(OTHER_FP) && line.contains("add it to signer 'alice' by hand"));
+            }
+        }
+
         @Test
         void aSignerChangeUnderARequirementIsReportedNotRewritten(@TempDir Path dir)
                 throws Exception {
@@ -583,6 +960,47 @@ class DependencySignersMojoTest {
                     .anyMatch(line -> line.contains("com.example:lib")
                             && line.contains("signed by pgp4 " + OTHER_FP)
                             && line.contains("rules[0] 'com.example:lib' requires [alice]"));
+        }
+
+        /**
+         * Under the default {@code extra-claims: reject} every verified claim must be accepted, so
+         * a key the rule does not name is a change to review even beside one it does.
+         */
+        @Test
+        void aKeyBesideANamedOneIsListedForReviewUnderReject(@TempDir Path dir) throws Exception {
+            Path file = configWith(dir, """
+                    signers:
+                      alice:
+                        pgp4: "%s"
+
+                    rules:
+                      - match: com.example:lib
+                        requires: alice
+                    """.formatted(FULL_FP));
+
+            update(file, signedBy(lib, FULL_FP), signedBy(lib, OTHER_FP));
+
+            assertThat(log.lines).anyMatch(line -> line.contains("Needs review"))
+                    .anyMatch(line -> line.contains("signed by pgp4 " + OTHER_FP)
+                            && !line.contains(FULL_FP));
+        }
+
+        @Test
+        void aKeyBesideANamedOneNeedsNoReviewUnderIgnore(@TempDir Path dir) throws Exception {
+            Path file = configWith(dir, """
+                    signers:
+                      alice:
+                        pgp4: "%s"
+
+                    rules:
+                      - match: com.example:lib
+                        requires: alice
+                        extra-claims: ignore
+                    """.formatted(FULL_FP));
+
+            update(file, signedBy(lib, FULL_FP), signedBy(lib, OTHER_FP));
+
+            assertThat(log.lines).noneMatch(line -> line.contains("Needs review"));
         }
 
         @Test

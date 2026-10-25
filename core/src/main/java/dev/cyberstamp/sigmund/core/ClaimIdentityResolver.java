@@ -2,6 +2,7 @@ package dev.cyberstamp.sigmund.core;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -136,17 +137,38 @@ final class ClaimIdentityResolver {
             return claim.unresolved(IndeterminateReason.KEY_UNAVAILABLE);
         }
         String fingerprint = keysOf(claim).get(0).fingerprint();
-        List<Credential> identities = new ArrayList<>();
-        for (String name : needed) {
-            try {
-                for (String address : directories.get(name).verifiedAddresses(fingerprint)) {
-                    identities.add(IdentityCredential.email(name, address));
-                }
-            } catch (IOException unavailable) {
-                return claim.unresolved(IndeterminateReason.KEY_UNAVAILABLE);
+        List<IdentityCredential> identities;
+        try {
+            identities = directoryIdentities(directories, needed, fingerprint);
+        } catch (IOException unavailable) {
+            return claim.unresolved(IndeterminateReason.KEY_UNAVAILABLE);
+        }
+        return identities.isEmpty() ? claim : claim.withAdditionalCredentials(List.<Credential> copyOf(identities));
+    }
+
+    /**
+     * Asks directories which verified addresses they serve for a key.
+     *
+     * @param directories the known directories by canonical name
+     * @param names the canonical names of the directories to ask; names that are not known
+     *        directories are skipped
+     * @param fingerprint the key's full fingerprint
+     * @return each address as an email identity from the directory that served it
+     * @throws IOException if a directory cannot be reached
+     */
+    static List<IdentityCredential> directoryIdentities(Map<String, OpenPgpDirectory> directories,
+            Collection<String> names, String fingerprint) throws IOException {
+        List<IdentityCredential> identities = new ArrayList<>();
+        for (String name : names) {
+            OpenPgpDirectory directory = directories.get(name);
+            if (directory == null) {
+                continue;
+            }
+            for (String address : directory.verifiedAddresses(fingerprint)) {
+                identities.add(IdentityCredential.email(name, address));
             }
         }
-        return identities.isEmpty() ? claim : claim.withAdditionalCredentials(identities);
+        return identities;
     }
 
     private static List<KeyCredential> keysOf(ClaimResult claim) {

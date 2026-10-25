@@ -4,7 +4,9 @@ import dev.cyberstamp.sigmund.core.Algorithms;
 import dev.cyberstamp.sigmund.core.ArtifactCoords;
 import dev.cyberstamp.sigmund.core.ClaimOutcome;
 import dev.cyberstamp.sigmund.core.FileSignatureReport;
+import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.IndeterminateReason;
+import dev.cyberstamp.sigmund.core.KeyCredential;
 import dev.cyberstamp.sigmund.core.KeyImporter;
 import dev.cyberstamp.sigmund.core.Sigmund;
 import dev.cyberstamp.sigmund.core.SignatureVerificationReport;
@@ -12,6 +14,7 @@ import dev.cyberstamp.sigmund.core.UnverifiedResult;
 import dev.cyberstamp.sigmund.core.VerificationConfig;
 import dev.cyberstamp.sigmund.core.VerifyResult;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -212,6 +215,20 @@ class SignatureInspector implements AutoCloseable {
             log.debug("Re-verification failed: " + e.getMessage());
         }
         return entry;
+    }
+
+    /**
+     * Asks the directories among the issuers which addresses they have verified for a key.
+     *
+     * @param key the key
+     * @param issuers the issuers to ask; those that are not directories are skipped
+     * @return each verified address as an email identity from its directory
+     * @throws IOException if a directory cannot be reached
+     * @see Sigmund#directoryIdentities(KeyCredential, Collection)
+     */
+    List<IdentityCredential> directoryIdentities(KeyCredential key, List<String> issuers)
+            throws IOException {
+        return sigmund.directoryIdentities(key, issuers);
     }
 
     @Override

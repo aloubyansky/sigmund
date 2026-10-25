@@ -113,7 +113,8 @@ Fingerprints must be full; a 64-bit key ID is rejected at load because colliding
 
 An **email address is only as good as whoever vouches for it**. A user ID on an OpenPGP key proves nothing — anyone can put any address on a key they generate — so an address matches only when an issuer vouched for it: a directory that verifies addresses before publishing them (`keys.openpgp.org`), or the OIDC provider behind a Sigstore certificate. Issuers are listed once in the top-level `issuers` section, which a bare `email:` uses, or named on an entry under `identities`. See [issuers](configuration.md#issuers).
 
-**Fingerprints for the keys already seen, an address for keys to come.** A fingerprint is stable, works offline and proves every signature the key ever made, but it covers only that key. An address lets the policy accept a key the publisher generates later: when a signature's key is not pinned, the directory is asked which verified addresses it serves for that key. Directory bindings are current state — after a rotation the directory serves the old key without the address — so keep the old fingerprints alongside the address — `pgp4` and `pgp6` take a list.
+**Fingerprints for the keys already seen, an address for keys to come.** A fingerprint is stable, works offline and proves every signature the key ever made, but it covers only that key. An address lets the policy accept a key the publisher generates later: when a signature's key is not pinned, the directory is asked which verified addresses it serves for that key. Directory bindings are current state — after a rotation the directory serves the old key without the address — so keep the old fingerprints alongside the address — `pgp4` and `pgp6` take a list, and
+[updating the trust configuration](#updating-trust-configuration) adds a confirmed new key to it.
 
 **Identities** — each entry is complete: who vouched (`issuer`) and what they attested. A CI workflow attested by a Sigstore certificate:
 ```yaml
@@ -432,31 +433,37 @@ This creates a `sigmund.yaml` in your project root by:
 1. Resolving all project dependencies
 2. Downloading and verifying their signatures
 3. Grouping artifacts by the signers whose credentials they proved
-4. Collapsing common groupId prefixes into wildcard patterns (e.g., `io.quarkus.*`)
-5. Writing a requirement rule per group, and one rule tolerating the modules found without a signature
+4. Asking `keys.openpgp.org` which addresses it has verified for each signer's keys, and naming
+   the signer by one of them — the one on the key, when verified — next to its fingerprints
+5. Collapsing common groupId prefixes into wildcard patterns (e.g., `io.quarkus.*`)
+6. Writing a requirement rule per group, and one rule tolerating the modules found without a signature
 
 The generated file can be used directly with `mvn sigmund:verify`. It has no catch-all: a
 dependency added later matches no rule and fails as `NOT_CONFIGURED` until an update adds it.
 Trust established this way is trust on first use — the snapshot is accepted as it is, and only
-changes from it are detected — so review it before committing.
+changes from it are detected — so review it before committing. When any signer is named by an
+address, the file lists `keys.openpgp.org` under `issuers`: the trust is stated in the file, not
+assumed by Sigmund, and removing that line and the `email:` lines leaves fingerprints only.
 
 ### Generated File Structure
 
 ```yaml
-signers:
-  alice-developer:  # user ID on the key, unverified: Alice Developer <alice@example.com>
-    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+issuers: [keys.openpgp.org]
 
+signers:
+  alice-developer:
+    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+    email: "alice@example.com"
   signer-2:
     pgp4: "BBE7232D7991050B54C8EA0ADC08637CA615D22C"
 
 rules:
-  - match: [com.example:specific-lib]
-    requires: [alice-developer]
-  - match: [io.quarkus.*]
-    requires: [alice-developer]
-  - match: [org.apache.maven.*]
-    requires: [signer-2]
+  - match: com.example:specific-lib
+    requires: alice-developer
+  - match: io.quarkus.*
+    requires: alice-developer
+  - match: org.apache.maven.*
+    requires: signer-2
   - match: [com.internal.utils:helper-lib]
     on-no-claim: ignore
 ```
@@ -502,13 +509,42 @@ formatting:
   the unsigned modules, it is moved out of that list, since the same pattern in two rules would
   tie.
 - A signer the file already defines is reused when it proves the same key, rather than defined
-  again.
+  again. A new signer is named by its key's verified address as in a generated file; when the
+  file does not list `keys.openpgp.org` under `issuers`, the address is written as an
+  `identities` entry naming the directory, so adding a signer never widens what the listed
+  issuers vouch for.
+- A **rotated key** is pinned. When an artifact under a requirement is signed by a key its rule
+  does not pin, and a directory confirms that key for the address of a signer the rule requires,
+  the fingerprint is added to that signer, with a comment recording which directory confirmed
+  which address — a single fingerprint becomes a block list, one key per line, so each key
+  keeps its own comment:
 
-It never rewrites what a **requirement** already covers. An artifact now signed by a key or
-identity its rule does not name is listed under **Needs review** instead: a changed signer is
-what verification exists to catch, and accepting it is your decision. So is a module to move out
-of a hand-written list update cannot safely edit. The result is parsed and checked before it is
-written; if it would not load, nothing is written and the goal fails with the reason.
+  ```yaml
+  signers:
+    alice:
+      pgp4:
+        - "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+        - "BBE7232D7991050B54C8EA0ADC08637CA615D22C"  # pinned by update: https://keys.openpgp.org confirmed alice@example.com
+      email: "alice@example.com"
+  ```
+
+  The address
+  already accepts the key, but only while the directory serves it: once the publisher rotates
+  again the binding is gone, and the pinned fingerprint keeps proving these artifacts offline.
+  With `resolve-signers: false` the directory is not asked, and the key is listed for review.
+  keys.openpgp.org serves v4 keys only, so a new v6 key — a hybrid publisher's post-quantum
+  key — cannot be confirmed: under the default `extra-claims: reject` it is listed for review
+  even when its v4 partner was pinned, because its claim alone would leave the artifact
+  unsatisfied. The review line names the confirmed key it signed alongside, as context only:
+  anyone who can change an `.asc` can add a signature to it, and put any user ID on their key.
+
+Otherwise it never rewrites what a **requirement** already covers. An artifact now signed by a
+key or identity its rule does not name is listed under **Needs review** instead: a changed signer
+is what verification exists to catch, and accepting it is your decision. So is a module to move
+out of a hand-written list update cannot safely edit, and a rotated key for a signer it cannot
+edit — one written as an address, or an organization with `members`. The result is parsed and
+checked before it is written; if it would not load, nothing is written and the goal fails with
+the reason.
 
 After updating, review the changes with `git diff`.
 
