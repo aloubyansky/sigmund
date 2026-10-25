@@ -10,6 +10,7 @@ import dev.cyberstamp.sigmund.core.KeyCredential;
 import dev.cyberstamp.sigmund.core.OpenPgpVerifyResult;
 import dev.cyberstamp.sigmund.core.RulePolicy;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
+import dev.cyberstamp.sigmund.core.SigmundSchema;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
 import dev.cyberstamp.sigmund.core.UnverifiedResult;
 import dev.cyberstamp.sigmund.core.VerifyResult;
@@ -449,6 +450,13 @@ class DependencySignersMojoTest {
                     signed("Bob <bob@example.com>", 6, FP6));
 
             assertThat(lines).contains("    requires: [alice, bob]");
+        }
+
+        @Test
+        void aGeneratedConfigNamesItsSchemaForEditors(@TempDir Path dir) throws Exception {
+            List<String> lines = generate(dir, signed("Alice <alice@example.com>", 4, FULL_FP));
+
+            assertThat(lines.get(0)).isEqualTo(SigmundSchema.modeline());
         }
 
         @Test

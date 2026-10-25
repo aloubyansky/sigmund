@@ -573,7 +573,7 @@ public class Sigmund implements AutoCloseable {
                             : factory.createVerifyOnly(settings);
                 }
             }
-            throw new SigmundException("Unknown tool: " + toolName);
+            throw new SigmundException(unknownToolMessage(toolName));
         }
 
         /**
@@ -599,11 +599,14 @@ public class Sigmund implements AutoCloseable {
          * the sole signer. Verify-only tools are kept.
          *
          * @return the configured Sigmund instance
+         * @throws PolicyConfigException if the configuration names a tool no factory builds, or a
+         *         setting its tool does not accept
          * @throws SigmundException if no tools are available, or if multiple tools
          *         claim exclusive signing
          */
         public Sigmund build() {
             try {
+                checkToolConfiguration();
                 initializeTools();
                 enforceExclusiveSigners();
 
@@ -633,6 +636,69 @@ public class Sigmund implements AutoCloseable {
                 // Clean up any AutoCloseable tools before propagating the exception
                 closeTools();
                 throw e;
+            }
+        }
+
+        /**
+         * Checks the tool names and settings the configuration writes against the factories,
+         * before any tool is built.
+         * <p>
+         * Which tools exist, and which settings each accepts, is known only to the factories on
+         * the classpath, so the parser leaves these names to be checked here. A misspelled tool or
+         * setting would otherwise configure nothing and leave the tool on its defaults. A
+         * toolchain may also name a tool added with {@link #addTool(SignatureTool)}.
+         *
+         * @throws PolicyConfigException naming the unknown tool or setting and the nearest known one
+         */
+        void checkToolConfiguration() {
+            for (String toolName : toolsConfig.toolNames()) {
+                SignatureToolFactory factory = factoryFor("tools", toolName);
+                checkSettings(toolName, toolsConfig.get(toolName).settings().keySet(),
+                        factory.acceptedSettings());
+            }
+            if (verificationConfig.toolchain() != null) {
+                checkToolchain("verification.toolchain", verificationConfig.toolchain());
+            }
+            if (signingConfig != null) {
+                checkToolchain("signing.toolchain", signingConfig.toolchain());
+            }
+        }
+
+        private void checkToolchain(String location, List<String> toolchain) {
+            for (String toolName : toolchain) {
+                if (findByName(toolName) == null) {
+                    factoryFor(location, toolName);
+                }
+            }
+        }
+
+        private static SignatureToolFactory factoryFor(String location, String toolName) {
+            for (SignatureToolFactory factory : allFactories()) {
+                if (factory.toolName().equals(toolName)) {
+                    return factory;
+                }
+            }
+            throw new PolicyConfigException(location + ": " + unknownToolMessage(toolName));
+        }
+
+        private static String unknownToolMessage(String toolName) {
+            List<String> names = allFactories().stream().map(SignatureToolFactory::toolName).toList();
+            String suggestion = NearestName.among(toolName, names);
+            return "unknown tool '" + toolName + "'"
+                    + (suggestion == null ? "" : " — did you mean '" + suggestion + "'?")
+                    + " (tools available: " + String.join(", ", names) + ")";
+        }
+
+        private static void checkSettings(String toolName, Set<String> written, Set<String> accepted) {
+            List<String> known = accepted.stream().sorted().toList();
+            for (String setting : written) {
+                if (!accepted.contains(setting)) {
+                    String suggestion = NearestName.among(setting, known);
+                    throw new PolicyConfigException("tools." + toolName + ": unknown setting '" + setting + "'"
+                            + (suggestion == null
+                                    ? "; expected one of " + String.join(", ", known)
+                                    : " — did you mean '" + suggestion + "'?"));
+                }
             }
         }
 
@@ -849,9 +915,9 @@ public class Sigmund implements AutoCloseable {
          */
         private Map<String, String> injectFetchSettings(Map<String, String> toolSettings) {
             var merged = new HashMap<>(toolSettings);
-            merged.put("resolve-signers", String.valueOf(verificationConfig.resolveSigners()));
-            merged.put("import-to-keyring", String.valueOf(verificationConfig.importToKeyring()));
-            merged.put("keyservers", String.join(",", verificationConfig.keyservers()));
+            merged.put(FetchSetting.RESOLVE_SIGNERS.key(), String.valueOf(verificationConfig.resolveSigners()));
+            merged.put(FetchSetting.IMPORT_TO_KEYRING.key(), String.valueOf(verificationConfig.importToKeyring()));
+            merged.put(FetchSetting.KEYSERVERS.key(), String.join(",", verificationConfig.keyservers()));
             return Map.copyOf(merged);
         }
 

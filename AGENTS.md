@@ -13,7 +13,8 @@ Where to look:
 - `docs/sigmund-verification-design-direction.md` — what verification is for and why (cited as §n)
 - `docs/sigmund-verification-roadmap.md` — what is done, what is next, and the decision log
 - `adr/` — decisions and the alternatives rejected
-- `docs/configuration.md` — the `sigmund.yaml` schema
+- `docs/configuration.md` — the `sigmund.yaml` schema, published for editors as
+  `core/src/main/resources/sigmund.schema.json`
 - `docs/architecture.md` — types and how they fit together
 
 ## Build and Test
@@ -47,6 +48,11 @@ wrapping to change after `mvn verify`.
   sketches them.
 - **Tests and docs ship with the change.** Update `docs/` and this file in the same change when
   behaviour, schema or conventions move.
+- **The schema moves with the parser.** `core/src/main/resources/sigmund.schema.json` is the
+  published schema of `sigmund.yaml`. A change to what the parser, the policy compile or a tool
+  factory accepts changes the schema in the same commit; `SchemaAgreementTest` holds them
+  together — add the new shape to its valid or structurally invalid documents. Sigmund never
+  reads the schema at runtime.
 
 ## Code Style
 
@@ -103,6 +109,12 @@ Rules the code relies on; breaking one is a defect even if tests pass.
 - **Extension-first detection:** `SignatureFormat.canHandle()` checks file extension before reading content.
 - **`injectFetchSettings()`** is conditional — only inject OpenPGP key-fetching settings for OpenPGP tools.
 - **`isDefaultExclusiveSigner()`** — factory-level mechanism for zero-config CI (e.g., env-var-injected signing key).
+- **A tool setting is declared where it is read.** A factory reads its settings only through its
+  `ToolSetting` enum, and `acceptedSettings()` is derived from the enum's values, so reading and
+  accepting cannot drift; an unused constant is a setting accepted and ignored. Each setting is
+  also listed under `tools.<name>` in the schema, which `SchemaAgreementTest` holds to the
+  factory, and in its table in `docs/configuration.md`. The key-fetching settings Sigmund
+  injects are `FetchSetting`, not accepted under `tools`.
 
 ## Testing
 

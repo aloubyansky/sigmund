@@ -419,7 +419,7 @@ class SigmundTest {
         void findToolByCapability() {
             var tool = new MockKeyGeneratorTool("sq");
             try (var sigmund = Sigmund.builder().addTool(tool)
-                    .verificationConfig(noAutoDiscovery()).build()) {
+                    .verificationConfig(onlyTools("sq")).build()) {
 
                 assertThat(sigmund.findTool(KeyGenerator.class)).isNotNull();
                 assertThat(sigmund.findTool(KeyImporter.class)).isNull();
@@ -554,15 +554,15 @@ class SigmundTest {
         }
 
         @Test
-        void unknownToolInPriorityDoesNotPreventBuild() {
+        void anUnknownToolInAToolchainSetThroughTheApiIsError() {
             var tool = mockTool("gpg", true, false, Set.of("pgp4"));
             var verificationConfig = new VerificationConfig(false, false, List.of(),
                     List.of("nonexistent", "gpg"));
-            try (var sigmund = Sigmund.builder().addTool(tool)
-                    .verificationConfig(verificationConfig).build()) {
-                assertThat(sigmund.tools().size()).isEqualTo(1);
-                assertThat(sigmund.tools().get(0).name()).isEqualTo("gpg");
-            }
+
+            assertThatThrownBy(() -> Sigmund.builder().addTool(tool)
+                    .verificationConfig(verificationConfig).build())
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("verification.toolchain: unknown tool 'nonexistent'");
         }
 
         @Test
@@ -570,7 +570,7 @@ class SigmundTest {
             var tool1 = mockTool("gpg", true, false, Set.of("pgp4"));
             var tool2 = mockTool("gpg", true, true, Set.of("pgp4"));
             try (var sigmund = Sigmund.builder().addTool(tool1).addTool(tool2)
-                    .verificationConfig(noAutoDiscovery()).build()) {
+                    .verificationConfig(onlyTools("gpg")).build()) {
 
                 assertThat(sigmund.tools().size()).isEqualTo(1);
                 assertThat(sigmund.tools().get(0).canSign()).isTrue();
@@ -594,6 +594,76 @@ class SigmundTest {
         }
     }
 
+    /**
+     * Tool names and settings are known to the tool factories, so they are checked when tools are
+     * built: a misspelled tool or setting would otherwise configure nothing, and the tool would run
+     * with its defaults.
+     */
+    @Nested
+    class ToolNamesAndSettings {
+
+        private Sigmund.Builder builderFor(String yaml) {
+            return Sigmund.builder().config(SigmundConfigParser.parse("<test>", new StringReader(yaml)));
+        }
+
+        @Test
+        void anUnknownToolIsErrorWithTheNearestName() {
+            assertThatThrownBy(() -> builderFor("tools: { sqq: { home: /tmp/sq } }").build())
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("tools: unknown tool 'sqq' — did you mean 'sq'?");
+        }
+
+        @Test
+        void anUnknownToolNamesTheToolsAvailable() {
+            assertThatThrownBy(() -> builderFor("tools: { cosign: {} }").build())
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("tools: unknown tool 'cosign'")
+                    .hasMessageContaining("tools available: bc, gpg, sq");
+        }
+
+        @Test
+        void anUnknownSettingIsErrorWithTheNearestName() {
+            assertThatThrownBy(() -> builderFor("tools: { bc: { gnupg-hom: /tmp/gnupg } }").build())
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("tools.bc: unknown setting 'gnupg-hom' — did you mean 'gnupg-home'?");
+        }
+
+        @Test
+        void credentialsIsNotAToolSetting() {
+            assertThatThrownBy(() -> builderFor("tools: { bc: { credentials: pgp4 } }").build())
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("tools.bc: unknown setting 'credentials'");
+        }
+
+        @Test
+        void aSettingAnotherToolAcceptsIsStillUnknownHere() {
+            assertThatThrownBy(() -> builderFor("tools: { sq: { gnupg-home: /tmp/gnupg } }").build())
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("tools.sq: unknown setting 'gnupg-home'");
+        }
+
+        @Test
+        void anUnknownToolInTheVerificationToolchainIsError() {
+            assertThatThrownBy(() -> builderFor("verification: { toolchain: [bcc] }").build())
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("verification.toolchain: unknown tool 'bcc' — did you mean 'bc'?");
+        }
+
+        @Test
+        void anUnknownToolInTheSigningToolchainIsError() {
+            assertThatThrownBy(() -> builderFor("signing: { toolchain: [gpgg] }").build())
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing.toolchain: unknown tool 'gpgg' — did you mean 'gpg'?");
+        }
+
+        @Test
+        void addingAnUnknownSigningToolNamesTheNearestTool() {
+            assertThatThrownBy(() -> Sigmund.builder().addSigningTool("bcc", Map.of()))
+                    .isInstanceOf(SigmundException.class)
+                    .hasMessageContaining("unknown tool 'bcc' — did you mean 'bc'?");
+        }
+    }
+
     @Nested
     class ExclusiveSignerEnforcement {
 
@@ -601,7 +671,7 @@ class SigmundTest {
         void exclusiveSignerRemovesOtherSigningTools() {
             var bc = mockTool("bc", true, true, Set.of("pgp4"));
             var gpg = mockTool("gpg", true, true, Set.of("pgp4"));
-            var builder = Sigmund.builder().verificationConfig(noAutoDiscovery());
+            var builder = Sigmund.builder().verificationConfig(onlyTools("bc", "gpg"));
             builder.addTool(bc);
             builder.addTool(gpg);
 
@@ -619,7 +689,7 @@ class SigmundTest {
         void exclusiveSignerKeepsVerifyOnlyTools() {
             var bc = mockTool("bc", true, true, Set.of("pgp4"));
             var gpgVerifyOnly = mockTool("gpg", true, false, Set.of("pgp4"));
-            var builder = Sigmund.builder().verificationConfig(noAutoDiscovery());
+            var builder = Sigmund.builder().verificationConfig(onlyTools("bc", "gpg"));
             builder.addTool(bc);
             builder.addTool(gpgVerifyOnly);
 
@@ -639,7 +709,7 @@ class SigmundTest {
             var config = new SigmundConfig(null, null, null,
                     new SigningConfig(null, List.of("gpg"), List.of(), Map.of()),
                     null, null);
-            var builder = Sigmund.builder().config(config).verificationConfig(noAutoDiscovery());
+            var builder = Sigmund.builder().config(config).verificationConfig(onlyTools("bc", "gpg"));
             builder.addTool(bc);
             builder.addTool(gpg);
 
@@ -659,7 +729,7 @@ class SigmundTest {
             var config = new SigmundConfig(null, null, null,
                     new SigningConfig(null, List.of(), List.of(), Map.of()),
                     null, null);
-            var builder = Sigmund.builder().config(config).verificationConfig(noAutoDiscovery());
+            var builder = Sigmund.builder().config(config).verificationConfig(onlyTools("bc", "gpg"));
             builder.addTool(bc);
             builder.addTool(gpg);
 
@@ -676,7 +746,7 @@ class SigmundTest {
 
         @Test
         void multipleExclusiveSignersThrows() {
-            var builder = Sigmund.builder().verificationConfig(noAutoDiscovery());
+            var builder = Sigmund.builder().verificationConfig(onlyTools("bc", "sq"));
             builder.addTool(mockTool("bc", true, true, Set.of("pgp4")));
             builder.addTool(mockTool("sq", true, true, Set.of("pgp6")));
 
@@ -698,6 +768,11 @@ class SigmundTest {
                 @Override
                 public Set<String> supportedCredentialTypes() {
                     return Set.of("pgp4");
+                }
+
+                @Override
+                public Set<String> acceptedSettings() {
+                    return Set.of();
                 }
 
                 @Override
@@ -758,7 +833,7 @@ class SigmundTest {
         @Test
         void closesToolsWhenBuildFails() {
             var closeable = new MockCloseableSignatureTool("closeable");
-            var builder = Sigmund.builder().verificationConfig(noAutoDiscovery());
+            var builder = Sigmund.builder().verificationConfig(onlyTools("closeable", "bad"));
             builder.addTool(closeable);
 
             // Add a tool that will cause build() to fail. We can achieve this
@@ -887,8 +962,11 @@ class SigmundTest {
 
     // --- Helpers ---
 
-    private static VerificationConfig noAutoDiscovery() {
-        return new VerificationConfig(false, false, List.of(), List.of("_none_"));
+    /**
+     * A toolchain of the tools a test adds itself, so that no other tool is discovered and built.
+     */
+    private static VerificationConfig onlyTools(String... names) {
+        return new VerificationConfig(false, false, List.of(), List.of(names));
     }
 
     private Path createTempFile(String name) {

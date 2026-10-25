@@ -105,19 +105,17 @@ mvn sigmund:sign
 The plugin uses GPG by default if available, falling back to the Bouncy Castle backend. Configure a specific signing key in `sigmund.yaml`:
 
 ```yaml
-signing:
-  tools:
-    gpg:
-      key: 0x12345678
+tools:
+  gpg:
+    key-name: "0x12345678"
 ```
 
 Or use a BC-generated key:
 
 ```yaml
-signing:
-  tools:
-    bc:
-      signing-fingerprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+tools:
+  bc:
+    signing-fingerprint: "ABCDEF1234567890ABCDEF1234567890ABCDEF12"
 ```
 
 For hybrid PQC signing, generate a PQC key with Sequoia and add it to the config:
@@ -129,12 +127,11 @@ java -jar cli/target/sigmund.jar keygen --tool sq --userid "Your Name <you@examp
 Then configure both classic and PQC in `sigmund.yaml`:
 
 ```yaml
-signing:
-  tools:
-    gpg:
-      key: 0x12345678
-    sq:
-      signing-fingerprint: "D62AAB339E45E5EA2FD036872B01D46A517A2991..."
+tools:
+  gpg:
+    key-name: "0x12345678"
+  sq:
+    signing-fingerprint: "D62AAB339E45E5EA2FD036872B01D46A517A2991..."
 ```
 
 Run `mvn sigmund:sign` to sign with both — classic signature first, PQC signature second, combined in one `.asc` file.

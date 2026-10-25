@@ -139,9 +139,9 @@ abstract class AbstractSigmundMojo extends AbstractMojo {
             if (existing != null) {
                 var mergedSettings = new HashMap<>(existing.settings());
                 mergedSettings.putAll(overrideSettings);
-                merged.put(toolName, new ToolConfig(existing.credentials(), mergedSettings));
+                merged.put(toolName, new ToolConfig(mergedSettings));
             } else {
-                merged.put(toolName, new ToolConfig(null, overrideSettings));
+                merged.put(toolName, new ToolConfig(overrideSettings));
             }
         }
         return new ToolsConfig(merged);

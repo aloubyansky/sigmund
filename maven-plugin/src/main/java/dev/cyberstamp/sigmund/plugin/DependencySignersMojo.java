@@ -13,6 +13,7 @@ import dev.cyberstamp.sigmund.core.PolicyConfigException;
 import dev.cyberstamp.sigmund.core.Rule;
 import dev.cyberstamp.sigmund.core.RulePolicy;
 import dev.cyberstamp.sigmund.core.SigmundConfig;
+import dev.cyberstamp.sigmund.core.SigmundSchema;
 import dev.cyberstamp.sigmund.core.SignerIdentity;
 import dev.cyberstamp.sigmund.core.SigstoreVerifyResult;
 import dev.cyberstamp.sigmund.core.TrustPolicy;
@@ -384,7 +385,9 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
     /**
      * Writes a {@code sigmund.yaml} file from the inspection results.
      * Artifacts are grouped by signer, with common groupId prefixes collapsed
-     * into wildcard patterns. Versions are stripped from trust patterns.
+     * into wildcard patterns. Versions are stripped from trust patterns. The first line points
+     * YAML editors at the schema of this Sigmund version, so the file is reviewed and edited
+     * with completion and unknown-key errors.
      */
     void writeTrustConfigYaml(List<SignedArtifact> results, File configFile)
             throws MojoExecutionException {
@@ -444,6 +447,7 @@ public class DependencySignersMojo extends AbstractDependencyMojo {
         Map<String, List<String>> trustPatterns = TrustPatternCollapse.collapse(artifactSigners);
 
         try (PrintWriter w = new PrintWriter(Files.newBufferedWriter(configFile.toPath()))) {
+            w.println(SigmundSchema.modeline());
             writeSignersSection(w, signersByKey);
             writeRulesSection(w, trustPatterns, unsignedModulePatterns);
             if (w.checkError()) {

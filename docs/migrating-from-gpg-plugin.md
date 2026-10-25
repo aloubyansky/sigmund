@@ -161,10 +161,9 @@ mvn sigmund:sign
 To reuse an existing env var (e.g., `GPG_PASSPHRASE` from your current CI setup), set `passphrase-env` in `sigmund.yaml`:
 
 ```yaml
-signing:
-  tools:
-    gpg:
-      passphrase-env: GPG_PASSPHRASE
+tools:
+  gpg:
+    passphrase-env: GPG_PASSPHRASE
 ```
 
 **Headless / CI (alternative):** If you prefer to use `gpg-agent` directly, configure it for non-interactive passphrase input:
@@ -257,10 +256,9 @@ mvn sigmund:sign
 To reuse an existing CI secret variable under a different name, set `passphrase-env` in `sigmund.yaml`:
 
 ```yaml
-signing:
-  tools:
-    gpg:
-      passphrase-env: GPG_PASSPHRASE
+tools:
+  gpg:
+    passphrase-env: GPG_PASSPHRASE
 ```
 
 ### Skipping signing
@@ -274,11 +272,10 @@ mvn verify -Dsigmund.skip=true
 For more control, create a `sigmund.yaml` file in your project root:
 
 ```yaml
-signing:
-  tools:
-    gpg:
-      key-name: user@example.com
-      passphrase-env: GPG_PASSPHRASE
+tools:
+  gpg:
+    key-name: user@example.com
+    passphrase-env: GPG_PASSPHRASE
 ```
 
 Maven properties (e.g. `sigmund.sqHome`) override `sigmund.yaml` values where applicable.
@@ -297,10 +294,9 @@ If the key exists, specify it explicitly:
 
 ```yaml
 # sigmund.yaml
-signing:
-  tools:
-    gpg:
-      key-name: "0xYOURKEYID"
+tools:
+  gpg:
+    key-name: "0xYOURKEYID"
 ```
 
 ### Hybrid signatures fail Maven Central upload

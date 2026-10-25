@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sigmund configuration (sigmund.yaml)",
+  "description": "Signers, the trust policy (rules and defaults), and how signing and verification run. Sigmund is authoritative: this schema states keys and value shapes for editors, while signer references, rule ties and issuer assertability are checked when Sigmund loads the file. See https://github.com/cyberstamp/sigmund/blob/main/docs/configuration.md",
+  "type": "object",
+  "additionalProperties": false,
+  "dependentRequired": {
+    "defaults": ["rules"]
+  },
+  "properties": {
+    "issuers": {
+      "description": "Issuers trusted to vouch for identities in signer entries that name none: keys.openpgp.org, or the https:// URL of an OIDC issuer.",
+      "anyOf": [{ "$ref": "#/$defs/stringOrList" }, { "type": "null" }]
+    },
+    "signers": {
+      "description": "The identity registry: signer ids mapped to the credentials that prove them. Rules and signing.signer refer to signers by id.",
+      "type": ["object", "null"],
+      "additionalProperties": { "$ref": "#/$defs/signer" }
+    },
+    "artifact-sets": {
+      "description": "Named lists of artifact patterns, used by name in a rule's match.",
+      "type": ["object", "null"],
+      "additionalProperties": { "$ref": "#/$defs/stringOrList" }
+    },
+    "rules": {
+      "description": "The trust policy. Declaring rules, an empty list included, turns enforcement on: an artifact no rule matches is NOT_CONFIGURED and fails.",
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/rule" }
+    },
+    "defaults": {
+      "description": "Enforcement and extra-claims defaults for every rule. Only valid together with rules.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "extra-claims": { "$ref": "#/$defs/extraClaims" },
+        "on-unsatisfied": { "$ref": "#/$defs/enforcement" },
+        "on-no-claim": { "$ref": "#/$defs/enforcement" },
+        "on-indeterminate": { "$ref": "#/$defs/enforcement" },
+        "on-not-configured": { "$ref": "#/$defs/enforcement" }
+      }
+    },
+    "signing": {
+      "description": "Which identity to sign as and which tools sign.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "signer": {
+          "description": "The id of the signer, from signers, to sign as.",
+          "type": ["string", "null"]
+        },
+        "toolchain": {
+          "description": "The tools that sign, in priority order. Only the listed tools are used.",
+          "$ref": "#/$defs/toolNames"
+        },
+        "credential-types": {
+          "description": "The credential types to produce by default.",
+          "$ref": "#/$defs/credentialTypes"
+        },
+        "profiles": {
+          "description": "Named sets of credential types, chosen by name, for example --profile classic.",
+          "type": ["object", "null"],
+          "additionalProperties": { "$ref": "#/$defs/credentialTypes" }
+        }
+      }
+    },
+    "verification": {
+      "description": "How verification runs. These settings change what Sigmund can see, never what it accepts.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "toolchain": {
+          "description": "The tools that verify, in priority order. When set, only these are used.",
+          "$ref": "#/$defs/toolNames"
+        },
+        "resolve-signers": {
+          "description": "Fetch missing keys from keyservers, and ask directories in issuers for the verified addresses of keys. Default true.",
+          "type": ["boolean", "null"]
+        },
+        "import-to-keyring": {
+          "description": "Persist fetched keys in the tool's keyring instead of keeping them for the session only. Default false.",
+          "type": ["boolean", "null"]
+        },
+        "keyservers": {
+          "description": "Keyserver URLs to fetch missing keys from, asked in order. Default hkps://keys.openpgp.org.",
+          "anyOf": [{ "$ref": "#/$defs/stringOrList" }, { "type": "null" }]
+        }
+      }
+    },
+    "tools": {
+      "description": "Per-tool settings, used by signing and verification.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "bc": {
+          "description": "BouncyCastle, built into Sigmund.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "gnupg-home": { "description": "GnuPG home directory to read public keys from. Default ~/.gnupg.", "$ref": "#/$defs/setting" },
+            "cert-d-home": { "description": "Shared OpenPGP cert-d directory for public certificates. Default ~/.local/share/pgp.cert.d.", "$ref": "#/$defs/setting" },
+            "bc-private-home": { "description": "Directory of BC's private key store. Default ~/.local/share/sigmund/bc-private.", "$ref": "#/$defs/setting" },
+            "signing-fingerprint": { "description": "Fingerprint of the key to sign with.", "$ref": "#/$defs/setting" },
+            "tsk-file": { "description": "Path to an exported Transferable Secret Key to sign with.", "$ref": "#/$defs/setting" },
+            "signing-key-env": { "description": "Environment variable holding an ASCII-armored signing key. Default SIGMUND_BC_SIGNING_KEY.", "$ref": "#/$defs/setting" },
+            "passphrase-env": { "description": "Environment variable holding the key's passphrase. Default SIGMUND_BC_PASSPHRASE.", "$ref": "#/$defs/setting" },
+            "cipher-suite": { "description": "Algorithm sigmund keygen --tool bc generates when --cipher-suite is not given. Default ed25519.", "$ref": "#/$defs/setting" }
+          }
+        },
+        "sq": {
+          "description": "Sequoia, run as the sq command.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "home": { "description": "Sequoia home directory. Default ~/.local/share/sequoia.", "$ref": "#/$defs/setting" },
+            "executable": { "description": "Path to the sq executable. Default sq.", "$ref": "#/$defs/setting" },
+            "signing-fingerprint": { "description": "Fingerprint of the key to sign with.", "$ref": "#/$defs/setting" }
+          }
+        },
+        "gpg": {
+          "description": "GnuPG, run as the gpg command.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "executable": { "description": "Path to the gpg executable. Default gpg.", "$ref": "#/$defs/setting" },
+            "key-name": { "description": "Key to sign with: fingerprint, key ID or email.", "$ref": "#/$defs/setting" },
+            "home": { "description": "GnuPG home directory (--homedir).", "$ref": "#/$defs/setting" },
+            "passphrase-env": { "description": "Environment variable holding the key's passphrase. Default SIGMUND_GPG_PASSPHRASE.", "$ref": "#/$defs/setting" }
+          }
+        },
+        "sigstore": {
+          "description": "Sigstore keyless signing; available when sigmund-sigstore is on the classpath.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "staging": { "description": "Use the Sigstore staging instance. For testing only. Default false.", "type": ["boolean", "string", "null"] },
+            "trusted-root": { "description": "Path to a custom trusted_root.json. Default: fetched via TUF from the public-good instance.", "$ref": "#/$defs/setting" },
+            "interactive": { "description": "Allow interactive OIDC browser login. Default false.", "type": ["boolean", "string", "null"] }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stringOrList": {
+      "description": "One value, or a list of them.",
+      "anyOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": ["string", "null"] } }
+      ]
+    },
+    "setting": {
+      "description": "A single value.",
+      "type": ["string", "number", "boolean"]
+    },
+    "toolName": {
+      "enum": ["bc", "sq", "gpg", "sigstore"]
+    },
+    "toolNames": {
+      "anyOf": [
+        { "$ref": "#/$defs/toolName" },
+        { "type": "array", "items": { "$ref": "#/$defs/toolName" } },
+        { "type": "null" }
+      ]
+    },
+    "credentialType": {
+      "enum": ["pgp4", "pgp6", "sigstore"]
+    },
+    "credentialTypes": {
+      "anyOf": [
+        { "$ref": "#/$defs/credentialType" },
+        { "type": "array", "items": { "$ref": "#/$defs/credentialType" } },
+        { "type": "null" }
+      ]
+    },
+    "pgp4": {
+      "description": "A full OpenPGP v4 fingerprint: 40 hexadecimal characters. A key ID is not accepted.",
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{40}$"
+    },
+    "pgp6": {
+      "description": "A full OpenPGP v6 fingerprint: 64 hexadecimal characters.",
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "credentials": {
+      "description": "The credentials a signer or member may carry.",
+      "properties": {
+        "pgp4": {
+          "description": "OpenPGP v4 fingerprint, or a list of them — a signer that rotated keys keeps every key it signed with.",
+          "anyOf": [
+            { "$ref": "#/$defs/pgp4" },
+            { "type": "array", "items": { "$ref": "#/$defs/pgp4" } },
+            { "type": "null" }
+          ]
+        },
+        "pgp6": {
+          "description": "OpenPGP v6 fingerprint, or a list of them.",
+          "anyOf": [
+            { "$ref": "#/$defs/pgp6" },
+            { "type": "array", "items": { "$ref": "#/$defs/pgp6" } },
+            { "type": "null" }
+          ]
+        },
+        "email": {
+          "description": "An address, accepted only as vouched for by a listed issuer. A user ID on a key is never matched on its own.",
+          "type": ["string", "null"]
+        },
+        "identities": {
+          "description": "Complete identities: an optional issuer and the attributes it must have attested.",
+          "type": ["array", "null"],
+          "items": { "$ref": "#/$defs/identity" }
+        }
+      }
+    },
+    "signer": {
+      "anyOf": [
+        {
+          "description": "An email address, vouched for by a listed issuer.",
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "$ref": "#/$defs/credentials",
+          "properties": {
+            "members": {
+              "description": "The keys of an organization's members, each carrying its own credentials.",
+              "type": ["array", "null"],
+              "items": {
+                "type": "object",
+                "$ref": "#/$defs/credentials",
+                "unevaluatedProperties": false
+              }
+            }
+          },
+          "minProperties": 1,
+          "unevaluatedProperties": false
+        }
+      ]
+    },
+    "identity": {
+      "description": "An identity an issuer attests. Only the attributes named need to match; at least one besides issuer is required.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "if": { "required": ["issuer"] },
+      "then": { "minProperties": 2 },
+      "properties": {
+        "issuer": { "description": "The issuer that must attest this identity: keys.openpgp.org or an OIDC issuer URL. Default: the listed issuers.", "type": "string" },
+        "email": { "description": "An address the issuer verified.", "type": "string" },
+        "subject": { "description": "The certificate subject; carries the git ref, so it changes with every release.", "type": "string" },
+        "build-signer-uri": { "type": "string" },
+        "build-signer-digest": { "type": "string" },
+        "runner-environment": { "description": "For example github-hosted.", "type": "string" },
+        "source-repository-uri": { "type": "string" },
+        "source-repository-digest": { "type": "string" },
+        "source-repository-ref": { "type": "string" },
+        "source-repository-identifier": { "type": "string" },
+        "source-repository-owner-uri": { "type": "string" },
+        "source-repository-owner-identifier": { "type": "string" },
+        "build-config-uri": { "description": "The build configuration, for example the workflow file.", "type": "string" },
+        "build-config-digest": { "type": "string" },
+        "build-trigger": { "description": "For example release or push.", "type": "string" },
+        "run-invocation-uri": { "type": "string" },
+        "source-repository-visibility-at-signing": { "type": "string" },
+        "deployment-environment": { "type": "string" },
+        "token-subject": { "type": "string" }
+      }
+    },
+    "clause": {
+      "anyOf": [
+        { "description": "A signer id that must sign.", "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["any-of"],
+          "properties": {
+            "any-of": {
+              "description": "Signer ids, any one of which satisfies this clause.",
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["match"],
+      "properties": {
+        "match": {
+          "description": "Artifact patterns (group, group:artifact, group:artifact:version) or artifact-set names. A one-word group is written group:*.",
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "array", "minItems": 1, "items": { "type": "string" } }
+          ]
+        },
+        "requires": {
+          "description": "A signer id, or a list of clauses that must all be satisfied: each a signer id or {any-of: [...]}. Without requires, a rule accepts nothing and tolerates through on-* overrides.",
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/clause" } }
+          ]
+        },
+        "extra-claims": { "$ref": "#/$defs/extraClaims" },
+        "on-unsatisfied": { "$ref": "#/$defs/enforcement" },
+        "on-no-claim": { "$ref": "#/$defs/enforcement" },
+        "on-indeterminate": { "$ref": "#/$defs/enforcement" },
+        "on-not-configured": { "$ref": "#/$defs/enforcement" }
+      }
+    },
+    "enforcement": {
+      "description": "What an outcome does: fail blocks, warn reports, ignore tolerates. FAILED always fails and cannot be overridden.",
+      "enum": ["fail", "warn", "ignore"]
+    },
+    "extraClaims": {
+      "description": "Verified claims beyond those requires accepted: reject (default) makes the artifact UNSATISFIED, ignore accepts it on the claims it needed.",
+      "enum": ["reject", "ignore"]
+    }
+  }
+}

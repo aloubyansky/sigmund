@@ -81,6 +81,9 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
 
     private static final String NAME = "bc";
 
+    /** The cipher suite keys are generated with when neither the caller nor the config names one. */
+    static final String DEFAULT_CIPHER_SUITE = "ed25519";
+
     private static final String SOURCE_LOCAL = "local";
     private static final String SOURCE_HKP = "hkp";
 
@@ -101,6 +104,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
     private final PassphraseProvider passphraseProvider;
     private final OpenPgpSignatureFormat format;
     private final KeyserverFetcher fetcher;
+    private final String defaultCipherSuite;
 
     /**
      * Creates a new BC runner without passphrase support or key fetching.
@@ -140,6 +144,26 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
     BcRunner(BcKeyStore keyStore, String signingFingerprint, Path tskFile,
             byte[] tskBytes, PassphraseProvider passphraseProvider,
             KeyserverFetcher fetcher) {
+        this(keyStore, signingFingerprint, tskFile, tskBytes, passphraseProvider, fetcher,
+                DEFAULT_CIPHER_SUITE);
+    }
+
+    /**
+     * Creates a new BC runner that generates keys with the given cipher suite by default.
+     *
+     * @param keyStore the key store for key lookup and storage
+     * @param signingFingerprint the fingerprint of the key to sign with, or {@code null}
+     * @param tskFile the path to a TSK file for signing, or {@code null}
+     * @param tskBytes raw TSK key material (e.g. from an env var), or {@code null}
+     * @param passphraseProvider provides passphrases for encrypted keys, or {@code null}
+     * @param fetcher fetches missing keys from keyservers, or {@code null} when keys are not
+     *        fetched
+     * @param defaultCipherSuite the suite {@link #generateKey(String, String)} uses when given none
+     */
+    BcRunner(BcKeyStore keyStore, String signingFingerprint, Path tskFile,
+            byte[] tskBytes, PassphraseProvider passphraseProvider,
+            KeyserverFetcher fetcher, String defaultCipherSuite) {
+        this.defaultCipherSuite = defaultCipherSuite;
         this.api = new BcOpenPGPApi();
         this.keyStore = keyStore;
         this.signingFingerprint = signingFingerprint;
@@ -290,12 +314,14 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
      * {@inheritDoc}
      *
      * <p>
-     * Generates a v6 key using BC 1.85's high-level {@code BcOpenPGPApi}.
+     * Generates a v6 key using BC 1.85's high-level {@code BcOpenPGPApi}. Without a cipher suite,
+     * the one {@code tools.bc.cipher-suite} configures is used, else {@value #DEFAULT_CIPHER_SUITE}.
      */
     @Override
     public String generateKey(String userId, String cipherSuite) {
         try {
-            OpenPGPKey key = generateKeyInternal(userId, cipherSuite);
+            OpenPGPKey key = generateKeyInternal(userId,
+                    cipherSuite != null ? cipherSuite : defaultCipherSuite);
             PGPSecretKeyRing secretKeyRing = key.getPGPSecretKeyRing();
             PGPPublicKeyRing publicKeyRing = key.toCertificate().getPGPPublicKeyRing();
             String fingerprint = BcKeyStore.bytesToHex(key.getFingerprint());

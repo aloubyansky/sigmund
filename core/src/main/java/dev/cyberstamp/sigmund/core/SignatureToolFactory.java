@@ -33,6 +33,18 @@ public interface SignatureToolFactory {
     Set<String> supportedCredentialTypes();
 
     /**
+     * Returns the settings this tool accepts under {@code tools.<name>} in {@code sigmund.yaml}.
+     * <p>
+     * A setting not listed is a configuration error when tools are built, naming the nearest
+     * accepted one, so a misspelled setting fails instead of leaving the tool on its default.
+     * The key-fetching settings Sigmund passes to OpenPGP tools from the {@code verification}
+     * section are not listed: they are not written under {@code tools}.
+     *
+     * @return the accepted setting names, empty for a tool with no settings
+     */
+    Set<String> acceptedSettings();
+
+    /**
      * Creates a signing-capable tool for the given credential.
      * <p>
      * The default implementation throws {@link UnsupportedOperationException}.
@@ -61,7 +73,7 @@ public interface SignatureToolFactory {
      * signing tools are explicitly configured in {@code sigmund.yaml}.
      * <p>
      * This method is only consulted by {@link Sigmund.Builder} when the
-     * {@code signing.tools} section of the configuration is absent or empty.
+     * {@code signing.toolchain} of the configuration is absent or empty.
      * When the user has explicitly configured signing tools, this method is
      * not called — the configured tools are used as-is, and the factory's
      * key resolution priority (which may still prefer the env var over

@@ -4,16 +4,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.cyberstamp.sigmund.core.IdentityCredential;
+import dev.cyberstamp.sigmund.core.SigmundSchema;
 import dev.cyberstamp.sigmund.core.SignatureToolFactory;
 import dev.cyberstamp.sigmund.core.ToolExecutionException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 class SigstoreToolFactoryTest {
 
@@ -30,6 +36,22 @@ class SigstoreToolFactoryTest {
         void supportedCredentialTypes() {
             assertThat(factory.supportedCredentialTypes().contains("sigstore")).isTrue();
             assertThat(factory.supportedCredentialTypes().size()).isEqualTo(1);
+        }
+
+        /**
+         * The settings Sigstore accepts are exactly those the published schema lists for
+         * {@code tools.sigstore}, as core checks for the built-in tools.
+         */
+        @Test
+        void acceptsTheSettingsTheSchemaLists() throws IOException {
+            JsonNode schema;
+            try (InputStream in = SigmundSchema.class.getResourceAsStream("/" + SigmundSchema.RESOURCE)) {
+                schema = new ObjectMapper().readTree(in);
+            }
+            List<String> listed = new ArrayList<>(
+                    schema.at("/properties/tools/properties/sigstore/properties").propertyNames());
+
+            assertThat(factory.acceptedSettings()).containsExactlyInAnyOrderElementsOf(listed);
         }
     }
 

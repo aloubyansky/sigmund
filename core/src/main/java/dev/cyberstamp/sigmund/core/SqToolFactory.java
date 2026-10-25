@@ -17,10 +17,15 @@ final class SqToolFactory implements SignatureToolFactory {
     }
 
     @Override
+    public Set<String> acceptedSettings() {
+        return ToolSetting.keysOf(Setting.values());
+    }
+
+    @Override
     public SignatureTool createSigning(Credential credential, Map<String, String> settings) {
-        String executable = settings.getOrDefault("executable", "sq");
+        String executable = Setting.EXECUTABLE.from(settings, "sq");
         Path home = resolveHome(settings);
-        String fingerprint = settings.get("signing-fingerprint");
+        String fingerprint = Setting.SIGNING_FINGERPRINT.from(settings);
         if (fingerprint == null && credential instanceof KeyCredential fp) {
             fingerprint = fp.fingerprint();
         }
@@ -33,13 +38,34 @@ final class SqToolFactory implements SignatureToolFactory {
 
     @Override
     public SignatureTool createVerifyOnly(Map<String, String> settings) {
-        String executable = settings.getOrDefault("executable", "sq");
+        String executable = Setting.EXECUTABLE.from(settings, "sq");
         Path home = resolveHome(settings);
         return new SqRunner(executable, home, null);
     }
 
     private static Path resolveHome(Map<String, String> settings) {
-        String homeSetting = settings.get("home");
+        String homeSetting = Setting.HOME.from(settings);
         return homeSetting != null ? Path.of(homeSetting) : null;
+    }
+
+    /** The settings {@code tools.sq} accepts, each read only through its constant. */
+    private enum Setting implements ToolSetting {
+        /** {@code home}. */
+        HOME("home"),
+        /** {@code executable}. */
+        EXECUTABLE("executable"),
+        /** {@code signing-fingerprint}. */
+        SIGNING_FINGERPRINT("signing-fingerprint");
+
+        private final String key;
+
+        Setting(String key) {
+            this.key = key;
+        }
+
+        @Override
+        public String key() {
+            return key;
+        }
     }
 }

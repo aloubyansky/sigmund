@@ -23,8 +23,9 @@ import org.junit.jupiter.api.TestFactory;
  * silently ignores teaches a setting that does nothing — the parser rejects unknown keys and the
  * removed v1 schema, so a stale example fails here. Each example is parsed; one that defines both
  * {@code signers} and {@code rules} is also compiled into a policy, which checks its signer
- * references and rule ties. YAML that is not a Sigmund configuration — a CI workflow, a fragment
- * with no top-level key — is skipped.
+ * references and rule ties. Every example is also checked against the published schema, so the
+ * schema accepts what the documentation teaches. YAML that is not a Sigmund configuration — a CI
+ * workflow, a fragment with no top-level key — is skipped.
  */
 class DocumentationExamplesTest {
 
@@ -56,6 +57,7 @@ class DocumentationExamplesTest {
         if (!config.signers().isEmpty() && !config.trustPolicySpec().rules().isEmpty()) {
             RulePolicy.compile(config.trustPolicySpec(), config.signers());
         }
+        assertThat(ConfigSchema.errors(yaml)).as("%s: schema errors", location).isEmpty();
     }
 
     private static List<Path> documentationFiles() throws IOException {

@@ -9,7 +9,7 @@ class ToolsConfigTest {
 
     @Test
     void getReturnsTool() {
-        var tc = new ToolsConfig(Map.of("bc", new ToolConfig(null, Map.of("key", "val"))));
+        var tc = new ToolsConfig(Map.of("bc", new ToolConfig(Map.of("key", "val"))));
         assertThat(tc.get("bc")).isNotNull();
         assertThat(tc.get("bc").settings().get("key")).isEqualTo("val");
     }
@@ -23,8 +23,8 @@ class ToolsConfigTest {
     @Test
     void toolNamesReturnsAllKeys() {
         var tc = new ToolsConfig(Map.of(
-                "bc", new ToolConfig(null, Map.of()),
-                "sq", new ToolConfig(null, Map.of())));
+                "bc", new ToolConfig(Map.of()),
+                "sq", new ToolConfig(Map.of())));
         assertThat(tc.toolNames().size()).isEqualTo(2);
         assertThat(tc.toolNames().contains("bc")).isTrue();
         assertThat(tc.toolNames().contains("sq")).isTrue();
@@ -38,7 +38,7 @@ class ToolsConfigTest {
 
     @Test
     void nonEmptyConfig() {
-        var tc = new ToolsConfig(Map.of("bc", new ToolConfig(null, Map.of())));
+        var tc = new ToolsConfig(Map.of("bc", new ToolConfig(Map.of())));
         assertThat(tc.isEmpty()).isFalse();
         assertThat(tc.size()).isEqualTo(1);
     }

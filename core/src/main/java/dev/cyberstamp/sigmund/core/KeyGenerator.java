@@ -15,7 +15,8 @@ public interface KeyGenerator {
      * Generates a new signing key.
      *
      * @param userId the user ID for the key (e.g., {@code "Alice <alice@example.com>"})
-     * @param cipherSuite the cipher suite to use (e.g., {@code "mldsa87-ed448"})
+     * @param cipherSuite the cipher suite to use (e.g., {@code "mldsa87-ed448"}); BC also accepts
+     *        {@code null}, for the suite {@code tools.bc.cipher-suite} configures
      * @return the fingerprint of the generated key
      * @throws ToolExecutionException if key generation fails
      */

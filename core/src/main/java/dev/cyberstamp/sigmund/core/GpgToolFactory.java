@@ -19,29 +19,34 @@ final class GpgToolFactory implements SignatureToolFactory {
     }
 
     @Override
+    public Set<String> acceptedSettings() {
+        return ToolSetting.keysOf(Setting.values());
+    }
+
+    @Override
     public SignatureTool createSigning(Credential credential, Map<String, String> settings) {
-        String executable = settings.getOrDefault("executable", "gpg");
-        String keyName = settings.get("key-name");
+        String executable = Setting.EXECUTABLE.from(settings, "gpg");
+        String keyName = Setting.KEY_NAME.from(settings);
         if (keyName == null && credential instanceof KeyCredential fp) {
             keyName = fp.fingerprint();
         }
         String passphrase = resolvePassphrase(settings);
-        return new GpgRunner(executable, keyName, settings.get("home"),
+        return new GpgRunner(executable, keyName, Setting.HOME.from(settings),
                 passphrase, false, false, List.of());
     }
 
     @Override
     public SignatureTool createVerifyOnly(Map<String, String> settings) {
-        String executable = settings.getOrDefault("executable", "gpg");
-        boolean resolveSigners = "true".equals(settings.get("resolve-signers"));
-        boolean importToKeyring = "true".equals(settings.get("import-to-keyring"));
-        List<String> keyservers = VerificationConfig.parseKeyserversSetting(settings.get("keyservers"));
-        return new GpgRunner(executable, null, settings.get("home"),
+        String executable = Setting.EXECUTABLE.from(settings, "gpg");
+        boolean resolveSigners = FetchSetting.RESOLVE_SIGNERS.isTrue(settings);
+        boolean importToKeyring = FetchSetting.IMPORT_TO_KEYRING.isTrue(settings);
+        List<String> keyservers = VerificationConfig.parseKeyserversSetting(FetchSetting.KEYSERVERS.from(settings));
+        return new GpgRunner(executable, null, Setting.HOME.from(settings),
                 null, false, resolveSigners, importToKeyring, keyservers);
     }
 
     private static String resolvePassphrase(Map<String, String> settings) {
-        String configuredEnv = settings.get("passphrase-env");
+        String configuredEnv = Setting.PASSPHRASE_ENV.from(settings);
         String envVar = configuredEnv != null ? configuredEnv : DEFAULT_PASSPHRASE_ENV;
         String value = System.getenv(envVar);
         if (value != null && !value.isEmpty()) {
@@ -52,5 +57,28 @@ final class GpgToolFactory implements SignatureToolFactory {
                     "Environment variable " + configuredEnv + " is not set");
         }
         return null;
+    }
+
+    /** The settings {@code tools.gpg} accepts, each read only through its constant. */
+    private enum Setting implements ToolSetting {
+        /** {@code executable}. */
+        EXECUTABLE("executable"),
+        /** {@code key-name}. */
+        KEY_NAME("key-name"),
+        /** {@code home}. */
+        HOME("home"),
+        /** {@code passphrase-env}. */
+        PASSPHRASE_ENV("passphrase-env");
+
+        private final String key;
+
+        Setting(String key) {
+            this.key = key;
+        }
+
+        @Override
+        public String key() {
+            return key;
+        }
     }
 }

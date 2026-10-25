@@ -37,6 +37,6 @@ final class SequoiaHomeResolver {
             return ToolsConfig.EMPTY;
         }
         return new ToolsConfig(Map.of("sq",
-                new ToolConfig(null, Map.of("home", sqHome.toPath().toString()))));
+                new ToolConfig(Map.of("home", sqHome.toPath().toString()))));
     }
 }

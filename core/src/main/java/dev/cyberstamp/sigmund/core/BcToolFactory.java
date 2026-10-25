@@ -25,6 +25,11 @@ final class BcToolFactory implements SignatureToolFactory {
         return Set.of(Credential.TYPE_PGP4, Credential.TYPE_PGP6);
     }
 
+    @Override
+    public Set<String> acceptedSettings() {
+        return ToolSetting.keysOf(Setting.values());
+    }
+
     private static final String DEFAULT_PASSPHRASE_ENV = "SIGMUND_BC_PASSPHRASE";
     private static final String DEFAULT_SIGNING_KEY_ENV = "SIGMUND_BC_SIGNING_KEY";
 
@@ -55,10 +60,10 @@ final class BcToolFactory implements SignatureToolFactory {
             PassphraseProvider explicitProvider) {
         BcKeyStore keyStore = buildKeyStore(settings);
         byte[] tskBytes = resolveSigningKeyBytes(settings);
-        Path tskFile = tskBytes == null ? resolveOptionalPath(settings, "tsk-file") : null;
+        Path tskFile = tskBytes == null ? resolveOptionalPath(settings, Setting.TSK_FILE) : null;
         String fingerprint = null;
         if (tskBytes == null && tskFile == null) {
-            fingerprint = settings.get("signing-fingerprint");
+            fingerprint = Setting.SIGNING_FINGERPRINT.from(settings);
             if (fingerprint == null && credential instanceof KeyCredential fp) {
                 fingerprint = fp.fingerprint();
             }
@@ -67,14 +72,14 @@ final class BcToolFactory implements SignatureToolFactory {
                 ? explicitProvider
                 : resolvePassphraseProvider(settings);
         return new BcRunner(keyStore, fingerprint, tskFile, tskBytes, provider,
-                null);
+                null, Setting.CIPHER_SUITE.from(settings, BcRunner.DEFAULT_CIPHER_SUITE));
     }
 
     @Override
     public SignatureTool createVerifyOnly(Map<String, String> settings) {
         BcKeyStore keyStore = buildKeyStore(settings);
-        boolean resolveSigners = "true".equals(settings.get("resolve-signers"));
-        List<String> keyservers = VerificationConfig.parseKeyserversSetting(settings.get("keyservers"));
+        boolean resolveSigners = FetchSetting.RESOLVE_SIGNERS.isTrue(settings);
+        List<String> keyservers = VerificationConfig.parseKeyserversSetting(FetchSetting.KEYSERVERS.from(settings));
         KeyserverFetcher fetcher = resolveSigners && !keyservers.isEmpty()
                 ? new KeyserverFetcher(keyStore, keyservers)
                 : null;
@@ -89,14 +94,14 @@ final class BcToolFactory implements SignatureToolFactory {
         Path certDHome = resolveCertDHome(settings);
         Path bcPrivateHome = resolveBcPrivateHome(settings);
         return new BcKeyStore(gnupgHome, certDHome, bcPrivateHome,
-                "true".equals(settings.get("import-to-keyring")));
+                FetchSetting.IMPORT_TO_KEYRING.isTrue(settings));
     }
 
     /**
      * Resolves the GnuPG home directory.
      */
     private static Path resolveGnupgHome(Map<String, String> settings) {
-        String home = settings.get("gnupg-home");
+        String home = Setting.GNUPG_HOME.from(settings);
         if (home != null) {
             return Path.of(home);
         }
@@ -113,7 +118,7 @@ final class BcToolFactory implements SignatureToolFactory {
      * certificates one tool stores are visible to the other.
      */
     static Path resolveCertDHome(Map<String, String> settings) {
-        String home = settings.get("cert-d-home");
+        String home = Setting.CERT_D_HOME.from(settings);
         if (home != null) {
             return Path.of(home);
         }
@@ -128,7 +133,7 @@ final class BcToolFactory implements SignatureToolFactory {
      * public certificate store shared with other tools, and secret keys do not belong in it.
      */
     static Path resolveBcPrivateHome(Map<String, String> settings) {
-        String home = settings.get("bc-private-home");
+        String home = Setting.BC_PRIVATE_HOME.from(settings);
         if (home != null) {
             return Path.of(home);
         }
@@ -146,8 +151,8 @@ final class BcToolFactory implements SignatureToolFactory {
     /**
      * Resolves an optional file path from settings.
      */
-    private static Path resolveOptionalPath(Map<String, String> settings, String key) {
-        String value = settings.get(key);
+    private static Path resolveOptionalPath(Map<String, String> settings, ToolSetting setting) {
+        String value = setting.from(settings);
         return value != null ? Path.of(value) : null;
     }
 
@@ -203,7 +208,7 @@ final class BcToolFactory implements SignatureToolFactory {
      */
     static byte[] resolveSigningKeyBytes(Map<String, String> settings,
             Function<String, String> envLookup) {
-        String configuredEnv = settings.get("signing-key-env");
+        String configuredEnv = Setting.SIGNING_KEY_ENV.from(settings);
         String envVar = configuredEnv != null ? configuredEnv : DEFAULT_SIGNING_KEY_ENV;
         String envValue = envLookup.apply(envVar);
         if (envValue != null && !envValue.isEmpty()) {
@@ -222,7 +227,7 @@ final class BcToolFactory implements SignatureToolFactory {
      * {@code SIGMUND_BC_PASSPHRASE}), then interactive console prompt if available.
      */
     private static PassphraseProvider resolvePassphraseProvider(Map<String, String> settings) {
-        String configuredEnv = settings.get("passphrase-env");
+        String configuredEnv = Setting.PASSPHRASE_ENV.from(settings);
         String envVar = configuredEnv != null ? configuredEnv : DEFAULT_PASSPHRASE_ENV;
         String envValue = System.getenv(envVar);
         if (envValue != null && !envValue.isEmpty()) {
@@ -242,5 +247,36 @@ final class BcToolFactory implements SignatureToolFactory {
             };
         }
         return null;
+    }
+
+    /** The settings {@code tools.bc} accepts, each read only through its constant. */
+    private enum Setting implements ToolSetting {
+        /** {@code gnupg-home}. */
+        GNUPG_HOME("gnupg-home"),
+        /** {@code cert-d-home}. */
+        CERT_D_HOME("cert-d-home"),
+        /** {@code bc-private-home}. */
+        BC_PRIVATE_HOME("bc-private-home"),
+        /** {@code signing-fingerprint}. */
+        SIGNING_FINGERPRINT("signing-fingerprint"),
+        /** {@code tsk-file}. */
+        TSK_FILE("tsk-file"),
+        /** {@code signing-key-env}. */
+        SIGNING_KEY_ENV("signing-key-env"),
+        /** {@code passphrase-env}. */
+        PASSPHRASE_ENV("passphrase-env"),
+        /** {@code cipher-suite}. */
+        CIPHER_SUITE("cipher-suite");
+
+        private final String key;
+
+        Setting(String key) {
+            this.key = key;
+        }
+
+        @Override
+        public String key() {
+            return key;
+        }
     }
 }

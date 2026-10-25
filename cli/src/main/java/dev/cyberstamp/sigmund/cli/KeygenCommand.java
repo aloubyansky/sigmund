@@ -21,7 +21,7 @@ public class KeygenCommand implements Callable<Integer> {
     private String userId;
 
     @CommandLine.Option(names = {
-            "--cipher-suite" }, description = "Cipher suite (default: mldsa87-ed448 for sq, ed25519 for bc)")
+            "--cipher-suite" }, description = "Cipher suite (default: mldsa87-ed448 for sq; for bc, tools.bc.cipher-suite, else ed25519)")
     private String cipherSuite;
 
     @CommandLine.Option(names = {
@@ -73,7 +73,6 @@ public class KeygenCommand implements Callable<Integer> {
     }
 
     private int generateBcKey() {
-        String suite = cipherSuite != null ? cipherSuite : "ed25519";
         SigmundConfig config = configMixin.loadConfig();
 
         Map<String, String> settings = new HashMap<>();
@@ -93,7 +92,7 @@ public class KeygenCommand implements Callable<Integer> {
         }
         try (Sigmund sigmund = builder.addSigningTool("bc", settings).build()) {
             KeyGenerator keygen = sigmund.findTool(KeyGenerator.class, "bc");
-            String fingerprint = keygen.generateKey(userId, suite);
+            String fingerprint = keygen.generateKey(userId, cipherSuite);
 
             System.out.println("BC key generated successfully!");
             System.out.println();

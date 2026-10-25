@@ -150,7 +150,7 @@ public class InspectSignerCommand implements Callable<Integer> {
         for (String name : base.toolNames()) {
             merged.put(name, base.get(name));
         }
-        merged.put("sq", new ToolConfig(null,
+        merged.put("sq", new ToolConfig(
                 Map.of("home", sqHomeMixin.resolveSequoiaHome().toString())));
         return new ToolsConfig(merged);
     }
