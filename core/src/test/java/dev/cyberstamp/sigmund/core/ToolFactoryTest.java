@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Nested;
@@ -175,6 +176,33 @@ class ToolFactoryTest {
         }
 
         @Test
+        void keygenUsesTheConfiguredCipherSuiteWhenNoneIsGiven(@TempDir Path dir) {
+            var tool = (KeyGenerator) factory.createSigning(null, storesIn(dir, "cipher-suite", "bogus"));
+
+            assertThatThrownBy(() -> tool.generateKey("Alice <alice@example.com>", null))
+                    .isInstanceOf(ToolExecutionException.class)
+                    .hasMessageContaining("Unsupported cipher suite: bogus");
+        }
+
+        @Test
+        void keygenFallsBackToEd25519WithoutAConfiguredCipherSuite(@TempDir Path dir) {
+            var tool = (KeyGenerator) factory.createSigning(null, storesIn(dir));
+
+            assertThat(tool.generateKey("Alice <alice@example.com>", null)).hasSize(64);
+        }
+
+        private Map<String, String> storesIn(Path dir, String... extra) {
+            Map<String, String> settings = new HashMap<>(Map.of(
+                    "gnupg-home", dir.resolve("gnupg").toString(),
+                    "cert-d-home", dir.resolve("cert-d").toString(),
+                    "bc-private-home", dir.resolve("bc-private").toString()));
+            for (int i = 0; i < extra.length; i += 2) {
+                settings.put(extra[i], extra[i + 1]);
+            }
+            return settings;
+        }
+
+        @Test
         void createWithTskFile() {
             SignatureTool tool = factory.createSigning(null, Map.of(
                     "signing-fingerprint", "ABCD1234",
@@ -191,7 +219,7 @@ class ToolFactoryTest {
             var builder = Sigmund.builder();
             assertThatThrownBy(() -> builder.addTool("nonexistent", Map.of()))
                     .isInstanceOf(SigmundException.class)
-                    .hasMessageContaining("Unknown tool");
+                    .hasMessageContaining("unknown tool 'nonexistent'");
         }
 
         @Test
@@ -199,7 +227,7 @@ class ToolFactoryTest {
             var builder = Sigmund.builder();
             assertThatThrownBy(() -> builder.addSigningTool("nonexistent", Map.of()))
                     .isInstanceOf(SigmundException.class)
-                    .hasMessageContaining("Unknown tool");
+                    .hasMessageContaining("unknown tool 'nonexistent'");
         }
     }
 }

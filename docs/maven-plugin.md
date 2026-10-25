@@ -373,10 +373,9 @@ mvn sigmund:sign
 To use a different env var name (e.g., reuse an existing CI secret), set `passphrase-env` in `sigmund.yaml`:
 
 ```yaml
-signing:
-  tools:
-    gpg:
-      passphrase-env: GPG_PASSPHRASE
+tools:
+  gpg:
+    passphrase-env: GPG_PASSPHRASE
 ```
 
 ### Ephemeral CI Runners

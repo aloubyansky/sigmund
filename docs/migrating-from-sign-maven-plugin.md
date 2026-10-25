@@ -139,11 +139,10 @@ Save the fingerprint from the output.
 Create a `sigmund.yaml` in your project root:
 
 ```yaml
-signing:
-  tools:
-    bc:
-      signing-fingerprint: "<fingerprint-from-keygen>"
-      passphrase-env: SIGN_KEY_PASS
+tools:
+  bc:
+    signing-fingerprint: "<fingerprint-from-keygen>"
+    passphrase-env: SIGN_KEY_PASS
 ```
 
 You can keep using `SIGN_KEY_PASS` as the environment variable name for a smoother migration.
@@ -163,11 +162,10 @@ mvn verify
 
 ```yaml
 # sigmund.yaml
-signing:
-  tools:
-    bc:
-      signing-key-env: SIGN_KEY
-      passphrase-env: SIGN_KEY_PASS
+tools:
+  bc:
+    signing-key-env: SIGN_KEY
+    passphrase-env: SIGN_KEY_PASS
 ```
 
 ```bash

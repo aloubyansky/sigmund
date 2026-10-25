@@ -883,6 +883,42 @@ class SigmundConfigParserTest {
         }
 
         @Test
+        void anUnknownSigningKeyIsErrorWithTheNearestKey() {
+            assertThatThrownBy(() -> parse("signing: { toolchian: [bc] }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing: unknown key 'toolchian'")
+                    .hasMessageContaining("did you mean 'toolchain'?");
+        }
+
+        @Test
+        void theSignerIsASignerId() {
+            assertThatThrownBy(() -> parse("signing: { signer: [alice] }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing.signer must be a signer id, not a list");
+        }
+
+        @Test
+        void aToolchainEntryThatIsNotAToolNameIsError() {
+            assertThatThrownBy(() -> parse("signing: { toolchain: [{ bc: true }] }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing.toolchain must be a string or a list of strings");
+        }
+
+        @Test
+        void profilesMapNamesToCredentialTypes() {
+            assertThatThrownBy(() -> parse("signing: { profiles: [pgp4] }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing.profiles must map profile names to credential types");
+        }
+
+        @Test
+        void aSigningSectionThatIsNotAMappingIsError() {
+            assertThatThrownBy(() -> parse("signing: [bc]"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("'signing' must be a mapping, not a list");
+        }
+
+        @Test
         void noSigningSection() {
             var config = parse("");
             assertThat(config.signingConfig()).isEqualTo(SigningConfig.DEFAULT);
@@ -936,6 +972,32 @@ class SigmundConfigParserTest {
         }
 
         @Test
+        void anUnknownVerificationKeyIsErrorWithTheNearestKey() {
+            assertThatThrownBy(() -> parse("verification: { resolve-signer: false }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("verification: unknown key 'resolve-signer'")
+                    .hasMessageContaining("did you mean 'resolve-signers'?");
+        }
+
+        /**
+         * A flag that is not a boolean used to read as {@code false}, so {@code "off"} and
+         * {@code "true"} alike turned key fetching off.
+         */
+        @Test
+        void aFlagThatIsNotABooleanIsErrorRatherThanFalse() {
+            assertThatThrownBy(() -> parse("verification: { resolve-signers: \"true\" }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("verification.resolve-signers must be true or false");
+        }
+
+        @Test
+        void keyserversThatAreAMappingAreErrorRatherThanEmpty() {
+            assertThatThrownBy(() -> parse("verification: { keyservers: { url: hkps://keys.openpgp.org } }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("verification.keyservers must be a string or a list of strings");
+        }
+
+        @Test
         void noVerificationSection() {
             var config = parse("");
             assertThat(config.verificationConfig()).isEqualTo(VerificationConfig.DEFAULT);
@@ -964,9 +1026,39 @@ class SigmundConfigParserTest {
         }
 
         @Test
+        void aToolMapsToItsSettings() {
+            assertThatThrownBy(() -> parse("tools: { bc: [gnupg-home] }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("tools.bc must be a mapping of settings, not a list");
+        }
+
+        @Test
+        void aSettingThatIsNotAScalarIsErrorRatherThanDropped() {
+            assertThatThrownBy(() -> parse("tools: { bc: { gnupg-home: [/a, /b] } }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("tools.bc.gnupg-home must be a single value, not a list");
+        }
+
+        @Test
+        void aToolWithNoSettingsIsAllowed() {
+            assertThat(parse("tools: { sq: }").toolsConfig().get("sq").settings()).isEmpty();
+        }
+
+        @Test
         void noToolsSection() {
             var config = parse("");
             assertThat(config.toolsConfig().isEmpty()).isTrue();
+        }
+    }
+
+    @Nested
+    class ArtifactSetsParsing {
+
+        @Test
+        void aSetMemberThatIsNotAPatternIsError() {
+            assertThatThrownBy(() -> parse("artifact-sets: { stack: [{ group: org.apache }] }"))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("artifact-sets.stack must be a string or a list of strings");
         }
     }
 

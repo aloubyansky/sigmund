@@ -140,7 +140,7 @@ class SigmundConfigParser {
 
     private static List<String> parseIssuers(JsonNode node) {
         List<String> issuers = new ArrayList<>();
-        for (String name : parseStringList(node)) {
+        for (String name : stringList(node, "issuers")) {
             String canonical = IssuerKind.canonicalName(name);
             if (!issuers.contains(canonical)) {
                 issuers.add(canonical);
@@ -391,20 +391,40 @@ class SigmundConfigParser {
 
     // --- Signing ---
 
+    private static final List<String> SIGNING_KEYS = List.of("signer", "toolchain",
+            "credential-types", "profiles");
+
     private static SigningConfig parseSigningConfig(JsonNode node) {
         if (node == null || node.isNull()) {
             return SigningConfig.DEFAULT;
         }
-        String signer = textField(node, "signer");
-        List<String> toolchain = parseStringList(node.get("toolchain"));
-        List<String> credentialTypes = credentialTypes(parseStringList(node.get("credential-types")));
+        checkSection(node, "signing", SIGNING_KEYS);
+        String signer = signerField(node.get("signer"));
+        List<String> toolchain = stringList(node.get("toolchain"), "signing.toolchain");
+        List<String> credentialTypes = credentialTypes(
+                stringList(node.get("credential-types"), "signing.credential-types"));
         Map<String, List<String>> profiles = parseProfiles(node.get("profiles"));
         return new SigningConfig(signer, toolchain, credentialTypes, profiles);
     }
 
+    private static String signerField(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (!node.isTextual()) {
+            throw new PolicyConfigException("signing.signer must be a signer id, not " + describe(node));
+        }
+        return node.asText();
+    }
+
     private static Map<String, List<String>> parseProfiles(JsonNode node) {
+        if (node != null && !node.isNull() && !node.isObject()) {
+            throw new PolicyConfigException(
+                    "signing.profiles must map profile names to credential types, not " + describe(node));
+        }
         Map<String, List<String>> profiles = new LinkedHashMap<>();
-        parseStringListMap(node).forEach((name, types) -> profiles.put(name, credentialTypes(types)));
+        stringListMap(node, "signing.profiles")
+                .forEach((name, types) -> profiles.put(name, credentialTypes(types)));
         return profiles;
     }
 
@@ -430,40 +450,44 @@ class SigmundConfigParser {
     /**
      * Parses the top-level {@code tools} section into a {@link ToolsConfig} registry.
      * <p>
-     * Each tool entry maps a tool name to a {@link ToolConfig} containing optional
-     * credentials and tool-specific settings.
+     * Each tool entry maps a tool name to its settings, each a single value. Only the shape is
+     * checked here: which tools exist and which settings each accepts is known to the tool
+     * factories, so tool and setting names are checked when tools are built.
      *
      * @param node the {@code tools} YAML node, or {@code null}
      * @return the parsed tool registry, or {@link ToolsConfig#EMPTY} if absent
+     * @throws PolicyConfigException if the section, a tool entry or a setting has the wrong shape
      */
     private static ToolsConfig parseToolsRegistry(JsonNode node) {
         if (node == null || node.isNull()) {
             return ToolsConfig.EMPTY;
         }
+        requireMapping(node, "'tools'");
         Map<String, ToolConfig> result = new LinkedHashMap<>();
         for (Map.Entry<String, JsonNode> entry : node.properties()) {
-            result.put(entry.getKey(), parseToolConfig(entry.getValue()));
+            result.put(entry.getKey(), parseToolConfig(entry.getKey(), entry.getValue()));
         }
         return new ToolsConfig(result);
     }
 
-    private static ToolConfig parseToolConfig(JsonNode node) {
-        List<String> credentials = null;
-        JsonNode credsNode = node.get("credentials");
-        if (credsNode != null && credsNode.isArray()) {
-            credentials = new ArrayList<>();
-            for (JsonNode c : credsNode) {
-                credentials.add(c.asText());
-            }
+    private static ToolConfig parseToolConfig(String toolName, JsonNode node) {
+        if (node.isNull()) {
+            return new ToolConfig(Map.of());
         }
-
+        String location = "tools." + toolName;
+        if (!node.isObject()) {
+            throw new PolicyConfigException(location + " must be a mapping of settings, not " + describe(node));
+        }
         Map<String, String> settings = new LinkedHashMap<>();
         for (Map.Entry<String, JsonNode> entry : node.properties()) {
-            if (!"credentials".equals(entry.getKey()) && entry.getValue().isValueNode()) {
-                settings.put(entry.getKey(), entry.getValue().asText());
+            JsonNode value = entry.getValue();
+            if (!value.isValueNode() || value.isNull()) {
+                throw new PolicyConfigException(location + "." + entry.getKey()
+                        + " must be a single value, not " + describe(value));
             }
+            settings.put(entry.getKey(), value.asText());
         }
-        return new ToolConfig(credentials, settings);
+        return new ToolConfig(settings);
     }
 
     // --- Trust Policy (rules / defaults) ---
@@ -535,7 +559,7 @@ class SigmundConfigParser {
         if (node == null || node.isNull()) {
             throw new PolicyConfigException(location + ": a rule must declare 'match'");
         }
-        List<String> entries = parseStringList(node);
+        List<String> entries = stringList(node, location + ".match");
         if (entries.isEmpty()) {
             throw new PolicyConfigException(
                     location + ": 'match' must list at least one artifact-set name or pattern");
@@ -749,59 +773,80 @@ class SigmundConfigParser {
     // --- Artifact Groups ---
 
     private static ArtifactSetsConfig parseArtifactGroups(JsonNode node) {
-        Map<String, List<String>> groups = parseStringListMap(node);
-        return new ArtifactSetsConfig(groups);
+        if (node != null && !node.isNull()) {
+            requireMapping(node, "'artifact-sets'");
+        }
+        return new ArtifactSetsConfig(stringListMap(node, "artifact-sets"));
     }
 
-    private static Map<String, List<String>> parseStringListMap(JsonNode node) {
+    private static Map<String, List<String>> stringListMap(JsonNode node, String location) {
         if (node == null || node.isNull()) {
             return Map.of();
         }
         Map<String, List<String>> result = new LinkedHashMap<>();
         for (Map.Entry<String, JsonNode> entry : node.properties()) {
-            result.put(entry.getKey(), parseStringList(entry.getValue()));
+            result.put(entry.getKey(), stringList(entry.getValue(), location + "." + entry.getKey()));
         }
         return result;
     }
 
     // --- Verification ---
 
+    private static final List<String> VERIFICATION_KEYS = List.of("toolchain", "resolve-signers",
+            "import-to-keyring", "keyservers");
+
     /**
      * Parses the {@code verification} section into a {@link VerificationConfig}.
      * <p>
      * Contains operational concerns: key fetching behavior, keyserver URLs,
-     * and the verification toolchain priority.
+     * and the verification toolchain priority. Unknown keys and values of the wrong shape are
+     * errors, as in the policy sections.
      *
      * @param node the {@code verification} YAML node, or {@code null}
      * @return the parsed verification configuration
+     * @throws PolicyConfigException if the section has an unknown key or a value of the wrong shape
      */
     private static VerificationConfig parseVerificationConfig(JsonNode node) {
         if (node == null || node.isNull()) {
             return VerificationConfig.DEFAULT;
         }
-        boolean resolveSigners = boolOrDefault(node, "resolve-signers", true);
-        boolean importToKeyring = boolOrDefault(node, "import-to-keyring", false);
-        List<String> keyservers = parseStringList(node.get("keyservers"));
+        checkSection(node, "verification", VERIFICATION_KEYS);
+        boolean resolveSigners = flag(node, "resolve-signers", true);
+        boolean importToKeyring = flag(node, "import-to-keyring", false);
+        List<String> keyservers = stringList(node.get("keyservers"), "verification.keyservers");
         JsonNode tcNode = node.get("toolchain");
-        List<String> toolchain = (tcNode != null && !tcNode.isNull()) ? parseStringList(tcNode) : null;
+        List<String> toolchain = (tcNode != null && !tcNode.isNull())
+                ? stringList(tcNode, "verification.toolchain")
+                : null;
         return new VerificationConfig(resolveSigners, importToKeyring, keyservers, toolchain);
     }
 
     // --- Utilities ---
 
-    private static List<String> parseStringList(JsonNode node) {
+    /**
+     * Reads a value written as one string or a list of them.
+     *
+     * @param node the value, or {@code null} when absent
+     * @param location where the value is, for the error message
+     * @return the strings, empty when the value is absent or an empty string
+     * @throws PolicyConfigException if the value or one of its entries is a mapping or a list
+     */
+    private static List<String> stringList(JsonNode node, String location) {
         if (node == null || node.isNull()) {
             return List.of();
         }
-        if (node.isTextual()) {
+        if (node.isValueNode()) {
             String text = node.asText();
             return text.isEmpty() ? List.of() : List.of(text);
         }
         if (!node.isArray()) {
-            return List.of();
+            throw notAStringList(location, node);
         }
         List<String> result = new ArrayList<>();
         for (JsonNode el : node) {
+            if (el.isContainerNode()) {
+                throw notAStringList(location, el);
+            }
             if (!el.isNull()) {
                 result.add(el.asText());
             }
@@ -809,14 +854,54 @@ class SigmundConfigParser {
         return Collections.unmodifiableList(result);
     }
 
+    private static PolicyConfigException notAStringList(String location, JsonNode node) {
+        return new PolicyConfigException(location + " must be a string or a list of strings, not "
+                + describe(node));
+    }
+
     private static String textField(JsonNode node, String field) {
         JsonNode child = node.get(field);
         return child != null && !child.isNull() && child.isValueNode() ? child.asText() : null;
     }
 
-    private static boolean boolOrDefault(JsonNode node, String field, boolean defaultValue) {
+    private static boolean flag(JsonNode node, String field, boolean defaultValue) {
         JsonNode child = node.get(field);
-        return child != null && !child.isNull() ? child.asBoolean() : defaultValue;
+        if (child == null || child.isNull()) {
+            return defaultValue;
+        }
+        if (!child.isBoolean()) {
+            throw new PolicyConfigException("verification." + field + " must be true or false, not "
+                    + describe(child));
+        }
+        return child.booleanValue();
+    }
+
+    /**
+     * Checks that a section is a mapping whose keys the schema defines.
+     *
+     * @param node the section
+     * @param section the section's key, for the error message
+     * @param known the keys the section accepts
+     * @throws PolicyConfigException naming the nearest known key, if any
+     */
+    private static void checkSection(JsonNode node, String section, List<String> known) {
+        requireMapping(node, "'" + section + "'");
+        for (Map.Entry<String, JsonNode> field : node.properties()) {
+            String key = field.getKey();
+            if (!known.contains(key)) {
+                String suggestion = NearestName.among(key, known);
+                throw new PolicyConfigException(section + ": unknown key '" + key + "'"
+                        + (suggestion == null
+                                ? "; expected one of " + String.join(", ", known)
+                                : " — did you mean '" + suggestion + "'?"));
+            }
+        }
+    }
+
+    private static void requireMapping(JsonNode node, String what) {
+        if (!node.isObject()) {
+            throw new PolicyConfigException(what + " must be a mapping, not " + describe(node));
+        }
     }
 
 }

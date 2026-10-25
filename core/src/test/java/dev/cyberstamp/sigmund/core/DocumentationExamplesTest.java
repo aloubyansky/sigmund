@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -23,7 +24,8 @@ import org.junit.jupiter.api.TestFactory;
  * silently ignores teaches a setting that does nothing — the parser rejects unknown keys and the
  * removed v1 schema, so a stale example fails here. Each example is parsed; one that defines both
  * {@code signers} and {@code rules} is also compiled into a policy, which checks its signer
- * references and rule ties. YAML that is not a Sigmund configuration — a CI workflow, a fragment
+ * references and rule ties, and its tool settings are checked against the settings tables. YAML that is not a Sigmund
+ * configuration — a CI workflow, a fragment
  * with no top-level key — is skipped.
  */
 class DocumentationExamplesTest {
@@ -51,10 +53,27 @@ class DocumentationExamplesTest {
         return tests.stream();
     }
 
-    private static void load(String location, String yaml) {
+    private static void load(String location, String yaml) throws IOException {
         SigmundConfig config = SigmundConfigParser.parse(location, new StringReader(yaml));
         if (!config.signers().isEmpty() && !config.trustPolicySpec().rules().isEmpty()) {
             RulePolicy.compile(config.trustPolicySpec(), config.signers());
+        }
+        checkToolSettings(location, config.toolsConfig());
+    }
+
+    /**
+     * Tool settings are checked by the tool factories when tools are built, which an example is
+     * not; checking them against the settings tables instead, which
+     * {@link ToolSettingsDocumentationTest} holds to the factories, keeps a misspelled setting
+     * out of the examples.
+     */
+    private static void checkToolSettings(String location, ToolsConfig tools) throws IOException {
+        Map<String, Set<String>> documented = DocumentedToolSettings.read();
+        for (String tool : tools.toolNames()) {
+            assertThat(documented).as("%s: tool '%s' is documented", location, tool).containsKey(tool);
+            assertThat(documented.get(tool))
+                    .as("%s: settings of tool '%s'", location, tool)
+                    .containsAll(tools.get(tool).settings().keySet());
         }
     }
 

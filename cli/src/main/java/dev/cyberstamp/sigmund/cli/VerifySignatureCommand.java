@@ -63,7 +63,7 @@ public class VerifySignatureCommand implements Callable<Integer> {
                     sqSettings.putAll(existingSq.settings());
                 }
                 sqSettings.put("home", sqHomeMixin.resolveSequoiaHome().toString());
-                merged.put("sq", new ToolConfig(null, sqSettings));
+                merged.put("sq", new ToolConfig(sqSettings));
                 builder.toolsConfig(new ToolsConfig(merged));
             }
 

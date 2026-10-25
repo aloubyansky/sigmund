@@ -1,23 +1,22 @@
 package dev.cyberstamp.sigmund.core;
 
-import java.util.List;
 import java.util.Map;
 
 /**
- * Per-tool configuration overrides from the {@code signing.tools} section.
+ * One tool's settings from the top-level {@code tools} section.
+ * <p>
+ * Settings are single values keyed by name, as written. The parser checks only their shape;
+ * which settings a tool accepts is declared by its {@link SignatureToolFactory#acceptedSettings()} and
+ * checked when tools are built.
  *
- * @param credentials credential types this tool handles (overrides defaults), or {@code null}
- * @param settings tool-specific settings (e.g., {@code cipher-suite} for sq)
+ * @param settings tool-specific settings (e.g., {@code gnupg-home} for bc)
  */
-public record ToolConfig(
-        List<String> credentials,
-        Map<String, String> settings) {
+public record ToolConfig(Map<String, String> settings) {
 
     /**
-     * Creates a tool config with defensive copies.
+     * Creates a tool config with a defensive copy.
      */
     public ToolConfig {
-        credentials = credentials != null ? List.copyOf(credentials) : null;
         settings = settings != null ? Map.copyOf(settings) : Map.of();
     }
 }

@@ -53,7 +53,9 @@ The **first file found wins**. Configuration files are not merged.
 
 The top-level keys are `issuers`, `signers`, `artifact-sets`, `rules`, `defaults`, `signing`,
 `verification` and `tools`. Any other key is an error, with the nearest known key suggested —
-an ignored key would silently drop what you wrote. The schema of earlier versions (`trust`,
+an ignored key would silently drop what you wrote. The same holds inside every section, and a
+value of the wrong shape — a list where one value is expected, `"true"` for `true` — is an
+error rather than read as something else. The schema of earlier versions (`trust`,
 `signature-optional`, `policy`, `artifacts`, `version`) is rejected with a message saying what
 replaces it.
 
@@ -501,7 +503,7 @@ signing:
 #### Fields
 
 - **`signer`** (string, optional) — References a signer ID from the `signers` section. This identity will be used for signing operations.
-- **`toolchain`** (array of strings, optional) — Lists which tools to use for signing and in what order. Only the listed tools are initialized. Tool names: `bc`, `sq`, `gpg`, `sigstore`. Per-tool settings are configured in the top-level `tools` section.
+- **`toolchain`** (array of strings, optional) — Lists which tools to use for signing and in what order. Only the listed tools are initialized. Tool names: `bc`, `sq`, `gpg`, `sigstore`; any other name is an error when tools are built. Per-tool settings are configured in the top-level `tools` section.
 - **`credential-types`** (array of strings, optional) — The default set of credential types to produce. Only tools whose supported credential types intersect this list are used. When omitted, all available signing tools are used. Values: `pgp4`, `pgp6`, `sigstore` — the names signer entries use; any other value is an error.
 - **`profiles`** (map, optional) — Named profiles for explicit switching (e.g., `--profile classic`). Each profile maps a name to a list of credential types, the same values as `credential-types`; any other value is an error. When a profile is requested by name, it takes precedence over `credential-types`.
 
@@ -529,7 +531,7 @@ verification:
 
 - **`toolchain`** (array of strings, default: `[bc, sq, gpg]`)
 
-  Lists which tools to use for verification and in what order. When specified, **only** the listed tools are initialized. When omitted, all available tools are initialized in the default order (`bc`, `sq`, `gpg`). Tool-specific settings are configured in the top-level `tools` section. The tools reach the same verdict for the same signature; the order decides which answers first.
+  Lists which tools to use for verification and in what order. When specified, **only** the listed tools are initialized, and a name no tool has is an error. When omitted, all available tools are initialized in the default order (`bc`, `sq`, `gpg`). Tool-specific settings are configured in the top-level `tools` section. The tools reach the same verdict for the same signature; the order decides which answers first.
 
 - **`resolve-signers`** (boolean, default: `true`)
 
@@ -591,7 +593,13 @@ tools:
     executable: gpg
 ```
 
-Keys are tool names (`bc`, `sq`, `gpg`, `sigstore`). Values are tool-specific settings documented in the [Tool Settings Tables](#tool-settings-tables) below. For example, `tools.bc.signing-fingerprint` is used by signing, while `tools.bc.gnupg-home` is used by verification.
+Keys are tool names (`bc`, `sq`, `gpg`, `sigstore`). Values are tool-specific settings, each a single value, documented in the [Tool Settings Tables](#tool-settings-tables) below. For example, `tools.bc.signing-fingerprint` is used by signing, while `tools.bc.gnupg-home` is used by verification.
+
+Tool names and settings are checked when tools are built, by the tools themselves: an unknown
+tool, or a setting its tool does not accept, is an error naming the nearest one — a misspelled
+setting would otherwise leave the tool on its default. The same check applies to the tool names
+in `signing.toolchain` and `verification.toolchain`. `sigstore` is a tool only when
+`sigmund-sigstore` is on the classpath; see [Enabling Sigstore Support](maven-plugin.md#enabling-sigstore-support).
 
 ## Artifact Patterns
 
@@ -640,7 +648,7 @@ Configured in the top-level `tools.bc` section.
 | `tsk-file` | (none) | Path to an exported Transferable Secret Key (TSK) file for signing |
 | `signing-key-env` | `SIGMUND_BC_SIGNING_KEY` | Environment variable name containing the ASCII-armored private key. For ephemeral CI runners. |
 | `passphrase-env` | `SIGMUND_BC_PASSPHRASE` | Environment variable name containing the passphrase. If not set, falls back to interactive prompt. |
-| `cipher-suite` | `ed25519` | Algorithm for key generation (see supported values below) |
+| `cipher-suite` | `ed25519` | Algorithm `sigmund keygen --tool bc` generates when `--cipher-suite` is not given (see supported values below) |
 
 **Supported cipher suites (BC):**
 
@@ -681,12 +689,12 @@ Configured in the top-level `tools.sq` section.
 | `home` | `~/.local/share/sequoia` | Sequoia home directory for keys and certificates |
 | `executable` | `sq` | Path to the `sq` executable (if not on `PATH`) |
 | `signing-fingerprint` | (none) | Fingerprint of the key to sign with (64 hex chars for v6 keys) |
-| `cipher-suite` | `mldsa87-ed448` | Algorithm for key generation (PQC hybrid suites) |
 
 Sigmund runs `sq` under its own crypto policy, which replaces the host's system policy for those
 runs; see [Accepted algorithms](verification.md#accepted-algorithms).
 
-**Supported cipher suites (SQ):**
+**Cipher suites for `sigmund keygen --tool sq --cipher-suite`:** there is no `tools.sq`
+setting for this — keys for `sq` are usually generated with `sq key generate` itself.
 
 Sequoia supports the post-quantum hybrid cipher suites of RFC 9980, which extends OpenPGP v6 (RFC 9580):
 - `mldsa87-ed448` — ML-DSA-87 + Ed448 (default)

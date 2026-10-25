@@ -103,6 +103,12 @@ Rules the code relies on; breaking one is a defect even if tests pass.
 - **Extension-first detection:** `SignatureFormat.canHandle()` checks file extension before reading content.
 - **`injectFetchSettings()`** is conditional — only inject OpenPGP key-fetching settings for OpenPGP tools.
 - **`isDefaultExclusiveSigner()`** — factory-level mechanism for zero-config CI (e.g., env-var-injected signing key).
+- **A tool setting is declared where it is read.** A factory reads its settings only through its
+  `ToolSetting` enum, and `acceptedSettings()` is derived from the enum's values, so reading and
+  accepting cannot drift; an unused constant is a setting accepted and ignored. Each setting is
+  also listed in its table in `docs/configuration.md`, which `ToolSettingsDocumentationTest`
+  holds to the factory. The key-fetching settings Sigmund injects are `FetchSetting`, not
+  accepted under `tools`.
 
 ## Testing
 

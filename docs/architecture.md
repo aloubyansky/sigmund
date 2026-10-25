@@ -278,7 +278,10 @@ Sigmund implements a two-layer architecture separating cryptographic verificatio
 
 ### Layer 2: Signature Operations
 
-Layer 2 is the `SignatureTool` SPI, implemented by `BcRunner`, `SqRunner`, and `GpgRunner`. Each tool:
+Layer 2 is the `SignatureTool` SPI, implemented by `BcRunner`, `SqRunner`, and `GpgRunner`, each
+built by a `SignatureToolFactory` that also declares the settings it accepts under
+`tools.<name>` (`acceptedSettings()`); `Sigmund.Builder` checks the configured tool names and
+settings against the factories before building any tool. Each tool:
 
 1. Declares capabilities via `supportedCredentialTypes()` (e.g., `["pgp4", "pgp6"]`)
 2. Routes verification via `canVerify(Claim)` (packet version and algorithm)

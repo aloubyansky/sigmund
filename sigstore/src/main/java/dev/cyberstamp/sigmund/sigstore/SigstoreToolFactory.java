@@ -5,6 +5,7 @@ import dev.cyberstamp.sigmund.core.IdentityCredential;
 import dev.cyberstamp.sigmund.core.SignatureTool;
 import dev.cyberstamp.sigmund.core.SignatureToolFactory;
 import dev.cyberstamp.sigmund.core.ToolExecutionException;
+import dev.cyberstamp.sigmund.core.ToolSetting;
 import dev.cyberstamp.sigmund.core.TrustRootRef;
 import dev.sigstore.KeylessSigner;
 import dev.sigstore.KeylessVerifier;
@@ -52,6 +53,11 @@ public class SigstoreToolFactory implements SignatureToolFactory {
         return Set.of(Credential.TYPE_SIGSTORE);
     }
 
+    @Override
+    public Set<String> acceptedSettings() {
+        return ToolSetting.keysOf(Setting.values());
+    }
+
     /**
      * Creates a signing-capable {@link SigstoreTool}.
      * <p>
@@ -69,8 +75,8 @@ public class SigstoreToolFactory implements SignatureToolFactory {
      */
     @Override
     public SignatureTool createSigning(Credential credential, Map<String, String> settings) {
-        boolean staging = "true".equals(settings.get("staging"));
-        boolean interactive = "true".equals(settings.get("interactive"));
+        boolean staging = Setting.STAGING.isTrue(settings);
+        boolean interactive = Setting.INTERACTIVE.isTrue(settings);
         try {
             KeylessSigner.Builder signerBuilder = staging
                     ? KeylessSigner.builder().sigstoreStagingDefaults()
@@ -114,7 +120,7 @@ public class SigstoreToolFactory implements SignatureToolFactory {
      */
     @Override
     public SignatureTool createVerifyOnly(Map<String, String> settings) {
-        boolean staging = "true".equals(settings.get("staging"));
+        boolean staging = Setting.STAGING.isTrue(settings);
         try {
             KeylessVerifier verifier = buildVerifier(settings, staging);
             return new SigstoreTool(format, null, verifier, null,
@@ -134,7 +140,7 @@ public class SigstoreToolFactory implements SignatureToolFactory {
      * @return the trust root reference
      */
     private static TrustRootRef trustRootRef(Map<String, String> settings, boolean staging) {
-        String trustedRoot = settings.get("trusted-root");
+        String trustedRoot = Setting.TRUSTED_ROOT.from(settings);
         if (trustedRoot != null && !trustedRoot.isBlank()) {
             return TrustRootRef.sigstore(trustedRoot);
         }
@@ -143,7 +149,7 @@ public class SigstoreToolFactory implements SignatureToolFactory {
 
     private KeylessVerifier buildVerifier(Map<String, String> settings, boolean staging)
             throws Exception {
-        String trustedRoot = settings.get("trusted-root");
+        String trustedRoot = Setting.TRUSTED_ROOT.from(settings);
         if (trustedRoot != null && !trustedRoot.isBlank()) {
             return KeylessVerifier.builder()
                     .trustedRootProvider(TrustedRootProvider.from(Path.of(trustedRoot)))
@@ -173,6 +179,27 @@ public class SigstoreToolFactory implements SignatureToolFactory {
                 throw new IllegalStateException(ENV_VAR + " was not set");
             }
             return token;
+        }
+    }
+
+    /** The settings {@code tools.sigstore} accepts, each read only through its constant. */
+    private enum Setting implements ToolSetting {
+        /** {@code staging}. */
+        STAGING("staging"),
+        /** {@code trusted-root}. */
+        TRUSTED_ROOT("trusted-root"),
+        /** {@code interactive}. */
+        INTERACTIVE("interactive");
+
+        private final String key;
+
+        Setting(String key) {
+            this.key = key;
+        }
+
+        @Override
+        public String key() {
+            return key;
         }
     }
 }
