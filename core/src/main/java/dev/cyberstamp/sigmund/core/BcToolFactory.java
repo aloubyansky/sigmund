@@ -15,9 +15,12 @@ import java.util.function.Function;
  */
 final class BcToolFactory implements SignatureToolFactory {
 
+    /** The tool's name under {@code tools} and in toolchains. */
+    static final String NAME = "bc";
+
     @Override
     public String toolName() {
-        return "bc";
+        return NAME;
     }
 
     @Override
@@ -28,6 +31,11 @@ final class BcToolFactory implements SignatureToolFactory {
     @Override
     public Set<String> acceptedSettings() {
         return ToolSetting.keysOf(Setting.values());
+    }
+
+    @Override
+    public void checkSettingValues(Map<String, String> settings) {
+        SigningFingerprint.from(toolName(), Setting.SIGNING_FINGERPRINT, settings);
     }
 
     private static final String DEFAULT_PASSPHRASE_ENV = "SIGMUND_BC_PASSPHRASE";
@@ -58,13 +66,11 @@ final class BcToolFactory implements SignatureToolFactory {
      */
     SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected,
             PassphraseProvider explicitProvider) {
+        String configuredFingerprint = SigningFingerprint.from(toolName(), Setting.SIGNING_FINGERPRINT, settings);
         BcKeyStore keyStore = buildKeyStore(settings);
         byte[] tskBytes = resolveSigningKeyBytes(settings);
         Path tskFile = tskBytes == null ? resolveOptionalPath(settings, Setting.TSK_FILE) : null;
-        String fingerprint = null;
-        if (tskBytes == null && tskFile == null) {
-            fingerprint = Setting.SIGNING_FINGERPRINT.from(settings);
-        }
+        String fingerprint = tskBytes == null && tskFile == null ? configuredFingerprint : null;
         PassphraseProvider provider = explicitProvider != null
                 ? explicitProvider
                 : resolvePassphraseProvider(settings);
@@ -92,6 +98,20 @@ final class BcToolFactory implements SignatureToolFactory {
         Path bcPrivateHome = resolveBcPrivateHome(settings);
         return new BcKeyStore(gnupgHome, certDHome, bcPrivateHome,
                 FetchSetting.IMPORT_TO_KEYRING.isTrue(settings));
+    }
+
+    /**
+     * Makes the GnuPG home gpg uses bc's default too, so a keyring placed for gpg is the one bc
+     * reads public keys from. bc's cert-d and private key store are not GnuPG's and are left to
+     * their own defaults.
+     *
+     * @param settings bc's settings, mutated: {@code gnupg-home} is added when not set
+     * @param gpgHome the home {@code tools.gpg.home} names, or {@code null} when not set
+     */
+    static void defaultGnupgHome(Map<String, String> settings, String gpgHome) {
+        if (gpgHome != null) {
+            settings.putIfAbsent(Setting.GNUPG_HOME.key(), gpgHome);
+        }
     }
 
     /**

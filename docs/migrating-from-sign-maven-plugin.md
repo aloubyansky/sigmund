@@ -141,7 +141,7 @@ Create a `sigmund.yaml` in your project root:
 ```yaml
 tools:
   bc:
-    signing-fingerprint: "<fingerprint-from-keygen>"
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"   # the fingerprint keygen printed
     passphrase-env: SIGN_KEY_PASS
 ```
 

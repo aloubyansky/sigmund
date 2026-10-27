@@ -704,6 +704,14 @@ class SigmundTest {
         }
 
         @Test
+        void aSigningFingerprintThatIsNotFullIsErrorEvenForAToolNoToolchainNames() {
+            assertThatThrownBy(() -> builderFor("tools: { gpg: { signing-fingerprint: \"0xDEADBEEF\" } }").build())
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("tools.gpg.signing-fingerprint")
+                    .hasMessageContaining("not a full fingerprint");
+        }
+
+        @Test
         void addingAnUnknownSigningToolNamesTheNearestTool() {
             assertThatThrownBy(() -> Sigmund.builder().addSigningTool("bcc", Map.of()))
                     .isInstanceOf(SigmundException.class)
@@ -837,6 +845,88 @@ class SigmundTest {
                     return true;
                 }
             };
+        }
+    }
+
+    /**
+     * bc reads public keys from GnuPG's keyring; when {@code tools.gpg.home} places gpg's home,
+     * bc reads the same one unless {@code tools.bc.gnupg-home} says otherwise. bc's own stores are
+     * not gpg's and keep their defaults.
+     */
+    @Nested
+    class SharedGnupgHome {
+
+        private final List<Map<String, String>> received = new ArrayList<>();
+
+        private final SignatureToolFactory bc = new SignatureToolFactory() {
+            @Override
+            public String toolName() {
+                return "bc";
+            }
+
+            @Override
+            public Set<String> supportedCredentialTypes() {
+                return Set.of("pgp4");
+            }
+
+            @Override
+            public Set<String> acceptedSettings() {
+                return Set.of("gnupg-home", "cert-d-home", "bc-private-home");
+            }
+
+            @Override
+            public SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected) {
+                received.add(settings);
+                return mockTool("bc", true, true, Set.of("pgp4"));
+            }
+
+            @Override
+            public SignatureTool createVerifyOnly(Map<String, String> settings) {
+                received.add(settings);
+                return mockTool("bc", true, false, Set.of("pgp4"));
+            }
+        };
+
+        private Sigmund.Builder builderFor(String yaml) {
+            return Sigmund.builder()
+                    .config(SigmundConfigParser.parse("<test>", new StringReader(yaml)))
+                    .factories(List.of(bc, new GpgToolFactory()));
+        }
+
+        private Map<String, String> signingSettings(String yaml) {
+            Sigmund.Builder builder = builderFor(yaml);
+            ToolConfig own = SigmundConfigParser.parse("<test>", new StringReader(yaml)).toolsConfig().get("bc");
+            builder.addSigningTool("bc", own == null ? Map.of() : own.settings());
+            return received.get(0);
+        }
+
+        @Test
+        void bcReadsGpgsHomeWhenOnlyGpgsIsSet() {
+            assertThat(signingSettings("tools: { gpg: { home: /keys/gnupg } }"))
+                    .containsEntry("gnupg-home", "/keys/gnupg")
+                    .doesNotContainKeys("cert-d-home", "bc-private-home");
+        }
+
+        @Test
+        void bcsOwnGnupgHomeWins() {
+            assertThat(signingSettings("tools: { gpg: { home: /keys/gnupg }, bc: { gnupg-home: /bc/gnupg } }"))
+                    .containsEntry("gnupg-home", "/bc/gnupg");
+        }
+
+        @Test
+        void withoutGpgsHomeBcKeepsItsDefault() {
+            assertThat(signingSettings("tools: { gpg: { executable: gpg2 } }")).doesNotContainKey("gnupg-home");
+        }
+
+        @Test
+        void verificationToolsReadTheSameHome() {
+            builderFor("""
+                    verification: { toolchain: [bc] }
+                    tools: { gpg: { home: /keys/gnupg } }
+                    """).build();
+
+            assertThat(received).singleElement()
+                    .satisfies(settings -> assertThat(settings).containsEntry("gnupg-home", "/keys/gnupg"));
         }
     }
 

@@ -177,7 +177,7 @@ tools:
     home: ~/.local/share/sequoia
     executable: sq
   gpg:
-    key-name: "0xDEADBEEF"
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
     executable: gpg
     home: ~/.gnupg
   sigstore:
@@ -537,7 +537,7 @@ tools:
     signing-fingerprint: "CAFEBABECAFEBABECAFEBABECAFEBABECAFEBABECAFEBABECAFEBABECAFEBABE"   # the v6 PQC key
 ```
 
-Each tool signs with the key its own settings select — `signing-fingerprint`, `key-name`,
+Each tool signs with the key its own settings select — `signing-fingerprint`,
 `SIGMUND_BC_SIGNING_KEY`, or the tool's own default; see [Signing](signing.md). `signer` then
 checks every signature against the signer, so each key a run signs with must be one of the
 signer's credentials: here the v4 classic signature proves `pgp4`, and the v6 PQC signature can
@@ -631,12 +631,18 @@ tools:
     signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
     executable: sq
   gpg:
-    key-name: "0xDEADBEEF"
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
     home: ~/.gnupg
     executable: gpg
 ```
 
 Keys are tool names (`bc`, `sq`, `gpg`, `sigstore`). Values are tool-specific settings, each a single value, documented in the [Tool Settings Tables](#tool-settings-tables) below. For example, `tools.bc.signing-fingerprint` is used by signing, while `tools.bc.gnupg-home` is used by verification.
+
+`bc`, `sq` and `gpg` all select their signing key with `signing-fingerprint`, a full fingerprint. A
+key ID, an address or a user ID can name more than one key, so any other value is an error when
+tools are built — also for a tool no toolchain names. Without the setting, each tool falls back
+to its own default key, listed in its table; [`signing.signer`](#signing) then checks that the
+key used is the signer's.
 
 Tool names and settings are checked when tools are built, by the tools themselves: an unknown
 tool, or a setting its tool does not accept, is an error naming the nearest one — a misspelled
@@ -684,10 +690,10 @@ Configured in the top-level `tools.bc` section.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `gnupg-home` | `~/.gnupg` | GnuPG home directory for reading `pubring.kbx` (or legacy `pubring.gpg`) |
+| `gnupg-home` | `tools.gpg.home` when set, else `~/.gnupg` | GnuPG home directory for reading `pubring.kbx` (or legacy `pubring.gpg`) |
 | `cert-d-home` | `~/.local/share/pgp.cert.d` | Shared OpenPGP cert-d directory for public certificates — the store `sq` uses by default, so each tool sees the certificates the other stores |
 | `bc-private-home` | `~/.local/share/sigmund/bc-private` | BC private key store directory, kept outside the shared cert-d |
-| `signing-fingerprint` | (none) | Fingerprint of the key to sign with (40 or 64 hex chars) |
+| `signing-fingerprint` | (none) | Full fingerprint of the key to sign with: 40 hex characters for a v4 key, 64 for v6. Ignored when a key comes from `signing-key-env` or `tsk-file` |
 | `tsk-file` | (none) | Path to an exported Transferable Secret Key (TSK) file for signing |
 | `signing-key-env` | `SIGMUND_BC_SIGNING_KEY` | Environment variable name containing the ASCII-armored private key. For ephemeral CI runners. |
 | `passphrase-env` | `SIGMUND_BC_PASSPHRASE` | Environment variable name containing the passphrase. If not set, falls back to interactive prompt. |
@@ -731,7 +737,7 @@ Configured in the top-level `tools.sq` section.
 |---------|---------|-------------|
 | `home` | `~/.local/share/sequoia` | Sequoia home directory for keys and certificates |
 | `executable` | `sq` | Path to the `sq` executable (if not on `PATH`) |
-| `signing-fingerprint` | (none) | Fingerprint of the key to sign with (64 hex chars for v6 keys) |
+| `signing-fingerprint` | `sign.signer-self` in sq's config | Full fingerprint of the key to sign with: 40 hex characters for a v4 key, 64 for v6 |
 
 Sigmund runs `sq` under its own crypto policy, which replaces the host's system policy for those
 runs; see [Accepted algorithms](verification.md#accepted-algorithms).
@@ -761,8 +767,8 @@ Configured in the top-level `tools.gpg` section.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `executable` | `gpg` | Path to the `gpg` executable (if not on `PATH`) |
-| `key-name` | (none) | Key identifier for signing (fingerprint, key ID, or email) |
-| `home` | (system default) | GnuPG home directory (`--homedir` option) |
+| `signing-fingerprint` | `default-key` in `gpg.conf`, else the first secret key | Full fingerprint of the key to sign with: 40 hex characters. Passed to `--local-user`; a primary key's fingerprint signs with its signing subkey |
+| `home` | (system default) | GnuPG home directory (`--homedir` option). Also the default `gnupg-home` of [BC](#bc-bouncycastle), so both tools read the same keyring |
 | `passphrase-env` | `SIGMUND_GPG_PASSPHRASE` | Environment variable name containing the passphrase. If not set, falls back to `gpg-agent`. |
 
 **Note:** GPG only supports OpenPGP v4 keys. OpenPGP v6 keys cannot be used with GPG.
@@ -772,7 +778,7 @@ Configured in the top-level `tools.gpg` section.
 ```yaml
 tools:
   gpg:
-    key-name: "0xDEADBEEF"
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
     home: ~/.gnupg
     executable: /usr/bin/gpg2
 ```
@@ -911,7 +917,7 @@ tools:
   sq:
     signing-fingerprint: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
   gpg:
-    key-name: "0xDEADBEEF"
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
 ```
 
 ### Sigstore-Only Signing

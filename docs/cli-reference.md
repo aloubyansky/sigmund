@@ -317,11 +317,11 @@ verification:
 
 tools:
   sq:
-    signing-fingerprint: D62AAB339E45E5EA2FD036872B01D46A517A2991...
+    signing-fingerprint: "D62AAB339E45E5EA2FD036872B01D46A517A29911A2B3C4D5E6F7A8B9C0D1E2F"
     home: ~/.local/share/sequoia
   
   gpg:
-    key-name: alice@example.com
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
 ```
 
 See [configuration.md](configuration.md) for full configuration reference.

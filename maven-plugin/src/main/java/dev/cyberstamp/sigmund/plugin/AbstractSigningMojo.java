@@ -6,7 +6,6 @@ import dev.cyberstamp.sigmund.core.SigmundException;
 import dev.cyberstamp.sigmund.core.ToolConfig;
 import dev.cyberstamp.sigmund.core.ToolsConfig;
 import dev.cyberstamp.sigmund.core.VerificationConfig;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -20,16 +19,17 @@ abstract class AbstractSigningMojo extends AbstractSigmundMojo {
     protected Sigmund buildSigningSigmund() throws MojoExecutionException {
         try {
             SigmundConfig config = loadConfig();
-            Sigmund.Builder builder = Sigmund.builder().config(config);
+            ToolsConfig toolsConfig = mergeToolOverrides(config.toolsConfig());
+            Sigmund.Builder builder = Sigmund.builder().config(config).toolsConfig(toolsConfig);
 
             List<String> toolchain = config.signingConfig().toolchain();
-            ToolsConfig toolsConfig = config.toolsConfig();
             List<String> toolNames = toolchain.isEmpty()
                     ? VerificationConfig.DEFAULT_TOOL_PRIORITY
                     : toolchain;
 
             for (String toolName : toolNames) {
-                Map<String, String> settings = mergeToolSettings(toolName, toolsConfig);
+                ToolConfig toolConfig = toolsConfig.get(toolName);
+                Map<String, String> settings = toolConfig == null ? Map.of() : toolConfig.settings();
                 try {
                     builder.addSigningTool(toolName, settings);
                 } catch (SigmundException e) {
@@ -44,18 +44,5 @@ abstract class AbstractSigningMojo extends AbstractSigmundMojo {
         } catch (SigmundException e) {
             throw new MojoExecutionException("Failed to initialize signing tools", e);
         }
-    }
-
-    private Map<String, String> mergeToolSettings(String toolName,
-            ToolsConfig toolsConfig) {
-        Map<String, String> settings = new LinkedHashMap<>();
-        ToolConfig toolConfig = toolsConfig.get(toolName);
-        if (toolConfig != null) {
-            settings.putAll(toolConfig.settings());
-        }
-        if ("sq".equals(toolName) && sqHome != null) {
-            settings.put("home", sqHome.toPath().toString());
-        }
-        return settings;
     }
 }

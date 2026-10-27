@@ -1056,16 +1056,16 @@ class SigmundConfigParserTest {
         }
 
         /**
-         * The file is read as YAML 1.2, as editors read it: an unquoted {@code 0x…} key ID or a
+         * The file is read as YAML 1.2, as editors read it: an unquoted {@code 0x…} value or a
          * number with a leading zero stays as written. Read as YAML 1.1, {@code 0x12345678}
          * reached gpg as {@code 305419896}, and {@code 0123} as the octal {@code 83}.
          */
         @Test
         void anUnquotedHexOrLeadingZeroValueStaysAsWritten() {
-            var settings = parse("tools: { gpg: { key-name: 0x12345678, executable: 0123 } }")
+            var settings = parse("tools: { gpg: { passphrase-env: 0x12345678, executable: 0123 } }")
                     .toolsConfig().get("gpg").settings();
 
-            assertThat(settings).containsEntry("key-name", "0x12345678").containsEntry("executable", "0123");
+            assertThat(settings).containsEntry("passphrase-env", "0x12345678").containsEntry("executable", "0123");
         }
 
         @Test

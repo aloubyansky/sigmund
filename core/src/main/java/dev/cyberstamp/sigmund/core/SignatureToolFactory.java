@@ -45,6 +45,21 @@ public interface SignatureToolFactory {
     Set<String> acceptedSettings();
 
     /**
+     * Rejects a setting whose value this tool cannot use, when tools are built.
+     * <p>
+     * Runs for every tool configured under {@code tools}, whether or not a toolchain names it,
+     * so a malformed value fails the run instead of leaving the tool out of it. Only the settings
+     * {@link #acceptedSettings()} lists reach this method.
+     * <p>
+     * The default implementation accepts every value.
+     *
+     * @param settings the tool's settings as written under {@code tools.<name>}
+     * @throws PolicyConfigException if a value is malformed, naming the tool and the setting
+     */
+    default void checkSettingValues(Map<String, String> settings) {
+    }
+
+    /**
      * Creates a signing-capable tool from its own settings.
      * <p>
      * The tool chooses its signing key from {@code settings} alone. {@code expected} is the signer

@@ -6,11 +6,24 @@ import java.util.Set;
 
 final class GpgToolFactory implements SignatureToolFactory {
 
+    /** The tool's name under {@code tools} and in toolchains. */
+    static final String NAME = "gpg";
+
     private static final String DEFAULT_PASSPHRASE_ENV = "SIGMUND_GPG_PASSPHRASE";
+
+    /**
+     * Reads the GnuPG home gpg's settings name.
+     *
+     * @param settings gpg's settings
+     * @return {@code tools.gpg.home}, or {@code null} when not set
+     */
+    static String home(Map<String, String> settings) {
+        return Setting.HOME.from(settings);
+    }
 
     @Override
     public String toolName() {
-        return "gpg";
+        return NAME;
     }
 
     @Override
@@ -24,11 +37,16 @@ final class GpgToolFactory implements SignatureToolFactory {
     }
 
     @Override
+    public void checkSettingValues(Map<String, String> settings) {
+        SigningFingerprint.from(toolName(), Setting.SIGNING_FINGERPRINT, settings);
+    }
+
+    @Override
     public SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected) {
         String executable = Setting.EXECUTABLE.from(settings, "gpg");
-        String keyName = Setting.KEY_NAME.from(settings);
+        String fingerprint = SigningFingerprint.from(toolName(), Setting.SIGNING_FINGERPRINT, settings);
         String passphrase = resolvePassphrase(settings);
-        return new GpgRunner(executable, keyName, Setting.HOME.from(settings),
+        return new GpgRunner(executable, fingerprint, Setting.HOME.from(settings),
                 passphrase, false, false, List.of());
     }
 
@@ -60,8 +78,8 @@ final class GpgToolFactory implements SignatureToolFactory {
     private enum Setting implements ToolSetting {
         /** {@code executable}. */
         EXECUTABLE("executable"),
-        /** {@code key-name}. */
-        KEY_NAME("key-name"),
+        /** {@code signing-fingerprint}. */
+        SIGNING_FINGERPRINT("signing-fingerprint"),
         /** {@code home}. */
         HOME("home"),
         /** {@code passphrase-env}. */

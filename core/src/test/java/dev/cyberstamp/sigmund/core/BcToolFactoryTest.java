@@ -78,7 +78,7 @@ class BcToolFactoryTest {
     @Test
     void createWithSigningFingerprint() {
         SignatureTool tool = new BcToolFactory().createSigning(Map.of(
-                "signing-fingerprint", "AABBCCDD"), null);
+                "signing-fingerprint", "AABBCCDDAABBCCDDAABBCCDDAABBCCDDAABBCCDD"), null);
         assertThat(tool.canSign()).isTrue();
     }
 

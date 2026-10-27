@@ -109,16 +109,19 @@ sigmund sign --file artifact.jar
 
 **Key resolution order:**
 
-1. `key-name` in `sigmund.yaml` (explicit override)
+1. `signing-fingerprint` in `sigmund.yaml` (explicit override)
 2. `default-key` in `gpg.conf` (`$GNUPGHOME/gpg.conf` or `~/.gnupg/gpg.conf`)
 3. First secret key in the GPG keyring
 
-To override the default, set `key-name` in `sigmund.yaml`:
+To override the default, set `signing-fingerprint` in `sigmund.yaml` to the key's full
+fingerprint (`gpg --list-secret-keys --with-colons`, the `fpr` line). A key ID or an email is
+not accepted: it can match more than one key in the keyring. A primary key's fingerprint signs
+with its signing subkey.
 
 ```yaml
 tools:
   gpg:
-    key-name: your@email.com
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
 ```
 
 ## Signing with Bouncy Castle
@@ -367,7 +370,7 @@ To override the default, set `signing-fingerprint` in `sigmund.yaml`:
 ```yaml
 tools:
   sq:
-    signing-fingerprint: "D62AAB339E45E5EA2FD036872B01D46A517A2991..."
+    signing-fingerprint: "D62AAB339E45E5EA2FD036872B01D46A517A29911A2B3C4D5E6F7A8B9C0D1E2F"
 ```
 
 This produces a hybrid `.asc` file containing both a classic signature (from GPG or BC) and a PQC signature (from sq).

@@ -125,7 +125,7 @@ Map your existing `maven-gpg-plugin` properties to Sigmund equivalents:
 
 | maven-gpg-plugin property | Sigmund equivalent | Notes |
 |---------------------------|-------------------|-------|
-| `gpg.keyname` | `sigmund.yaml` → `tools.gpg.key-name` | GPG key ID or email. Configured in `sigmund.yaml`, not as a Maven property. |
+| `gpg.keyname` | `sigmund.yaml` → `tools.gpg.signing-fingerprint` | The key's full fingerprint; a key ID or email is not accepted, since it can match more than one key. Configured in `sigmund.yaml`, not as a Maven property. |
 | `gpg.passphrase` | `sigmund.yaml` → `tools.gpg.passphrase-env` | Env var name, not the passphrase itself. See [Passphrase handling](#3-passphrase-handling). |
 | `gpg.executable` | `sigmund.yaml` → `tools.gpg.executable` | Path to GPG binary. Set in config file, not as Maven property. |
 | `gpg.skip` | `sigmund.skip` | Skip signing when `true`. |
@@ -136,7 +136,7 @@ Map your existing `maven-gpg-plugin` properties to Sigmund equivalents:
 ```yaml
 tools:
   gpg:
-    key-name: user@example.com
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
 ```
 
 **Example: skipping signing**
@@ -274,7 +274,7 @@ For more control, create a `sigmund.yaml` file in your project root:
 ```yaml
 tools:
   gpg:
-    key-name: user@example.com
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
     passphrase-env: GPG_PASSPHRASE
 ```
 
@@ -290,13 +290,13 @@ Check that your GPG key exists:
 gpg --list-secret-keys
 ```
 
-If the key exists, specify it explicitly:
+If the key exists, specify its full fingerprint explicitly:
 
 ```yaml
 # sigmund.yaml
 tools:
   gpg:
-    key-name: "0xYOURKEYID"
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
 ```
 
 ### Hybrid signatures fail Maven Central upload

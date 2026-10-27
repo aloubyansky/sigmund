@@ -593,7 +593,7 @@ public class Sigmund implements AutoCloseable {
          * Creates and adds a signing-capable tool using the registered factory.
          * <p>
          * The factory handles defaults; only provide settings the user has explicitly
-         * configured (e.g., {@code "key-name"}, {@code "signing-fingerprint"}, {@code "home"}).
+         * configured (e.g., {@code "signing-fingerprint"}, {@code "home"}).
          * <p>
          * The factory receives the signer {@code signing.signer} asserts only when
          * {@link #config(SigmundConfig)} was called before this method; otherwise it receives
@@ -620,7 +620,9 @@ public class Sigmund implements AutoCloseable {
                     .withIssuersResolved(config.trustPolicySpec().issuers());
         }
 
-        private SignatureTool createFromFactory(String toolName, boolean signing, Map<String, String> settings) {
+        private SignatureTool createFromFactory(String toolName, boolean signing,
+                Map<String, String> configured) {
+            Map<String, String> settings = withSharedDefaults(toolName, configured);
             for (SignatureToolFactory factory : allFactories()) {
                 if (factory.toolName().equals(toolName)) {
                     if (signing && factory instanceof BcToolFactory bcFactory
@@ -713,8 +715,9 @@ public class Sigmund implements AutoCloseable {
         void checkToolConfiguration() {
             for (String toolName : toolsConfig.toolNames()) {
                 SignatureToolFactory factory = factoryFor("tools", toolName);
-                checkSettings(toolName, toolsConfig.get(toolName).settings().keySet(),
-                        factory.acceptedSettings());
+                Map<String, String> settings = toolsConfig.get(toolName).settings();
+                checkSettings(toolName, settings.keySet(), factory.acceptedSettings());
+                factory.checkSettingValues(settings);
             }
             if (verificationConfig.toolchain() != null) {
                 checkToolchain("verification.toolchain", verificationConfig.toolchain());
@@ -929,7 +932,7 @@ public class Sigmund implements AutoCloseable {
                 if (!factory.toolName().equals(toolName)) {
                     continue;
                 }
-                Map<String, String> settings = resolveToolSettings(toolName);
+                Map<String, String> settings = withSharedDefaults(toolName, resolveToolSettings(toolName));
                 if (supportsOpenPgp(factory)) {
                     settings = injectFetchSettings(settings);
                 } else {
@@ -950,6 +953,23 @@ public class Sigmund implements AutoCloseable {
             System.getLogger(Sigmund.class.getName())
                     .log(System.Logger.Level.WARNING,
                             "Unknown tool '" + toolName + "' in toolchain");
+        }
+
+        /**
+         * Adds the defaults one tool takes from another's settings: bc reads public keys from the
+         * GnuPG home {@code tools.gpg.home} names, unless {@code tools.bc.gnupg-home} is set.
+         *
+         * @param toolName the tool being built
+         * @param settings its own settings
+         * @return the settings with the shared defaults added, a new map
+         */
+        private Map<String, String> withSharedDefaults(String toolName, Map<String, String> settings) {
+            Map<String, String> merged = new HashMap<>(settings);
+            if (BcToolFactory.NAME.equals(toolName)) {
+                ToolConfig gpg = toolsConfig.get(GpgToolFactory.NAME);
+                BcToolFactory.defaultGnupgHome(merged, gpg == null ? null : GpgToolFactory.home(gpg.settings()));
+            }
+            return Map.copyOf(merged);
         }
 
         /**

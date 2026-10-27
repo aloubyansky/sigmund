@@ -55,21 +55,16 @@ abstract class AbstractSigmundMojo extends AbstractMojo {
      *
      * <p>
      * Merges Sequoia home ({@code sqHome}) and GnuPG home ({@code gpgHome})
-     * overrides into a map keyed by tool name. When {@code gpgHome} is set,
-     * it also configures the BC tool's GnuPG home, cert-d, and private key
-     * store paths relative to it.
+     * overrides into a map keyed by tool name: {@code tools.sq.home} and
+     * {@code tools.gpg.home}. BC reads public keys from the GnuPG home too, unless
+     * {@code tools.bc.gnupg-home} is set; core derives that from {@code tools.gpg.home}.
      *
      * @return tool overrides map, possibly empty but never null
      */
     protected Map<String, Map<String, String>> toolOverrides() {
         var overrides = new HashMap<>(SequoiaHomeResolver.toolOverrides(sqHome));
         if (gpgHome != null) {
-            String gpgHomePath = gpgHome.toPath().toString();
-            overrides.put("gpg", Map.of("home", gpgHomePath));
-            overrides.put("bc", Map.of(
-                    "gnupg-home", gpgHomePath,
-                    "cert-d-home", gpgHomePath + "/cert-d",
-                    "bc-private-home", gpgHomePath + "/bc-private"));
+            overrides.put("gpg", Map.of("home", gpgHome.toPath().toString()));
         }
         return overrides;
     }

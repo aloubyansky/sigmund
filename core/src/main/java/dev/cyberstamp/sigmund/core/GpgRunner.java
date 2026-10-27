@@ -246,7 +246,7 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
     }
 
     private final String gpgExecutable;
-    private final String keyName;
+    private final String signingFingerprint;
     private final String passphrase;
     private final Map<String, String> env;
     private final Path gpgHome;
@@ -268,43 +268,43 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
     /**
      * Constructs a GpgRunner using the default "gpg" executable.
      *
-     * @param keyName the key name/ID to use with --local-user, or null to use
-     *        GPG's default key
+     * @param signingFingerprint the full fingerprint of the key to sign with, passed to
+     *        {@code --local-user}, or null to use GPG's default key
      */
-    GpgRunner(String keyName) {
-        this("gpg", keyName, null);
+    GpgRunner(String signingFingerprint) {
+        this("gpg", signingFingerprint, null);
     }
 
     /**
      * Constructs a GpgRunner with a custom GPG executable path.
      *
      * @param gpgExecutable the path to the gpg executable (e.g., "gpg" or "/usr/bin/gpg")
-     * @param keyName the key name/ID to use with --local-user, or null to use
-     *        GPG's default key
+     * @param signingFingerprint the full fingerprint of the key to sign with, passed to
+     *        {@code --local-user}, or null to use GPG's default key
      * @throws IllegalArgumentException if gpgExecutable is null or empty
      */
-    GpgRunner(String gpgExecutable, String keyName) {
-        this(gpgExecutable, keyName, null);
+    GpgRunner(String gpgExecutable, String signingFingerprint) {
+        this(gpgExecutable, signingFingerprint, null);
     }
 
     /**
      * Constructs a GpgRunner with a custom GPG executable path and home directory.
      *
      * @param gpgExecutable the path to the gpg executable (e.g., "gpg" or "/usr/bin/gpg")
-     * @param keyName the key name/ID to use with --local-user, or null to use
-     *        GPG's default key
+     * @param signingFingerprint the full fingerprint of the key to sign with, passed to
+     *        {@code --local-user}, or null to use GPG's default key
      * @param home the GPG home directory, or null to use the default
      * @throws IllegalArgumentException if gpgExecutable is null or empty
      */
-    GpgRunner(String gpgExecutable, String keyName, String home) {
-        this(gpgExecutable, keyName, home, null, false, false, List.of());
+    GpgRunner(String gpgExecutable, String signingFingerprint, String home) {
+        this(gpgExecutable, signingFingerprint, home, null, false, false, List.of());
     }
 
     /**
      * Constructs a GpgRunner with full configuration.
      *
      * @param gpgExecutable the path to the gpg executable
-     * @param keyName the key name/ID to use with --local-user, or null
+     * @param signingFingerprint the full fingerprint of the key to sign with, or null
      * @param home the GPG home directory, or null to use the default
      * @param passphrase the GPG passphrase, or null to rely on gpg-agent
      * @param resolveSigners whether to fetch missing keys from keyservers
@@ -313,20 +313,20 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
      * @param keyservers keyserver URLs to fetch from
      * @throws IllegalArgumentException if gpgExecutable is null or empty
      */
-    GpgRunner(String gpgExecutable, String keyName, String home,
+    GpgRunner(String gpgExecutable, String signingFingerprint, String home,
             String passphrase,
             boolean resolveSigners, boolean importToKeyring, List<String> keyservers) {
-        this(gpgExecutable, keyName, home, passphrase, true, resolveSigners, importToKeyring, keyservers);
+        this(gpgExecutable, signingFingerprint, home, passphrase, true, resolveSigners, importToKeyring, keyservers);
     }
 
-    GpgRunner(String gpgExecutable, String keyName, String home,
+    GpgRunner(String gpgExecutable, String signingFingerprint, String home,
             String passphrase, boolean signingCapable,
             boolean resolveSigners, boolean importToKeyring, List<String> keyservers) {
         if (gpgExecutable == null || gpgExecutable.isEmpty()) {
             throw new IllegalArgumentException("gpgExecutable cannot be null or empty");
         }
         this.gpgExecutable = gpgExecutable;
-        this.keyName = keyName;
+        this.signingFingerprint = signingFingerprint;
         this.passphrase = passphrase;
         this.signingCapable = signingCapable;
         this.env = home != null ? Map.of("GNUPGHOME", home) : null;
@@ -342,7 +342,7 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
      * {@inheritDoc}
      * <p>
      * Creates a detached ASCII-armored signature using GPG with options:
-     * {@code --batch --yes --armor --detach-sign [--local-user keyName] --output outputSig artifactFile}.
+     * {@code --batch --yes --armor --detach-sign [--local-user signingFingerprint] --output outputSig artifactFile}.
      *
      * @param artifactFile the file to sign
      * @param outputSig the path where the signature file will be written
@@ -502,9 +502,8 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
     /**
      * {@inheritDoc}
      * <p>
-     * Returns {@code true} if a key name was provided at construction time.
-     * A {@code null} key name means GPG's default key is used, which is still
-     * considered signing-capable.
+     * Returns {@code true} for a runner built for signing, whether it signs with a configured
+     * fingerprint or, without one, with GPG's default key.
      */
     @Override
     public boolean canSign() {
@@ -512,17 +511,17 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
     }
 
     /**
-     * Returns the key name this runner was built with.
+     * Returns the fingerprint of the key this runner signs with.
      *
-     * @return the key name passed to {@code --local-user}, or {@code null} when gpg's default key is used
+     * @return the fingerprint passed to {@code --local-user}, or {@code null} when gpg's default key is used
      */
-    String keyName() {
-        return keyName;
+    String signingFingerprint() {
+        return signingFingerprint;
     }
 
     @Override
     public List<SigningInfo> signingInfo() {
-        String effectiveKey = keyName;
+        String effectiveKey = signingFingerprint;
         if (effectiveKey == null) {
             effectiveKey = parseDefaultKey(gpgConfPath());
         }
@@ -842,9 +841,9 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
             command.add("0");
         }
 
-        if (keyName != null && !keyName.isEmpty()) {
+        if (signingFingerprint != null && !signingFingerprint.isEmpty()) {
             command.add("--local-user");
-            command.add(keyName);
+            command.add(signingFingerprint);
         }
 
         command.add("--output");
