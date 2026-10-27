@@ -33,8 +33,10 @@ import tools.jackson.dataformat.yaml.YAMLMapper;
  * </ul>
  * Identity entries and issuers are checked by {@link IdentityEntryValidator} when the policy is
  * compiled on the verification path, not at parse time, so the signing path never fails on a
- * verification-only semantic error. The parser only normalizes issuer names it recognizes and
- * keeps any other as written.
+ * verification-only semantic error. The one exception is the signer {@code signing.signer}
+ * asserts: its own entries are checked at load, since signing relies on them, without compiling
+ * the policy. The parser only normalizes issuer names it recognizes and keeps any other as
+ * written.
  */
 class SigmundConfigParser {
 
@@ -118,6 +120,8 @@ class SigmundConfigParser {
         SignersConfig signers = parseSigners(root.get("signers"));
         List<String> issuers = parseIssuers(root.get("issuers"));
         SigningConfig signingConfig = parseSigningConfig(root.get("signing"));
+        requireDefinedSigner(signingConfig, signers);
+        validateAssertedSigner(signingConfig, signers, issuers);
         ToolsConfig toolsConfig = parseToolsRegistry(root.get("tools"));
         VerificationConfig verificationConfig = parseVerificationConfig(root.get("verification"));
 
@@ -126,6 +130,25 @@ class SigmundConfigParser {
 
         return new SigmundConfig(signers, artifactSets, trustPolicySpec,
                 signingConfig, toolsConfig, verificationConfig);
+    }
+
+    private static void requireDefinedSigner(SigningConfig signingConfig, SignersConfig signers) {
+        String name = signingConfig.signer();
+        if (name == null || signers.names().contains(name)) {
+            return;
+        }
+        String suggestion = NearestName.among(name, signers.names());
+        throw new PolicyConfigException("signing.signer names '" + name
+                + "', which is not defined under signers"
+                + (suggestion == null ? "" : " — did you mean '" + suggestion + "'?"));
+    }
+
+    private static void validateAssertedSigner(SigningConfig signingConfig, SignersConfig signers,
+            List<String> issuers) {
+        String name = signingConfig.signer();
+        if (name != null) {
+            IdentityEntryValidator.validateAssertedSigner(name, signers.get(name), issuers);
+        }
     }
 
     private static final List<String> TOP_LEVEL_KEYS = List.of("issuers", "signers",

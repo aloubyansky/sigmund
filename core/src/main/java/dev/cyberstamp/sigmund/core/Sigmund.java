@@ -62,11 +62,13 @@ public class Sigmund implements AutoCloseable {
     private final List<SignatureFormat> formats;
     private final VerificationConfig verificationConfig;
     private final Map<String, OpenPgpDirectory> directories;
+    private final SignerIdentity expectedSigner;
     private volatile boolean fetchWarningEmitted;
 
     private Sigmund(List<SignatureTool> tools, List<SignatureFormat> formats,
             List<EvidenceProvider> evidenceProviders, SigningConfig signingConfig,
-            VerificationConfig verificationConfig, OpenPgpDirectory directory) {
+            VerificationConfig verificationConfig, OpenPgpDirectory directory,
+            SignerIdentity expectedSigner) {
         if (tools.isEmpty()) {
             throw new SigmundException("No tools available");
         }
@@ -76,6 +78,7 @@ public class Sigmund implements AutoCloseable {
         this.signingConfig = signingConfig;
         this.verificationConfig = verificationConfig;
         this.directories = Map.of(directory.name(), directory);
+        this.expectedSigner = expectedSigner;
     }
 
     /**
@@ -155,7 +158,22 @@ public class Sigmund implements AutoCloseable {
                             .anyMatch(credentialTypes::contains))
                     .toList();
         }
-        return new Signer(configuredSigningTools(candidates));
+        return new Signer(configuredSigningTools(candidates), signerBindingCheck());
+    }
+
+    /**
+     * Returns the check that every signature proves the signer {@code signing.signer} asserts,
+     * or {@code null} when no signer is asserted.
+     * <p>
+     * Signing asks a directory about a key's addresses only when
+     * {@code verification.resolve-signers} allows it, as verification does, and verifies a fresh
+     * signature with the tool that produced it, then the other tools of its format.
+     */
+    private SignerBindingCheck signerBindingCheck() {
+        if (expectedSigner == null) {
+            return null;
+        }
+        return new SignerBindingCheck(expectedSigner, directories, verificationConfig.resolveSigners(), tools);
     }
 
     /**
@@ -464,6 +482,8 @@ public class Sigmund implements AutoCloseable {
         private VerificationConfig verificationConfig = VerificationConfig.DEFAULT;
         private OpenPgpDirectory directory;
         private SigningConfig signingConfig;
+        private SignerIdentity expectedSigner;
+        private List<SignatureToolFactory> factoryOverride;
         private PassphraseProvider bcPassphraseProvider;
 
         /**
@@ -513,6 +533,7 @@ public class Sigmund implements AutoCloseable {
             this.toolsConfig = config.toolsConfig();
             this.verificationConfig = config.verificationConfig();
             this.signingConfig = config.signingConfig();
+            this.expectedSigner = expectedSignerOf(config);
             return this;
         }
 
@@ -573,6 +594,12 @@ public class Sigmund implements AutoCloseable {
          * <p>
          * The factory handles defaults; only provide settings the user has explicitly
          * configured (e.g., {@code "key-name"}, {@code "signing-fingerprint"}, {@code "home"}).
+         * <p>
+         * The factory receives the signer {@code signing.signer} asserts only when
+         * {@link #config(SigmundConfig)} was called before this method; otherwise it receives
+         * {@code null} and cannot refuse early (Sigstore then accepts any OIDC token). The check
+         * that every signature proves the asserted signer runs after signing regardless, as long
+         * as {@code config} is called before {@link #build()}.
          *
          * @param toolName the tool name (e.g., {@code "gpg"}, {@code "sq"})
          * @param settings tool-specific configuration settings
@@ -584,15 +611,24 @@ public class Sigmund implements AutoCloseable {
             return addTool(createFromFactory(toolName, true, settings));
         }
 
+        private static SignerIdentity expectedSignerOf(SigmundConfig config) {
+            String name = config.signingConfig() == null ? null : config.signingConfig().signer();
+            if (name == null) {
+                return null;
+            }
+            return config.signers().resolve(name)
+                    .withIssuersResolved(config.trustPolicySpec().issuers());
+        }
+
         private SignatureTool createFromFactory(String toolName, boolean signing, Map<String, String> settings) {
             for (SignatureToolFactory factory : allFactories()) {
                 if (factory.toolName().equals(toolName)) {
                     if (signing && factory instanceof BcToolFactory bcFactory
                             && bcPassphraseProvider != null) {
-                        return bcFactory.createSigning(null, settings, bcPassphraseProvider);
+                        return bcFactory.createSigning(settings, expectedSigner, bcPassphraseProvider);
                     }
                     return signing
-                            ? factory.createSigning(null, settings)
+                            ? factory.createSigning(settings, expectedSigner)
                             : factory.createVerifyOnly(settings);
                 }
             }
@@ -654,7 +690,8 @@ public class Sigmund implements AutoCloseable {
 
                 return new Sigmund(List.copyOf(tools), List.copyOf(formats),
                         List.copyOf(providers), signingConfig, verificationConfig,
-                        directory != null ? directory : KeysOpenPgpOrgDirectory.standard());
+                        directory != null ? directory : KeysOpenPgpOrgDirectory.standard(),
+                        expectedSigner);
             } catch (RuntimeException e) {
                 // Clean up any AutoCloseable tools before propagating the exception
                 closeTools();
@@ -695,7 +732,7 @@ public class Sigmund implements AutoCloseable {
             }
         }
 
-        private static SignatureToolFactory factoryFor(String location, String toolName) {
+        private SignatureToolFactory factoryFor(String location, String toolName) {
             for (SignatureToolFactory factory : allFactories()) {
                 if (factory.toolName().equals(toolName)) {
                     return factory;
@@ -704,7 +741,7 @@ public class Sigmund implements AutoCloseable {
             throw new PolicyConfigException(location + ": " + unknownToolMessage(toolName));
         }
 
-        private static String unknownToolMessage(String toolName) {
+        private String unknownToolMessage(String toolName) {
             List<String> names = allFactories().stream().map(SignatureToolFactory::toolName).toList();
             String suggestion = NearestName.among(toolName, names);
             return "unknown tool '" + toolName + "'"
@@ -838,8 +875,19 @@ public class Sigmund implements AutoCloseable {
             return List.copyOf(all);
         }
 
-        private static List<SignatureToolFactory> allFactories() {
-            return ALL_FACTORIES;
+        /**
+         * Replaces the factories tools are built from, so a test can observe what they receive.
+         *
+         * @param factories the factories to use instead of the built-in and discovered ones
+         * @return this builder
+         */
+        Builder factories(List<SignatureToolFactory> factories) {
+            this.factoryOverride = List.copyOf(factories);
+            return this;
+        }
+
+        private List<SignatureToolFactory> allFactories() {
+            return factoryOverride != null ? factoryOverride : ALL_FACTORIES;
         }
 
         /**

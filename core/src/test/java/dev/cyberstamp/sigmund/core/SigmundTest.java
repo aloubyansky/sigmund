@@ -823,8 +823,7 @@ class SigmundTest {
                 }
 
                 @Override
-                public SignatureTool createSigning(Credential credential,
-                        Map<String, String> settings) {
+                public SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected) {
                     return tool;
                 }
 
@@ -838,6 +837,71 @@ class SigmundTest {
                     return true;
                 }
             };
+        }
+    }
+
+    @Nested
+    class AssertedSigner {
+
+        private SignerIdentity receivedBy(String yaml) {
+            var received = new ArrayList<SignerIdentity>();
+            var factory = new SignatureToolFactory() {
+                @Override
+                public String toolName() {
+                    return "recording";
+                }
+
+                @Override
+                public Set<String> supportedCredentialTypes() {
+                    return Set.of("pgp4");
+                }
+
+                @Override
+                public Set<String> acceptedSettings() {
+                    return Set.of();
+                }
+
+                @Override
+                public SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected) {
+                    received.add(expected);
+                    return mockTool("recording", true, true, Set.of("pgp4"));
+                }
+
+                @Override
+                public SignatureTool createVerifyOnly(Map<String, String> settings) {
+                    throw new UnsupportedOperationException();
+                }
+            };
+            Sigmund.builder()
+                    .config(SigmundConfigParser.parse("<test>", new StringReader(yaml)))
+                    .factories(List.of(factory))
+                    .addSigningTool("recording", Map.of());
+            assertThat(received).hasSize(1);
+            return received.get(0);
+        }
+
+        @Test
+        void aConfiguredSignerReachesTheFactory() {
+            SignerIdentity expected = receivedBy("""
+                    issuers: [keys.openpgp.org]
+                    signers:
+                      alice:
+                        email: alice@example.com
+                    signing:
+                      signer: alice
+                    """);
+
+            assertThat(expected.id()).isEqualTo("alice");
+            assertThat(expected.credentials()).containsExactly(
+                    IdentityCredential.email(IssuerKind.KEYS_OPENPGP_ORG, "alice@example.com"));
+        }
+
+        @Test
+        void withoutASignerTheFactoryReceivesNull() {
+            assertThat(receivedBy("""
+                    signing:
+                      toolchain: [recording]
+                    """)).isNull();
         }
     }
 

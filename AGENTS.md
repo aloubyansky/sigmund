@@ -105,7 +105,6 @@ Rules the code relies on; breaking one is a defect even if tests pass.
 
 ## Common Patterns
 
-- **First-successful routing:** When matching credentials to tools, iterate in toolchain order, call `createSigning()`, first non-null result wins.
 - **Extension-first detection:** `SignatureFormat.canHandle()` checks file extension before reading content.
 - **`injectFetchSettings()`** is conditional — only inject OpenPGP key-fetching settings for OpenPGP tools.
 - **`isDefaultExclusiveSigner()`** — factory-level mechanism for zero-config CI (e.g., env-var-injected signing key).

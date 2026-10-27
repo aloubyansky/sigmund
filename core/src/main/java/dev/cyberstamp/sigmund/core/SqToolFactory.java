@@ -22,13 +22,10 @@ final class SqToolFactory implements SignatureToolFactory {
     }
 
     @Override
-    public SignatureTool createSigning(Credential credential, Map<String, String> settings) {
+    public SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected) {
         String executable = Setting.EXECUTABLE.from(settings, "sq");
         Path home = resolveHome(settings);
         String fingerprint = Setting.SIGNING_FINGERPRINT.from(settings);
-        if (fingerprint == null && credential instanceof KeyCredential fp) {
-            fingerprint = fp.fingerprint();
-        }
         if (fingerprint != null) {
             return new SqRunner(executable, home, fingerprint);
         }

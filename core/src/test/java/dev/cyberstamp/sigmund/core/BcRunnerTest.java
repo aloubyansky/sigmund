@@ -3,6 +3,8 @@ package dev.cyberstamp.sigmund.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -216,6 +218,71 @@ class BcRunnerTest {
         }
         return (OpenPgpClaim) new OpenPgpSignatureFormat()
                 .parse(Evidence.read(signature, Evidence.SOURCE_SIDECAR)).get(0);
+    }
+
+    @Nested
+    class OwnSigningKey {
+
+        @TempDir
+        Path dir;
+
+        @Test
+        void aRunnerSigningFromATskVerifiesItsOwnSignatureOverEmptyStores() throws Exception {
+            String fp = generate("signer");
+            BcRunner runner = new BcRunner(emptyStore(), null, exportTsk("signer", fp));
+
+            VerifyResult result = runner.verify(artifact(), signWith(runner));
+
+            assertThat(result.isVerified()).isTrue();
+            assertThat(((OpenPgpVerifyResult) result).primaryFingerprint()).isEqualTo(fp);
+        }
+
+        @Test
+        void anotherKeyIsStillNotFound() throws Exception {
+            BcRunner runner = new BcRunner(emptyStore(), null,
+                    exportTsk("signer", generate("signer")));
+            signWith(runner);
+            String otherFp = generate("other");
+            BcRunner other = new BcRunner(store("other"), otherFp, null);
+
+            VerifyResult result = runner.verify(artifact(), signWith(other));
+
+            assertThat(result.isIndeterminate(IndeterminateReason.KEY_UNAVAILABLE)).isTrue();
+        }
+
+        private OpenPgpClaim signWith(BcRunner signer) throws IOException {
+            Path content = Files.writeString(artifact(), "test content");
+            Path signature = dir.resolve("artifact.txt.asc");
+            signer.sign(content, signature);
+            return (OpenPgpClaim) new OpenPgpSignatureFormat()
+                    .parse(Evidence.read(signature, Evidence.SOURCE_SIDECAR)).get(0);
+        }
+
+        private String generate(String name) {
+            return new BcRunner(store(name), null, null)
+                    .generateKey("Test <" + name + "@example.com>", "ed25519");
+        }
+
+        private Path exportTsk(String name, String fp) throws IOException {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            try (ArmoredOutputStream armored = new ArmoredOutputStream(out)) {
+                store(name).findSecretKey(fp).encode(armored);
+            }
+            return Files.write(dir.resolve(name + ".tsk"), out.toByteArray());
+        }
+
+        private BcKeyStore emptyStore() {
+            return store("empty");
+        }
+
+        private BcKeyStore store(String name) {
+            return new BcKeyStore(null, dir.resolve(name + "/cert-d"),
+                    dir.resolve(name + "/bc-private"));
+        }
+
+        private Path artifact() {
+            return dir.resolve("artifact.txt");
+        }
     }
 
     private BcRunner createSigningRunner(Path tempDir) {

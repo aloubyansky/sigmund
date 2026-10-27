@@ -34,8 +34,8 @@ final class BcToolFactory implements SignatureToolFactory {
     private static final String DEFAULT_SIGNING_KEY_ENV = "SIGMUND_BC_SIGNING_KEY";
 
     @Override
-    public SignatureTool createSigning(Credential credential, Map<String, String> settings) {
-        return createSigning(credential, settings, null);
+    public SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected) {
+        return createSigning(settings, expected, null);
     }
 
     /**
@@ -50,13 +50,13 @@ final class BcToolFactory implements SignatureToolFactory {
      * <ol>
      * <li>{@code SIGMUND_BC_SIGNING_KEY} env var (or custom {@code signing-key-env})</li>
      * <li>{@code tsk-file} setting</li>
-     * <li>{@code signing-fingerprint} setting (or credential fingerprint)</li>
+     * <li>{@code signing-fingerprint} setting</li>
      * </ol>
      * <p>
      * The env var takes precedence so that CI environments can override
      * file-based configuration without modifying {@code sigmund.yaml}.
      */
-    SignatureTool createSigning(Credential credential, Map<String, String> settings,
+    SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected,
             PassphraseProvider explicitProvider) {
         BcKeyStore keyStore = buildKeyStore(settings);
         byte[] tskBytes = resolveSigningKeyBytes(settings);
@@ -64,9 +64,6 @@ final class BcToolFactory implements SignatureToolFactory {
         String fingerprint = null;
         if (tskBytes == null && tskFile == null) {
             fingerprint = Setting.SIGNING_FINGERPRINT.from(settings);
-            if (fingerprint == null && credential instanceof KeyCredential fp) {
-                fingerprint = fp.fingerprint();
-            }
         }
         PassphraseProvider provider = explicitProvider != null
                 ? explicitProvider

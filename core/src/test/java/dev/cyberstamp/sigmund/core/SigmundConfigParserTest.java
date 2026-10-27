@@ -152,21 +152,25 @@ class SigmundConfigParserTest {
         }
 
         @Test
-        void unclassifiableIssuersDoNotStopTheSigningPath() {
+        void unclassifiableIssuersTheAssertedSignerDoesNotUseDoNotStopTheSigningPath() {
             var config = parse("""
                     issuers:
                       - keyserver.ubuntu.com
                     signers:
                       alice:
                         identities:
-                          - issuer: oidc.example
+                          - issuer: "https://accounts.google.com"
                             email: alice@example.com
+                      bob:
+                        identities:
+                          - issuer: oidc.example
+                            email: bob@example.com
                     signing:
                       signer: alice
                     """);
 
             assertThat(config.signingConfig().signer()).isEqualTo("alice");
-            assertThat(config.signers().get("alice")).isNotNull();
+            assertThat(config.signers().get("bob")).isNotNull();
             assertThat(config.trustPolicySpec().issuers()).containsExactly("keyserver.ubuntu.com");
         }
 
@@ -633,6 +637,7 @@ class SigmundConfigParserTest {
         @Test
         void signingOnlyConfigIsNotAPolicy() {
             var doc = parse("""
+                    issuers: [keys.openpgp.org]
                     signers: { alice: "alice@example.com" }
                     signing: { signer: alice }
                     """).trustPolicySpec();
@@ -841,6 +846,9 @@ class SigmundConfigParserTest {
         @Test
         void signingConfig() {
             var config = parse("""
+                    signers:
+                      alice:
+                        pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
                     signing:
                       signer: alice
                       credential-types: [pgp4, pgp6]
@@ -1139,6 +1147,156 @@ class SigmundConfigParserTest {
         @Test
         void emptyDocumentIsZeroConfig() {
             assertThat(parse("").trustPolicySpec().declared()).isFalse();
+        }
+    }
+
+    @Nested
+    class SigningSigner {
+
+        private static final String SIGNERS = """
+                signers:
+                  alice:
+                    pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+                """;
+
+        @Test
+        void aSignerTheFileDoesNotDefineIsALoadError() {
+            String yaml = SIGNERS + """
+                    signing:
+                      signer: alcie
+                    """;
+            assertThatThrownBy(() -> SigmundConfigParser.parse("test", new StringReader(yaml)))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing.signer")
+                    .hasMessageContaining("'alcie'")
+                    .hasMessageContaining("did you mean 'alice'?");
+        }
+
+        @Test
+        void aDefinedSignerLoads() throws Exception {
+            String yaml = SIGNERS + """
+                    signing:
+                      signer: alice
+                    """;
+            SigmundConfig config = SigmundConfigParser.parse("test", new StringReader(yaml));
+            assertThat(config.signingConfig().signer()).isEqualTo("alice");
+        }
+
+        @Test
+        void anAddressNoListedIssuerCanVouchForIsALoadError() {
+            String yaml = """
+                    signers:
+                      alice:
+                        email: "alice@example.com"
+                    signing:
+                      signer: alice
+                    """;
+            assertThatThrownBy(() -> parse(yaml))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing.signer")
+                    .hasMessageContaining("'alice'")
+                    .hasMessageContaining("{email=alice@example.com}")
+                    .hasMessageContaining("add one to 'issuers'");
+        }
+
+        @Test
+        void anAddressAListedIssuerVouchesForLoads() {
+            var config = parse("""
+                    issuers: [keys.openpgp.org]
+                    signers:
+                      alice:
+                        email: "alice@example.com"
+                    signing:
+                      signer: alice
+                    """);
+            assertThat(config.signingConfig().signer()).isEqualTo("alice");
+        }
+
+        @Test
+        void aMisspelledAttributeOfTheSignerIsALoadError() {
+            String yaml = """
+                    signers:
+                      ci:
+                        identities:
+                          - issuer: "https://token.actions.githubusercontent.com"
+                            source-repository-url: "https://github.com/acme/app"
+                    signing:
+                      signer: ci
+                    """;
+            assertThatThrownBy(() -> parse(yaml))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing.signer")
+                    .hasMessageContaining("source-repository-url=https://github.com/acme/app")
+                    .hasMessageContaining("did you mean 'source-repository-uri'?");
+        }
+
+        @Test
+        void anAttributeTheEntrysIssuerCannotAssertIsALoadError() {
+            String yaml = """
+                    signers:
+                      alice:
+                        identities:
+                          - issuer: keys.openpgp.org
+                            subject: "alice@example.com"
+                    signing:
+                      signer: alice
+                    """;
+            assertThatThrownBy(() -> parse(yaml))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing.signer")
+                    .hasMessageContaining("cannot assert subject");
+        }
+
+        @Test
+        void anUnclassifiableIssuerOfTheSignerIsALoadError() {
+            String yaml = """
+                    signers:
+                      alice:
+                        identities:
+                          - issuer: "http://issuer.example.com"
+                            subject: "alice@example.com"
+                    signing:
+                      signer: alice
+                    """;
+            assertThatThrownBy(() -> parse(yaml))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing.signer")
+                    .hasMessageContaining("http://issuer.example.com");
+        }
+
+        @Test
+        void aMembersEntryIsValidatedToo() {
+            String yaml = """
+                    signers:
+                      team:
+                        members:
+                          - pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+                            email: "dev@example.com"
+                    signing:
+                      signer: team
+                    """;
+            assertThatThrownBy(() -> parse(yaml))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("signing.signer")
+                    .hasMessageContaining("{email=dev@example.com}");
+        }
+
+        /**
+         * Only the asserted signer is checked: signing never compiles the policy, so an entry of
+         * another signer that verification would reject does not stop the file loading.
+         */
+        @Test
+        void otherSignersAreLeftToThePolicyCompile() {
+            var config = parse("""
+                    signers:
+                      alice:
+                        pgp4: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
+                      bob:
+                        email: "bob@example.com"
+                    signing:
+                      signer: alice
+                    """);
+            assertThat(config.signingConfig().signer()).isEqualTo("alice");
         }
     }
 
