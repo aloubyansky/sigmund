@@ -355,7 +355,7 @@ signers:
 
   > **Stability versus precision:** `subject` carries the git ref, so it changes with every release. `source-repository-uri` is stable but alone accepts any workflow in the repository, including ones that are not the release pipeline; pair it with `build-config-uri`, and where it matters `build-trigger` and `runner-environment`.
 
-  > **Signing-time vs verification-time matching:** When both `issuer` and `subject` are set and the signer is used for signing (`signing.signer`), the OIDC token is validated at signing time — mismatched identities are rejected before requesting a Fulcio certificate. The other attributes are matched at verification time only.
+  > **Signing-time matching:** When the signer is used for signing (`signing.signer`), the OIDC token is checked before a Fulcio certificate is requested against every entry whose issuer is an OIDC issuer — an entry without its own `issuer` uses the top-level `issuers`: its issuer always, and its subject too when the entry names a `subject`. A token matching no entry is refused before Fulcio is asked. Every attribute, the certificate extensions included, is then checked on the issued certificate before the signature is written, so a signature that does not prove the signer never reaches the output; verification checks them again.
 
 #### Organization with Multiple Members
 
@@ -520,19 +520,32 @@ key, a malformed rule — fails every command.
 signers:
   my-identity:
     pgp4: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"
+    pgp6: "CAFEBABECAFEBABECAFEBABECAFEBABECAFEBABECAFEBABECAFEBABECAFEBABE"
 
 signing:
-  signer: my-identity             # References a signer from the signers section
-  toolchain: [bc, sq, gpg]        # Tools to use for signing, in priority order
+  signer: my-identity             # Asserts who signs; does not choose the key
+  toolchain: [bc, sq]             # Tools to use for signing, in priority order
   credential-types: [pgp4, pgp6]  # Default credential types to produce
   profiles:                       # Named profiles for explicit switching
     classic:
       - pgp4
+
+tools:
+  bc:
+    signing-fingerprint: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF"   # the v4 key bc signs with
+  sq:
+    signing-fingerprint: "CAFEBABECAFEBABECAFEBABECAFEBABECAFEBABECAFEBABECAFEBABECAFEBABE"   # the v6 PQC key
 ```
+
+Each tool signs with the key its own settings select — `signing-fingerprint`, `key-name`,
+`SIGMUND_BC_SIGNING_KEY`, or the tool's own default; see [Signing](signing.md). `signer` then
+checks every signature against the signer, so each key a run signs with must be one of the
+signer's credentials: here the v4 classic signature proves `pgp4`, and the v6 PQC signature can
+only prove a pinned `pgp6`, since directories do not vouch for v6 keys.
 
 #### Fields
 
-- **`signer`** (string, optional) — References a signer ID from the `signers` section. This identity will be used for signing operations.
+- **`signer`** (string, optional) — References a signer ID from the `signers` section. Asserts who signs: every signature a run produces must prove this signer, or signing fails naming the expected and the proven credential. It does not choose the key; each tool's own settings do. A name not defined under `signers` is a load error, and so is an identity entry of that signer no issuer can satisfy — an `email` with no listed `issuers`, a misspelled attribute, or an attribute its issuer cannot attest — checked at load for this signer only, as verification checks every signer. For OpenPGP, the signing key must be pinned by the signer's `pgp4`/`pgp6` fingerprints or confirmed by a directory for one of the signer's addresses, as in verification; with `verification.resolve-signers: false` no directory is asked, so only pinned keys pass. With `verification.resolve-signers: true` (the default), signing may also reach the network for keys: a fresh signature the tool that produced it cannot verify itself is verified by another tool of the same format, which may fetch the signing key from a keyserver.
 - **`toolchain`** (array of strings, optional) — Lists which tools to use for signing and in what order. Only the listed tools are initialized. Tool names: `bc`, `sq`, `gpg`, `sigstore`; any other name is an error when tools are built. Per-tool settings are configured in the top-level `tools` section.
 - **`credential-types`** (array of strings, optional) — The default set of credential types to produce. Only tools whose supported credential types intersect this list are used. When omitted, all available signing tools are used. Values: `pgp4`, `pgp6`, `sigstore` — the names signer entries use; any other value is an error.
 - **`profiles`** (map, optional) — Named profiles for explicit switching (e.g., `--profile classic`). Each profile maps a name to a list of credential types, the same values as `credential-types`; any other value is an error. When a profile is requested by name, it takes precedence over `credential-types`.

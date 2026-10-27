@@ -45,17 +45,23 @@ public interface SignatureToolFactory {
     Set<String> acceptedSettings();
 
     /**
-     * Creates a signing-capable tool for the given credential.
+     * Creates a signing-capable tool from its own settings.
+     * <p>
+     * The tool chooses its signing key from {@code settings} alone. {@code expected} is the signer
+     * the run asserts, every identity entry naming its issuer; a tool may use it to refuse before
+     * signing, never to select a key. Whether a signature proves it is decided by core after
+     * signing, whatever the tool did with it.
      * <p>
      * The default implementation throws {@link UnsupportedOperationException}.
      * Factories that support signing must override this method.
      *
-     * @param credential the signing credential
      * @param settings tool-specific settings from the config
-     * @return the configured tool, or {@code null} if the key/credential is not available
+     * @param expected the signer {@code signing.signer} names, resolved as above, or {@code null}
+     *        when none is asserted
+     * @return the configured tool
      * @throws UnsupportedOperationException if signing is not supported
      */
-    default SignatureTool createSigning(Credential credential, Map<String, String> settings) {
+    default SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected) {
         throw new UnsupportedOperationException(
                 toolName() + " factory does not support signing");
     }

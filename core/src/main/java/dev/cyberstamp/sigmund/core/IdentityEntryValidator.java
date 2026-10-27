@@ -44,6 +44,46 @@ final class IdentityEntryValidator {
         }
     }
 
+    /**
+     * Validates the identity entries of the signer {@code signing.signer} asserts, and no other.
+     *
+     * <p>
+     * Signing never compiles the policy, so without this an entry no issuer can satisfy would
+     * surface only at signing — as a signer with nothing to match, or a Sigstore token matcher
+     * nothing can pass. The rules are those {@link #validate} applies to every signer; the error
+     * names {@code signing.signer} and the entry.
+     *
+     * @param name the signer id {@code signing.signer} names
+     * @param signer the signer it names
+     * @param defaultIssuers the canonical names of the listed issuers
+     * @throws PolicyConfigException if an entry of the signer cannot be satisfied
+     */
+    static void validateAssertedSigner(String name, SignerIdentity signer, List<String> defaultIssuers) {
+        for (Credential credential : signer.credentials()) {
+            if (credential instanceof IdentityCredential entry) {
+                try {
+                    requireClassifiableIssuers(name, entry, defaultIssuers);
+                    validateEntry(name, entry, defaultIssuers);
+                } catch (PolicyConfigException e) {
+                    throw new PolicyConfigException("signing.signer names '" + name
+                            + "', whose identity entry " + entry.displayName()
+                            + " cannot be satisfied: " + e.getMessage(), e);
+                }
+            }
+        }
+    }
+
+    private static void requireClassifiableIssuers(String signer, IdentityCredential entry,
+            List<String> defaultIssuers) {
+        if (entry.issuer() != null) {
+            requireClassifiable(entry.issuer(), signer);
+            return;
+        }
+        for (String issuer : defaultIssuers) {
+            requireClassifiable(issuer, null);
+        }
+    }
+
     private static void validateEntry(String signer, IdentityCredential entry,
             List<String> defaultIssuers) {
         Set<String> names = entry.attributes().keySet();
@@ -71,19 +111,27 @@ final class IdentityEntryValidator {
     private static void rejectUnclassifiableIssuers(SignersConfig signers,
             List<String> defaultIssuers) {
         for (String issuer : defaultIssuers) {
-            requireClassifiable(issuer, "'issuers'");
+            requireClassifiable(issuer, null);
         }
         for (String name : signers.names()) {
             for (Credential credential : signers.get(name).credentials()) {
                 if (credential instanceof IdentityCredential identity && identity.issuer() != null) {
-                    requireClassifiable(identity.issuer(), "signer '" + name + "'");
+                    requireClassifiable(identity.issuer(), name);
                 }
             }
         }
     }
 
-    private static void requireClassifiable(String issuer, String where) {
+    /**
+     * Rejects an issuer whose kind cannot be told from its name.
+     *
+     * @param issuer the issuer name
+     * @param signer the signer whose entry names the issuer, or {@code null} for the top-level
+     *        {@code issuers} list
+     */
+    private static void requireClassifiable(String issuer, String signer) {
         if (IssuerKind.of(issuer) == null) {
+            String where = signer == null ? "'issuers'" : "signer '" + signer + "'";
             throw new PolicyConfigException("Issuer '" + issuer + "' in " + where
                     + " is neither a known directory (" + IssuerKind.KEYS_OPENPGP_ORG
                     + ") nor an https:// OIDC issuer URL");

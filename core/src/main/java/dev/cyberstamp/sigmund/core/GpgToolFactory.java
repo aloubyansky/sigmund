@@ -24,12 +24,9 @@ final class GpgToolFactory implements SignatureToolFactory {
     }
 
     @Override
-    public SignatureTool createSigning(Credential credential, Map<String, String> settings) {
+    public SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected) {
         String executable = Setting.EXECUTABLE.from(settings, "gpg");
         String keyName = Setting.KEY_NAME.from(settings);
-        if (keyName == null && credential instanceof KeyCredential fp) {
-            keyName = fp.fingerprint();
-        }
         String passphrase = resolvePassphrase(settings);
         return new GpgRunner(executable, keyName, Setting.HOME.from(settings),
                 passphrase, false, false, List.of());

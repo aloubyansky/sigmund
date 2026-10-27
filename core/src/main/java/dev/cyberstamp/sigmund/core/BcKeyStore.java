@@ -526,7 +526,7 @@ class BcKeyStore {
     /**
      * Checks whether a public key ring contains a key matching the given fingerprint.
      */
-    private static boolean matchesFingerprint(PGPPublicKeyRing ring, String fingerprint) {
+    static boolean matchesFingerprint(PGPPublicKeyRing ring, String fingerprint) {
         String upper = fingerprint.toUpperCase();
         Iterator<PGPPublicKey> keys = ring.getPublicKeys();
         while (keys.hasNext()) {

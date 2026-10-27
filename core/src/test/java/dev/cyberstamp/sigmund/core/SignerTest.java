@@ -6,8 +6,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,7 +27,7 @@ class SignerTest {
         void producesOneSignatureFile() throws IOException {
             var format = mockFormat("openpgp", ".asc", false);
             var tool = mockSigningTool("gpg", format, "RSA");
-            var signer = new Signer(List.of(tool));
+            var signer = new Signer(List.of(tool), null);
 
             Path artifact = createArtifact("test.jar");
             SigningOutput output = signer.sign(artifact, tempDir);
@@ -47,7 +50,7 @@ class SignerTest {
             var format = mockFormat("openpgp", ".asc", true);
             var gpg = mockSigningTool("gpg", format, "RSA");
             var sq = mockSigningTool("sq", format, "ML-DSA-87+Ed448");
-            var signer = new Signer(List.of(gpg, sq));
+            var signer = new Signer(List.of(gpg, sq), null);
 
             Path artifact = createArtifact("test.jar");
             SigningOutput output = signer.sign(artifact, tempDir);
@@ -64,7 +67,7 @@ class SignerTest {
             var format = mockFormat("sigstore", ".sigstore.json", false);
             var tool1 = mockSigningTool("sigstore1", format, "ECDSA");
             var tool2 = mockSigningTool("sigstore2", format, "ECDSA");
-            var signer = new Signer(List.of(tool1, tool2));
+            var signer = new Signer(List.of(tool1, tool2), null);
 
             Path artifact = createArtifact("test.jar");
             SigningOutput output = signer.sign(artifact, tempDir);
@@ -82,7 +85,7 @@ class SignerTest {
             var sigstoreFormat = mockFormat("sigstore", ".sigstore.json", false);
             var gpg = mockSigningTool("gpg", openpgpFormat, "RSA");
             var sigstore = mockSigningTool("sigstore", sigstoreFormat, "ECDSA");
-            var signer = new Signer(List.of(gpg, sigstore));
+            var signer = new Signer(List.of(gpg, sigstore), null);
 
             Path artifact = createArtifact("test.jar");
             SigningOutput output = signer.sign(artifact, tempDir);
@@ -98,7 +101,7 @@ class SignerTest {
 
         @Test
         void rejectsEmptyToolList() {
-            assertThatThrownBy(() -> new Signer(List.of()))
+            assertThatThrownBy(() -> new Signer(List.of(), null))
                     .isInstanceOf(SigmundException.class)
                     .hasMessageContaining("No signing tools available");
         }
@@ -114,7 +117,7 @@ class SignerTest {
                     new SigningInfo("gpg", "AAAA", "RSA", "alice@example.com", Set.of("pgp4")));
             var sq = mockSigningTool("sq", format, "ML-DSA-87+Ed448",
                     new SigningInfo("sq", "BBBB", "ML-DSA-87+Ed448", "alice@example.com", Set.of("pgp6")));
-            var signer = new Signer(List.of(gpg, sq));
+            var signer = new Signer(List.of(gpg, sq), null);
 
             List<SigningInfo> infos = signer.signingInfo();
 
@@ -129,7 +132,7 @@ class SignerTest {
         void returnsEmptyWhenToolsProvideNoInfo() {
             var format = mockFormat("openpgp", ".asc", false);
             var tool = mockSigningTool("gpg", format, "RSA");
-            var signer = new Signer(List.of(tool));
+            var signer = new Signer(List.of(tool), null);
 
             assertThat(signer.signingInfo().isEmpty()).isTrue();
         }
@@ -143,7 +146,7 @@ class SignerTest {
             var format = mockFormat("openpgp", ".asc", false);
             var goodTool = mockSigningTool("gpg", format, "RSA");
             var failingTool = failingSigningTool("sq", format);
-            var signer = new Signer(List.of(goodTool, failingTool));
+            var signer = new Signer(List.of(goodTool, failingTool), null);
 
             Path artifact = createArtifact("test.jar");
 
@@ -158,7 +161,7 @@ class SignerTest {
             var format = mockFormat("openpgp", ".asc", true, true);
             var tool1 = mockSigningTool("gpg", format, "RSA");
             var tool2 = mockSigningTool("sq", format, "PQC");
-            var signer = new Signer(List.of(tool1, tool2));
+            var signer = new Signer(List.of(tool1, tool2), null);
 
             Path artifact = createArtifact("test.jar");
 
@@ -169,7 +172,166 @@ class SignerTest {
         }
     }
 
+    @Nested
+    class AssertedSigner {
+
+        private static final String FP = "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12";
+        private static final String OTHER_FP = "BBE7232D7991050B54C8EA0ADC08637CA615D22C";
+
+        private final SignatureFormat format = claimFormat();
+        private final SignerBindingCheck check = new SignerBindingCheck(
+                new SignerIdentity("alice", List.of(KeyCredential.openPgp(FP))),
+                Map.of(), false, List.of());
+
+        @Test
+        void aPassingCheckWritesTheSignature() throws IOException {
+            var signer = new Signer(List.of(provingTool("gpg", format, FP)), check);
+
+            Path artifact = createArtifact("test.jar");
+            SigningOutput output = signer.sign(artifact, tempDir);
+
+            assertThat(output.files()).hasSize(1);
+            assertThat(tempDir.resolve("test.jar.asc")).hasContent("sig-gpg");
+        }
+
+        @Test
+        void aFailedCheckWritesNothing() throws IOException {
+            var signer = new Signer(List.of(provingTool("gpg", format, FP),
+                    provingTool("sq", format, OTHER_FP)), check);
+
+            Path artifact = createArtifact("test.jar");
+
+            assertThatThrownBy(() -> signer.sign(artifact, tempDir))
+                    .isInstanceOf(SigmundException.class)
+                    .hasMessageContaining("Signature by sq")
+                    .hasMessageContaining("signer 'alice'");
+            assertThat(tempDir.resolve("test.jar.asc")).doesNotExist();
+            assertThat(tempFiles()).isEmpty();
+        }
+
+        @Test
+        void aFailedCheckLeavesAnEarlierSignatureAlone() throws IOException {
+            Path earlier = Files.writeString(tempDir.resolve("test.jar.asc"), "old");
+            var signer = new Signer(List.of(provingTool("gpg", format, OTHER_FP)), check);
+
+            Path artifact = createArtifact("test.jar");
+
+            assertThatThrownBy(() -> signer.sign(artifact, tempDir))
+                    .isInstanceOf(SigmundException.class);
+            assertThat(earlier).hasContent("old");
+            assertThat(tempFiles()).isEmpty();
+        }
+
+        @Test
+        void withoutACheckSigningIsUnchanged() throws IOException {
+            var signer = new Signer(List.of(provingTool("gpg", format, OTHER_FP)), null);
+
+            Path artifact = createArtifact("test.jar");
+            signer.sign(artifact, tempDir);
+
+            assertThat(tempDir.resolve("test.jar.asc")).hasContent("sig-gpg");
+        }
+
+        private List<Path> tempFiles() throws IOException {
+            try (Stream<Path> files = Files.list(tempDir)) {
+                return files.filter(p -> p.getFileName().toString().startsWith("sig-")).toList();
+            }
+        }
+    }
+
     // --- Helpers ---
+
+    /**
+     * A combinable OpenPGP-like format whose every file holds one claim.
+     */
+    private static SignatureFormat claimFormat() {
+        SignatureFormat combining = mockFormat("openpgp", ".asc", true);
+        return new SignatureFormat() {
+            @Override
+            public String name() {
+                return combining.name();
+            }
+
+            @Override
+            public String fileExtension() {
+                return combining.fileExtension();
+            }
+
+            @Override
+            public boolean canHandleByContent(Evidence e) {
+                return true;
+            }
+
+            @Override
+            public List<Claim> parse(Evidence e) {
+                return List.of(new OpenPgpClaim("block", 4, null, 22, Instant.EPOCH));
+            }
+
+            @Override
+            public boolean supportsCombining() {
+                return true;
+            }
+
+            @Override
+            public void combine(List<Path> sigs, Path output) {
+                combining.combine(sigs, output);
+            }
+        };
+    }
+
+    /**
+     * A signing tool whose signatures verify as made by the given key.
+     */
+    private static SignatureTool provingTool(String name, SignatureFormat format,
+            String fingerprint) {
+        SignatureTool signing = mockSigningTool(name, format, "EdDSA");
+        return new SignatureTool() {
+            @Override
+            public String name() {
+                return name;
+            }
+
+            @Override
+            public boolean isAvailable() {
+                return true;
+            }
+
+            @Override
+            public boolean canSign() {
+                return true;
+            }
+
+            @Override
+            public SignatureFormat signatureFormat() {
+                return format;
+            }
+
+            @Override
+            public Set<String> supportedCredentialTypes() {
+                return Set.of(Credential.TYPE_PGP4);
+            }
+
+            @Override
+            public boolean canVerify(Claim u) {
+                return true;
+            }
+
+            @Override
+            public SignResult sign(Path a, Path o) {
+                return signing.sign(a, o);
+            }
+
+            @Override
+            public VerifyResult verify(Path a, Claim u) {
+                return OpenPgpVerifyResult.verified(null, "EdDSA", 4, null, fingerprint);
+            }
+
+            @Override
+            public List<Credential> extractCredentials(VerifyResult r) {
+                return List.of(KeyCredential.openPgp(fingerprint));
+            }
+        };
+    }
 
     private Path createArtifact(String name) throws IOException {
         Path file = tempDir.resolve(name);

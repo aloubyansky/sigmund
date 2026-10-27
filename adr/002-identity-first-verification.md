@@ -923,26 +923,28 @@ sigmund.findTool(CertExporter.class).exportCert(fingerprint);
 
 - **`discover()`** — hardcoded for now: probes `GpgRunner.isAvailable()` and `SqRunner.isAvailable()`, creates verify-only instances. Only adds tools not already present (explicit `addTool()` takes precedence).
 - **`discoveryConfig(DiscoveryConfig)`** — sets key fetching and keyserver configuration, fixed at build time. All `TrustVerifier` instances created from this `Sigmund` share it. If not called, defaults to `DiscoveryConfig.DEFAULT`.
-- **`config(SigmundConfig)`** — applies the full config: constructs signing tools from the config's signing identity, applies tool-specific overrides, and sets `DiscoveryConfig`. See [Tool construction from config](#tool-construction-from-config) below. Overrides any prior `discoveryConfig()` call. Explicit `addTool()` calls take precedence over config-derived tools with the same name.
+- **`config(SigmundConfig)`** — applies the full config: records the tool settings, resolves the signer `signing.signer` asserts (handed to every signing factory and checked against every signature after signing), and sets `DiscoveryConfig`. See [Tool construction from config](#tool-construction-from-config) below. Overrides any prior `discoveryConfig()` call. Explicit `addTool()` calls take precedence over config-derived tools with the same name.
 - **`addTool()`** — adds or replaces a `SignatureTool` by `name()`. The tool is grouped with others sharing the same `SignatureFormat` under a single `SignatureEvidenceAdapter` for use by `TrustVerifier.assess()`.
 - **`addEvidenceProvider()`** — adds a non-signature `EvidenceProvider` (e.g., SLSA attestation verifier). Used only by `TrustVerifier.assess()`, not by `Signer`.
 - **`build()`** — filters out tools/providers where `isAvailable()` returns false. Collects distinct `SignatureFormat` instances from the tools.
 
 ### Tool construction from config
 
-When `config(SigmundConfig)` is called, the builder constructs live `SignatureTool` instances from the config's signing identity and tool-specific overrides. Internally, the builder delegates to `SignatureToolFactory` implementations — one per built-in tool — to keep construction logic out of the builder itself:
+When `config(SigmundConfig)` is called, the builder constructs live `SignatureTool` instances, each from its own settings (`tools.<name>`). Internally, the builder delegates to `SignatureToolFactory` implementations — one per built-in tool — to keep construction logic out of the builder itself:
 
 ```java
 interface SignatureToolFactory {
 
-    String toolName();                      // "gpg", "sq", "sigstore"
-    Set<String> supportedCredentialTypes();
+    String toolName();                      // "gpg", "sq", "bc", "sigstore"
+    Set<String> supportedCredentialTypes(); // filters tools for signing.credential-types and profiles
+    Set<String> acceptedSettings();         // the keys tools.<name> may hold
 
-    // Create a signing-capable tool for the given credential.
-    // Returns null if the key/credential is not available in this tool's keyring/store.
-    SignatureTool create(Credential credential, Map<String, String> settings);
+    // Create a signing-capable tool from its own settings. The tool chooses its key from
+    // settings alone; expected is the asserted signer (identity entries naming their
+    // issuers) or null, usable only to refuse early, never to select a key.
+    SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected);
 
-    // Create a verify-only tool (no signing credentials).
+    // Create a verify-only tool (no signing key).
     SignatureTool createVerifyOnly(Map<String, String> settings);
 }
 ```
@@ -951,17 +953,16 @@ This is an internal implementation detail, not a public SPI — the builder regi
 
 **Built-in factories:**
 
-- **`GpgToolFactory`** — extracts the fingerprint from the credential, constructs `GpgRunner` with it as the signing key. Verify-only: no signing key.
-- **`SqToolFactory`** — extracts the fingerprint, resolves the SQ home directory (from settings or `SEQUOIA_HOME` env var). Recognizes settings: `home`, `cipher-suite`. Verify-only: no signing fingerprint.
-- **`SigstoreToolFactory`** (future) — reads OIDC configuration from settings (`oidc-provider`, `token-source`). Verify-only: reads verification settings (`trusted-root`, `rekor-url`, `offline`).
+- **`GpgToolFactory`** — constructs `GpgRunner` with the signing key its `key-name` setting names (GnuPG's default key when unset). Ignores the asserted signer. Verify-only: no signing key.
+- **`SqToolFactory`** — constructs `SqRunner` with the key its `signing-fingerprint` setting names (sq's configured signing key when unset), resolving the SQ home directory (from settings or `SEQUOIA_HOME` env var). Ignores the asserted signer. Verify-only: no signing fingerprint.
+- **`BcToolFactory`** — loads the signing key from its settings (`signing-key-env`, `tsk-file`, `signing-fingerprint`). Ignores the asserted signer.
+- **`SigstoreToolFactory`** — builds a keyless signer from its settings (`staging`, `trusted-root`, `interactive`); the only factory that uses the asserted signer, turning its OIDC identity entries into token matchers so a token for another identity is refused before Fulcio. Verify-only: reads `staging` and `trusted-root`.
 
 **Construction flow:**
 
-1. Resolve the signing identity: look up `signing.signer` in the `signers` registry
-2. For each credential in the identity, find a factory whose `supportedCredentialTypes()` contains the credential type (respecting `signing.tools.*.credentials` overrides)
-3. Call `factory.create(credential, settings)` with merged settings (from `signing.tools.<name>` in the YAML, excluding `credentials`). Returns null if the key isn't available, meaning this tool is skipped for this credential
-4. If multiple factories match a credential type and both produce a tool, fail with a configuration error (same ambiguity resolution as [credential-to-tool routing](#credential-to-tool-routing))
-5. For tools not involved in signing, call `factory.createVerifyOnly(settings)` to create verify-only instances
+1. Create each signing tool from its own settings (`tools.<name>` in the YAML): the tool chooses its signing key from those settings alone, never from a credential of the signer
+2. Resolve `signing.signer` once against the `signers` registry, with every identity entry naming its issuer (entries without one take the top-level `issuers`), and pass it to every factory as `createSigning(settings, expected)`. A tool may use the asserted signer only to refuse early (Sigstore builds its OIDC token matchers from it), never to select a key; whether a signature proves the signer is decided by core after signing
+3. For tools not involved in signing, call `factory.createVerifyOnly(settings)` to create verify-only instances
 
 **Extensibility boundary** — third-party *tools* within existing formats (e.g., a Bouncy Castle OpenPGP backend) can be added via `addTool()` on the builder today, or via a future `ServiceLoader`-based factory. New signature *formats*, however, require a core release: both `VerificationUnit` and `VerifyResult` are sealed hierarchies, and adding a format means adding new `permits` entries and subclasses in core. This is intentional — a new format introduces new packet structures, verification semantics, and credential types that warrant review as part of core rather than silent plug-in. The extensibility split is: tools are pluggable, formats are curated.
 
@@ -977,14 +978,15 @@ This is an internal implementation detail, not a public SPI — the builder regi
 
 ### `sign()` flow (Signer)
 
-1. **Resolve tools** — if a profile was specified at `signer()` creation, filter to tools matching the profile's credential types. Otherwise use all tools where `canSign()` is true. Credential-to-tool assignment follows the routing rules: explicit `tools.*.credentials` overrides take precedence, then automatic routing via `supportedCredentialTypes()` + `canSign()` availability check, failing on ambiguity.
+1. **Resolve tools** — use all tools where `canSign()` is true, in `signing.toolchain` order when it is set (a listed tool that cannot sign is an error). If a profile was specified at `signer()` creation (or `signing.credential-types` is set), keep only tools whose `supportedCredentialTypes()` intersects its credential types. The asserted signer plays no part in choosing tools; each tool signs with the key or identity its own settings name.
 2. Call `sign()` on each resolved tool, collecting `SignResult` (includes algorithm used)
-3. Group results by `signatureFormat()`
-4. For each group:
+3. **Check the signer** — when `signing.signer` is set, verify every fresh signature and match the credential it proves against the asserted signer (`SignerBindingCheck`); one that does not prove it fails signing, naming the expected and the proven credential, and nothing is written
+4. Group results by `signatureFormat()`
+5. For each group:
    - If `format.supportsCombining()` → call `format.combine()` to merge into one file
    - Otherwise → write each signature as a separate file
-5. Write output files using `<artifact><format.fileExtension()>` (e.g., `artifact.jar.asc`, `artifact.jar.sigstore.json`). Output file names follow ecosystem conventions via the format's `fileExtension()` — no configurable suffixes.
-6. Return `SigningOutput` with metadata per file
+6. Write output files using `<artifact><format.fileExtension()>` (e.g., `artifact.jar.asc`, `artifact.jar.sigstore.json`). Output file names follow ecosystem conventions via the format's `fileExtension()` — no configurable suffixes.
+7. Return `SigningOutput` with metadata per file
 
 ### Direct `verify()` flow (Sigmund)
 

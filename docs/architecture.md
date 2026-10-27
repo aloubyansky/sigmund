@@ -187,10 +187,12 @@ The signature version (v4 or v6) is determined by the key version. BC generates 
 
 The `Signer` class orchestrates the signing flow:
 1. Call `sign()` on each configured tool → `SignResult` with algorithm metadata
-2. Group results by `SignatureFormat`
-3. For combinable formats → merge into one output file
-4. For non-combinable → write each as a separate file
-5. Return `SigningOutput` with metadata per file
+2. When `signing.signer` asserts a signer, `SignerBindingCheck` verifies each fresh signature and
+   requires it to prove that signer; one that does not fails signing, and nothing is written
+3. Group results by `SignatureFormat`
+4. For combinable formats → merge into one output file
+5. For non-combinable → write each as a separate file
+6. Return `SigningOutput` with metadata per file
 
 ### Stage 2: PQC Signature (Optional)
 
@@ -360,8 +362,9 @@ extension cannot reach different outcomes from the same policy and the same evid
     equal value (`email` ignoring case)
 
 `IssuerKind` classifies an issuer by name and holds the attributes each kind can assert;
-`IdentityEntryValidator` rejects entries at load that none of their issuers can assert,
-suggesting the nearest name for a misspelled attribute.
+`IdentityEntryValidator` rejects entries that none of their issuers can assert, suggesting the
+nearest name for a misspelled attribute: every signer's when the policy compiles, and the
+asserted signer's (`signing.signer`) when the parser loads the file, without compiling the policy.
 
 An OpenPGP user ID never becomes a credential. `ClaimIdentityResolver` asks a directory for
 the verified addresses of a signing key only when an expected signer has an email entry a

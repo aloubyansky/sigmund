@@ -96,6 +96,7 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
     private final KeylessVerifier verifier;
     private final String sigstoreSubject;
     private final TrustRootRef trustRoot;
+    private final List<IdentityCredential> allowedIdentities;
 
     /**
      * Creates a new Sigstore tool.
@@ -121,11 +122,38 @@ public class SigstoreTool implements SignatureTool, AutoCloseable {
      */
     SigstoreTool(SigstoreSignatureFormat format, KeylessSigner signer, KeylessVerifier verifier,
             String sigstoreSubject, TrustRootRef trustRoot) {
+        this(format, signer, verifier, sigstoreSubject, trustRoot, List.of());
+    }
+
+    /**
+     * Creates a signing tool that records the identities its signer accepts.
+     *
+     * @param format the bundle format
+     * @param signer the keyless signer
+     * @param verifier the keyless verifier, or {@code null} when sign-only
+     * @param sigstoreSubject the expected OIDC subject for signing info display, or {@code null}
+     * @param trustRoot the trust root the verifier was built with
+     * @param allowedIdentities the OIDC identity entries the signer's token must match one of (on
+     *        issuer, and on subject when the entry names one), empty when any identity is accepted
+     */
+    SigstoreTool(SigstoreSignatureFormat format, KeylessSigner signer, KeylessVerifier verifier,
+            String sigstoreSubject, TrustRootRef trustRoot, List<IdentityCredential> allowedIdentities) {
+        this.allowedIdentities = List.copyOf(allowedIdentities);
         this.trustRoot = trustRoot;
         this.format = format;
         this.signer = signer;
         this.verifier = verifier;
         this.sigstoreSubject = sigstoreSubject;
+    }
+
+    /**
+     * Returns the OIDC identity entries the signer's token must match one of: on issuer, and on
+     * subject when the entry names one.
+     *
+     * @return the identity entries, empty when any identity is accepted
+     */
+    List<IdentityCredential> allowedIdentities() {
+        return allowedIdentities;
     }
 
     /**

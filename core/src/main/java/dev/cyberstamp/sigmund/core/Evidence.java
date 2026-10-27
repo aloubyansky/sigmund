@@ -29,6 +29,12 @@ public final class Evidence {
     /** Evidence published alongside the artifact, as {@code .asc} files and bundles are. */
     public static final String SOURCE_SIDECAR = "sidecar";
 
+    /**
+     * A signature Sigmund has just produced, read back so that signing can check it proves the
+     * signer {@code signing.signer} asserts before it is written out.
+     */
+    public static final String SOURCE_SIGNING = "signing";
+
     private final Path file;
     private final byte[] content;
     private final DigestSet digest;

@@ -511,6 +511,15 @@ class GpgRunner implements SignatureTool, KeyImporter, SignerIdentityResolver {
         return signingCapable;
     }
 
+    /**
+     * Returns the key name this runner was built with.
+     *
+     * @return the key name passed to {@code --local-user}, or {@code null} when gpg's default key is used
+     */
+    String keyName() {
+        return keyName;
+    }
+
     @Override
     public List<SigningInfo> signingInfo() {
         String effectiveKey = keyName;

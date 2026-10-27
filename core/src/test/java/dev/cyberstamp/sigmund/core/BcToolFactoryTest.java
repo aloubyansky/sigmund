@@ -77,8 +77,8 @@ class BcToolFactoryTest {
 
     @Test
     void createWithSigningFingerprint() {
-        SignatureTool tool = new BcToolFactory().createSigning(null, Map.of(
-                "signing-fingerprint", "AABBCCDD"));
+        SignatureTool tool = new BcToolFactory().createSigning(Map.of(
+                "signing-fingerprint", "AABBCCDD"), null);
         assertThat(tool.canSign()).isTrue();
     }
 
@@ -159,7 +159,7 @@ class BcToolFactoryTest {
         BcRunner bcSigner = new BcRunner(store, null, null,
                 armoredKey, null, null);
 
-        Signer signer = new Signer(List.of(bcSigner));
+        Signer signer = new Signer(List.of(bcSigner), null);
 
         Path artifact = tempDir.resolve("artifact.jar");
         Files.writeString(artifact, "signer test");

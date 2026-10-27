@@ -79,6 +79,7 @@ class VerifyMojoTest {
         void configWithoutRulesOrDefaultsObserves() throws Exception {
             Path file = basedir.resolve("sigmund.yaml");
             Files.writeString(file, """
+                    issuers: [keys.openpgp.org]
                     signers: { alice: "alice@example.com" }
                     signing: { signer: alice }
                     """);

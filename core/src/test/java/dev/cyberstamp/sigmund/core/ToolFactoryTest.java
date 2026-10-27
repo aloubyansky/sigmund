@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Nested;
@@ -12,6 +13,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ToolFactoryTest {
+
+    private static final String PINNED = "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234";
+
+    private static SignerIdentity signerPinning(String fingerprint) {
+        return new SignerIdentity("alice", List.of(KeyCredential.openPgp(fingerprint)));
+    }
 
     @Nested
     class GpgFactory {
@@ -43,21 +50,21 @@ class ToolFactoryTest {
 
         @Test
         void createWithKeyNameSetting() {
-            SignatureTool tool = factory.createSigning(null, Map.of("key-name", "user@example.com"));
-            assertThat(tool.canSign()).isTrue();
-        }
-
-        @Test
-        void createWithCredentialFallback() {
-            var cred = new KeyCredential(Credential.TYPE_PGP4, "ABCD1234ABCD1234000000000000000000000000");
-            SignatureTool tool = factory.createSigning(cred, Map.of());
+            SignatureTool tool = factory.createSigning(Map.of("key-name", "user@example.com"), null);
             assertThat(tool.canSign()).isTrue();
         }
 
         @Test
         void createNoKeyNameNoCredential() {
-            SignatureTool tool = factory.createSigning(null, Map.of());
+            SignatureTool tool = factory.createSigning(Map.of(), null);
             assertThat(tool.canSign()).isTrue();
+        }
+
+        @Test
+        void aSigningKeyComesOnlyFromSettings() {
+            var tool = (GpgRunner) factory.createSigning(Map.of(), signerPinning(PINNED));
+
+            assertThat(tool.keyName()).isNull();
         }
     }
 
@@ -95,29 +102,28 @@ class ToolFactoryTest {
 
         @Test
         void createWithFingerprintSetting() {
-            SignatureTool tool = factory.createSigning(null, Map.of(
+            SignatureTool tool = factory.createSigning(Map.of(
                     "home", tempDir.toString(),
-                    "signing-fingerprint", "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"));
-            assertThat(tool.canSign()).isTrue();
-        }
-
-        @Test
-        void createWithCredentialFallback() {
-            var cred = new KeyCredential(Credential.TYPE_PGP6,
-                    "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
-            SignatureTool tool = factory.createSigning(cred, Map.of("home", tempDir.toString()));
+                    "signing-fingerprint", "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"), null);
             assertThat(tool.canSign()).isTrue();
         }
 
         @Test
         void createNoFingerprintNoCredential() {
-            SignatureTool tool = factory.createSigning(null, Map.of("home", tempDir.toString()));
+            SignatureTool tool = factory.createSigning(Map.of("home", tempDir.toString()), null);
             assertThat(tool.canSign()).isFalse();
         }
 
         @Test
+        void aSigningKeyComesOnlyFromSettings() {
+            SignatureTool tool = factory.createSigning(Map.of("home", tempDir.toString()), signerPinning(PINNED));
+
+            assertThat(tool.signingInfo()).noneMatch(info -> PINNED.equals(info.fingerprint()));
+        }
+
+        @Test
         void createCustomExecutable() {
-            SignatureTool tool = factory.createSigning(null, Map.of("executable", "/opt/bin/sq"));
+            SignatureTool tool = factory.createSigning(Map.of("executable", "/opt/bin/sq"), null);
             assertThat(tool.name()).isEqualTo("sq");
         }
     }
@@ -156,28 +162,27 @@ class ToolFactoryTest {
 
         @Test
         void createWithFingerprintSetting() {
-            SignatureTool tool = factory.createSigning(null, Map.of(
-                    "signing-fingerprint", "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"));
+            SignatureTool tool = factory.createSigning(Map.of(
+                    "signing-fingerprint", "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234"), null);
             assertThat(tool.canSign()).isTrue();
         }
 
         @Test
-        void createWithCredentialFallback() {
-            var cred = new KeyCredential(Credential.TYPE_PGP6,
-                    "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234");
-            SignatureTool tool = factory.createSigning(cred, Map.of());
-            assertThat(tool.canSign()).isTrue();
+        void aSigningKeyComesOnlyFromSettings() {
+            SignatureTool tool = factory.createSigning(Map.of(), signerPinning(PINNED));
+
+            assertThat(tool.signingInfo()).noneMatch(info -> PINNED.equals(info.fingerprint()));
         }
 
         @Test
         void createNoFingerprintNoCredential() {
-            SignatureTool tool = factory.createSigning(null, Map.of());
+            SignatureTool tool = factory.createSigning(Map.of(), null);
             assertThat(tool.canSign()).isFalse();
         }
 
         @Test
         void keygenUsesTheConfiguredCipherSuiteWhenNoneIsGiven(@TempDir Path dir) {
-            var tool = (KeyGenerator) factory.createSigning(null, storesIn(dir, "cipher-suite", "bogus"));
+            var tool = (KeyGenerator) factory.createSigning(storesIn(dir, "cipher-suite", "bogus"), null);
 
             assertThatThrownBy(() -> tool.generateKey("Alice <alice@example.com>", null))
                     .isInstanceOf(ToolExecutionException.class)
@@ -186,7 +191,7 @@ class ToolFactoryTest {
 
         @Test
         void keygenFallsBackToEd25519WithoutAConfiguredCipherSuite(@TempDir Path dir) {
-            var tool = (KeyGenerator) factory.createSigning(null, storesIn(dir));
+            var tool = (KeyGenerator) factory.createSigning(storesIn(dir), null);
 
             assertThat(tool.generateKey("Alice <alice@example.com>", null)).hasSize(64);
         }
@@ -204,9 +209,9 @@ class ToolFactoryTest {
 
         @Test
         void createWithTskFile() {
-            SignatureTool tool = factory.createSigning(null, Map.of(
+            SignatureTool tool = factory.createSigning(Map.of(
                     "signing-fingerprint", "ABCD1234",
-                    "tsk-file", "/tmp/key.tsk"));
+                    "tsk-file", "/tmp/key.tsk"), null);
             assertThat(tool.canSign()).isTrue();
         }
     }

@@ -135,6 +135,49 @@ class ClaimIdentityResolverTest {
         }
     }
 
+    @Nested
+    class ForGivenSigners {
+
+        @Test
+        void aPinnedKeyCostsNoLookup() {
+            SignerIdentity pinned = new SignerIdentity("release", List.of(KeyCredential.openPgp(PINNED)));
+            ClaimResult claim = claim(PINNED);
+
+            List<ClaimResult> resolved = new ClaimIdentityResolver(Map.of(DIRECTORY, directory), true)
+                    .resolve(List.of(pinned), List.of(DIRECTORY), List.of(claim));
+
+            assertThat(resolved).containsExactly(claim);
+            assertThat(directory.asked).isEmpty();
+        }
+
+        @Test
+        void anUnpinnedKeyIsLookedUpForAnAddressSigner() {
+            directory.addresses.put(NEW_KEY, List.of(ADDRESS));
+
+            List<ClaimResult> resolved = new ClaimIdentityResolver(Map.of(DIRECTORY, directory), true)
+                    .resolve(List.of(addressSigner()), List.of(DIRECTORY), List.of(claim(NEW_KEY)));
+
+            assertThat(resolved.get(0).attesterCredentials())
+                    .contains(IdentityCredential.email(DIRECTORY, ADDRESS));
+        }
+
+        @Test
+        void lookupsDisabledLeaveTheClaimKeyUnavailable() {
+            directory.addresses.put(NEW_KEY, List.of(ADDRESS));
+
+            List<ClaimResult> resolved = new ClaimIdentityResolver(Map.of(DIRECTORY, directory), false)
+                    .resolve(List.of(addressSigner()), List.of(DIRECTORY), List.of(claim(NEW_KEY)));
+
+            assertThat(resolved.get(0).isIndeterminateBecause(IndeterminateReason.KEY_UNAVAILABLE))
+                    .isTrue();
+            assertThat(directory.asked).isEmpty();
+        }
+
+        private SignerIdentity addressSigner() {
+            return new SignerIdentity("release", List.of(IdentityCredential.email(null, ADDRESS)));
+        }
+    }
+
     private List<ClaimResult> resolve(TrustPolicy policy, ClaimResult claim) {
         return new ClaimIdentityResolver(policy, Map.of(DIRECTORY, directory), true)
                 .resolve(COORDS, List.of(claim));

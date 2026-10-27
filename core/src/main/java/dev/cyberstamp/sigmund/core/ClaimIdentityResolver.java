@@ -51,6 +51,21 @@ final class ClaimIdentityResolver {
     }
 
     /**
+     * Creates the resolver for callers that name the signers and issuers themselves and have no
+     * policy, such as signing checking a fresh signature against the configured signer. Only
+     * {@link #resolve(List, List, List)} can be used on it.
+     *
+     * @param directories the known directories by canonical name
+     * @param lookupsEnabled whether directories may be asked over the network; when not, a
+     *        needed lookup leaves the claim indeterminate
+     */
+    ClaimIdentityResolver(Map<String, OpenPgpDirectory> directories, boolean lookupsEnabled) {
+        this.policy = null;
+        this.directories = Map.copyOf(directories);
+        this.lookupsEnabled = lookupsEnabled;
+    }
+
+    /**
      * Resolves who the keys of an artifact's claims belong to, where policy needs it, by
      * adding the identities a directory vouches for.
      *
@@ -59,8 +74,25 @@ final class ClaimIdentityResolver {
      * @return the claims, with directory identities added where policy needs them
      */
     List<ClaimResult> resolve(ArtifactCoords coords, List<ClaimResult> claims) {
-        List<SignerIdentity> expected = expectedSigners(coords);
-        Set<String> needed = neededDirectories(expected);
+        if (policy == null) {
+            throw new IllegalStateException("resolving by artifact needs a policy");
+        }
+        return resolve(expectedSigners(coords), policy.issuers(), claims);
+    }
+
+    /**
+     * Resolves who the keys of claims belong to for explicitly given signers, by adding the
+     * identities a directory vouches for. This is the per-artifact resolution with the expected
+     * signers and the default issuers supplied directly rather than taken from a policy.
+     *
+     * @param expected the signers whose directory-backed identities a lookup could satisfy
+     * @param issuers the default issuers for identity entries that name none
+     * @param claims the claims to resolve
+     * @return the claims, with directory identities added where the signers need them
+     */
+    List<ClaimResult> resolve(List<SignerIdentity> expected, List<String> issuers,
+            List<ClaimResult> claims) {
+        Set<String> needed = neededDirectories(expected, issuers);
         if (needed.isEmpty()) {
             return claims;
         }
@@ -90,21 +122,22 @@ final class ClaimIdentityResolver {
         return signers;
     }
 
-    private Set<String> neededDirectories(List<SignerIdentity> signers) {
+    private Set<String> neededDirectories(List<SignerIdentity> signers, List<String> issuers) {
         Set<String> needed = new LinkedHashSet<>();
         for (SignerIdentity signer : signers) {
             for (Credential credential : signer.credentials()) {
                 if (credential instanceof IdentityCredential entry
                         && IssuerKind.OPENPGP_DIRECTORY.asserts(entry.attributes().keySet())) {
-                    addDirectories(needed, entry);
+                    addDirectories(needed, entry, issuers);
                 }
             }
         }
         return needed;
     }
 
-    private void addDirectories(Set<String> needed, IdentityCredential entry) {
-        List<String> issuers = entry.issuer() != null ? List.of(entry.issuer()) : policy.issuers();
+    private void addDirectories(Set<String> needed, IdentityCredential entry,
+            List<String> defaultIssuers) {
+        List<String> issuers = entry.issuer() != null ? List.of(entry.issuer()) : defaultIssuers;
         for (String issuer : issuers) {
             if (directories.containsKey(issuer)) {
                 needed.add(issuer);

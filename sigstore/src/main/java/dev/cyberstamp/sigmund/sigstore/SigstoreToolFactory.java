@@ -2,8 +2,10 @@ package dev.cyberstamp.sigmund.sigstore;
 
 import dev.cyberstamp.sigmund.core.Credential;
 import dev.cyberstamp.sigmund.core.IdentityCredential;
+import dev.cyberstamp.sigmund.core.IssuerKind;
 import dev.cyberstamp.sigmund.core.SignatureTool;
 import dev.cyberstamp.sigmund.core.SignatureToolFactory;
+import dev.cyberstamp.sigmund.core.SignerIdentity;
 import dev.cyberstamp.sigmund.core.ToolExecutionException;
 import dev.cyberstamp.sigmund.core.ToolSetting;
 import dev.cyberstamp.sigmund.core.TrustRootRef;
@@ -18,6 +20,7 @@ import dev.sigstore.strings.StringMatcher;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -41,6 +44,22 @@ public class SigstoreToolFactory implements SignatureToolFactory {
 
     private static final String TOOL_NAME = "sigstore";
 
+    /**
+     * Accepts any token subject. Built directly rather than with {@link StringMatcher#regex}, whose
+     * syntax exception is checked although {@code .*} cannot fail to compile.
+     */
+    private static final StringMatcher ANY_SUBJECT = new StringMatcher() {
+        @Override
+        public boolean test(String subject) {
+            return true;
+        }
+
+        @Override
+        public String toString() {
+            return "'Any subject'";
+        }
+    };
+
     private final SigstoreSignatureFormat format = new SigstoreSignatureFormat();
 
     @Override
@@ -61,20 +80,24 @@ public class SigstoreToolFactory implements SignatureToolFactory {
     /**
      * Creates a signing-capable {@link SigstoreTool}.
      * <p>
-     * When {@code credential} is an {@link IdentityCredential} naming an issuer and a subject,
-     * configures {@code allowedOidcIdentities} to validate the OIDC token at signing time.
-     * When {@code credential} is {@code null}, accepts any ambient OIDC identity.
+     * Each {@link IdentityCredential} of {@code expected} whose issuer is an OIDC issuer becomes an
+     * {@code allowedOidcIdentities} matcher: on its issuer and exact subject when the entry names a
+     * subject, on its issuer alone otherwise. A token none of them accepts is refused before Fulcio
+     * is asked for a certificate; every other attribute of an entry is checked on the issued
+     * certificate by the check after signing. Entries of an OpenPGP directory contribute nothing.
+     * When {@code expected} is {@code null} or has no OIDC entry, any ambient OIDC identity is
+     * accepted.
      * <p>
      * When {@code interactive} is {@code true}, the browser-based OIDC flow
      * is enabled as a fallback after ambient providers.
      *
-     * @param credential the matched Sigstore credential, or {@code null} for ambient identity
      * @param settings tool settings from the {@code tools.sigstore} config section
+     * @param expected the asserted signer, every identity entry naming its issuer, or {@code null}
      * @return a signing-capable Sigstore tool
      * @throws ToolExecutionException if the signer cannot be constructed
      */
     @Override
-    public SignatureTool createSigning(Credential credential, Map<String, String> settings) {
+    public SignatureTool createSigning(Map<String, String> settings, SignerIdentity expected) {
         boolean staging = Setting.STAGING.isTrue(settings);
         boolean interactive = Setting.INTERACTIVE.isTrue(settings);
         try {
@@ -88,27 +111,53 @@ public class SigstoreToolFactory implements SignatureToolFactory {
                         GithubActionsOidcClient.builder().build()));
             }
 
-            String sigstoreSubject = null;
-            if (credential instanceof IdentityCredential identity) {
-                String subject = identity.attribute(IdentityCredential.SUBJECT);
-                String issuer = identity.issuer();
-                if (subject != null && issuer != null) {
-                    signerBuilder.allowedOidcIdentities(List.of(
-                            OidcTokenMatcher.of(
-                                    StringMatcher.string(subject),
-                                    StringMatcher.string(issuer))));
-                }
-                sigstoreSubject = subject;
+            List<IdentityCredential> allowed = oidcIdentities(expected);
+            if (!allowed.isEmpty()) {
+                signerBuilder.allowedOidcIdentities(allowed.stream().map(SigstoreToolFactory::matcherFor).toList());
             }
+            String sigstoreSubject = firstSubject(allowed);
 
             KeylessSigner signer = signerBuilder.build();
             KeylessVerifier verifier = buildVerifier(settings, staging);
-            return new SigstoreTool(format, signer, verifier, sigstoreSubject,
-                    trustRootRef(settings, staging));
+            return new SigstoreTool(format, signer, verifier, sigstoreSubject, trustRootRef(settings, staging), allowed);
         } catch (Exception e) {
             throw new ToolExecutionException(
                     "Failed to create Sigstore signing tool: " + e.getMessage(), e);
         }
+    }
+
+    private static List<IdentityCredential> oidcIdentities(SignerIdentity expected) {
+        if (expected == null) {
+            return List.of();
+        }
+        return expected.credentials().stream()
+                .filter(IdentityCredential.class::isInstance)
+                .map(IdentityCredential.class::cast)
+                .filter(identity -> identity.issuer() != null
+                        && IssuerKind.of(identity.issuer()) == IssuerKind.OIDC)
+                .toList();
+    }
+
+    private static String firstSubject(List<IdentityCredential> identities) {
+        return identities.stream()
+                .map(identity -> identity.attribute(IdentityCredential.SUBJECT))
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Builds the token matcher for one OIDC identity entry: its issuer, and its exact subject
+     * when the entry names one, any subject otherwise.
+     *
+     * @param identity an identity entry naming an OIDC issuer
+     * @return the matcher a token must satisfy to be accepted for this entry
+     */
+    static OidcTokenMatcher matcherFor(IdentityCredential identity) {
+        String subject = identity.attribute(IdentityCredential.SUBJECT);
+        return OidcTokenMatcher.of(
+                subject == null ? ANY_SUBJECT : StringMatcher.string(subject),
+                StringMatcher.string(identity.issuer()));
     }
 
     /**

@@ -18,6 +18,7 @@ import java.util.Map;
  * <h2>Sign flow</h2>
  * <ol>
  * <li>Call {@code sign()} on each tool → {@link SignResult} with algorithm metadata</li>
+ * <li>When {@code signing.signer} asserts a signer, check that every signature proves it</li>
  * <li>Group results by {@link SignatureFormat}</li>
  * <li>For combinable formats → merge into one output file</li>
  * <li>For non-combinable → write each as a separate file</li>
@@ -29,17 +30,21 @@ import java.util.Map;
 public class Signer {
 
     private final List<SignatureTool> tools;
+    private final SignerBindingCheck check;
 
     /**
      * Creates a new signer with the given tools.
      *
      * @param tools the signing tools (must all have {@code canSign() → true})
+     * @param check the check every fresh signature must pass before anything is written, or
+     *        {@code null} when {@code signing.signer} asserts no signer
      */
-    Signer(List<SignatureTool> tools) {
+    Signer(List<SignatureTool> tools, SignerBindingCheck check) {
         if (tools.isEmpty()) {
             throw new SigmundException("No signing tools available");
         }
         this.tools = List.copyOf(tools);
+        this.check = check;
     }
 
     /**
@@ -57,15 +62,22 @@ public class Signer {
 
     /**
      * Signs an artifact file and writes signature files to the output directory.
+     * <p>
+     * When {@code signing.signer} asserts a signer, every fresh signature must prove it before
+     * anything is combined or written: if one does not, no signature file is written, a
+     * signature file already in the output directory is left as it was, and the temporary
+     * signatures are deleted.
      *
      * @param artifactFile the file to sign
      * @param outputDir the directory to write signature files to
      * @return the signing output with metadata per produced file
      * @throws ToolExecutionException if signing fails
+     * @throws SigmundException if a signature does not prove the asserted signer
      */
     public SigningOutput sign(Path artifactFile, Path outputDir) {
         List<ToolSignResult> toolResults = signWithTools(artifactFile, outputDir);
         try {
+            checkSigner(artifactFile, toolResults);
             Map<String, List<ToolSignResult>> grouped = groupByFormatName(toolResults);
             return combineAndWrite(artifactFile, outputDir, grouped);
         } catch (RuntimeException e) {
@@ -95,6 +107,22 @@ public class Signer {
             throw e;
         }
         return results;
+    }
+
+    /**
+     * Checks that each fresh signature proves the asserted signer, when one is asserted.
+     *
+     * @param artifactFile the signed artifact
+     * @param results the per-tool signing results
+     * @throws SigmundException if a signature does not prove the signer
+     */
+    private void checkSigner(Path artifactFile, List<ToolSignResult> results) {
+        if (check == null) {
+            return;
+        }
+        for (ToolSignResult r : results) {
+            check.check(artifactFile, r.tool, r.tempFile);
+        }
     }
 
     /**

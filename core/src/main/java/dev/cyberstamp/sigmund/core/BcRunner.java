@@ -105,6 +105,12 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
     private final OpenPgpSignatureFormat format;
     private final KeyserverFetcher fetcher;
     private final String defaultCipherSuite;
+    /**
+     * The certificate of the key this runner last signed with, {@code null} until it has signed.
+     * Consulted by {@link #certificateFor(String)} only when no store holds the key a signature
+     * names; a signature verified against it is still checked cryptographically.
+     */
+    private volatile PGPPublicKeyRing signingCertificate;
 
     /**
      * Creates a new BC runner without passphrase support or key fetching.
@@ -297,6 +303,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
         }
         try {
             PGPSecretKeyRing secretKeyRing = loadSigningKey();
+            signingCertificate = certificateOf(secretKeyRing);
             return signWithKey(artifactFile, outputSig, secretKeyRing);
         } catch (IOException e) {
             throw new ToolExecutionException("Signing failed", e);
@@ -530,7 +537,7 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
                     null);
         }
 
-        BcKeyStore.KeyLookup found = keyStore.findPublicKey(fingerprint);
+        BcKeyStore.KeyLookup found = certificateFor(fingerprint);
         if (found == null) {
             return OpenPgpVerifyResult.indeterminate(IndeterminateReason.KEY_UNAVAILABLE, null, algorithm, version, fingerprint,
                     fingerprint);
@@ -768,6 +775,41 @@ class BcRunner implements AutoCloseable, SignatureTool, KeyGenerator, KeyImporte
             return "unknown(" + algoId + ")";
         }
         return name;
+    }
+
+    /**
+     * Picks the certificate to verify a signature with: the one the key store holds for the key
+     * the signature names, else the certificate of the key this runner has signed with.
+     * <p>
+     * A key loaded from {@code SIGMUND_BC_SIGNING_KEY} or a {@code tsk-file} is in no store, yet
+     * the runner must verify its own signatures, as signing does when {@code signing.signer}
+     * asserts who signs. The own certificate is available only after this runner has signed, and
+     * is used only when no store holds the key: every other key is found in the stores as
+     * before. Choosing it decides only which public key is tried — the signature is still
+     * verified cryptographically against it. Its source is unknown, since no store holds it.
+     *
+     * @param fingerprint the fingerprint or key ID the signature names
+     * @return the certificate and its source, or {@code null} when neither holds it
+     */
+    private BcKeyStore.KeyLookup certificateFor(String fingerprint) {
+        BcKeyStore.KeyLookup found = keyStore.findPublicKey(fingerprint);
+        if (found != null) {
+            return found;
+        }
+        PGPPublicKeyRing own = signingCertificate;
+        if (own != null && BcKeyStore.matchesFingerprint(own, fingerprint)) {
+            return new BcKeyStore.KeyLookup(TrustRootRef.unknown(), own);
+        }
+        return null;
+    }
+
+    /**
+     * Returns the certificate of a secret key: its public keys with their signatures.
+     */
+    private static PGPPublicKeyRing certificateOf(PGPSecretKeyRing secretKeyRing) {
+        List<PGPPublicKey> publicKeys = new ArrayList<>();
+        secretKeyRing.getPublicKeys().forEachRemaining(publicKeys::add);
+        return new PGPPublicKeyRing(publicKeys);
     }
 
     // --- Signing internals ---

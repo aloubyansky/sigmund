@@ -1,5 +1,6 @@
 package dev.cyberstamp.sigmund.core;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -42,5 +43,35 @@ public record SignerIdentity(
             throw new IllegalArgumentException("credentials must not be null");
         }
         credentials = List.copyOf(credentials);
+    }
+
+    /**
+     * Returns this signer with every identity entry naming its issuer.
+     * <p>
+     * An {@link IdentityCredential} that names an issuer is kept. One that names none is replaced
+     * by one copy per default issuer, with the same attributes and in the order of
+     * {@code defaultIssuers}; with no default issuers it is dropped. Every other credential is
+     * kept as is, and the original order is preserved.
+     * <p>
+     * The result accepts exactly what the original accepts with those default issuers: an entry
+     * without issuer already matches a proven identity from any default issuer, and the copies
+     * spell that alternative out. Matching the result with no default issuers therefore gives the
+     * same verdict.
+     *
+     * @param defaultIssuers the issuers trusted for identity entries that name none
+     * @return a signer with the same id whose identity entries all name an issuer
+     */
+    public SignerIdentity withIssuersResolved(List<String> defaultIssuers) {
+        List<Credential> resolved = new ArrayList<>();
+        for (Credential credential : credentials) {
+            if (credential instanceof IdentityCredential identity && identity.issuer() == null) {
+                for (String issuer : defaultIssuers) {
+                    resolved.add(new IdentityCredential(issuer, identity.attributes()));
+                }
+            } else {
+                resolved.add(credential);
+            }
+        }
+        return new SignerIdentity(id, resolved);
     }
 }
