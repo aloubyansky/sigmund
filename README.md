@@ -107,7 +107,7 @@ The plugin uses GPG by default if available, falling back to the Bouncy Castle b
 ```yaml
 tools:
   gpg:
-    key-name: "0x12345678"
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
 ```
 
 Or use a BC-generated key:
@@ -129,9 +129,9 @@ Then configure both classic and PQC in `sigmund.yaml`:
 ```yaml
 tools:
   gpg:
-    key-name: "0x12345678"
+    signing-fingerprint: "4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12"
   sq:
-    signing-fingerprint: "D62AAB339E45E5EA2FD036872B01D46A517A2991..."
+    signing-fingerprint: "D62AAB339E45E5EA2FD036872B01D46A517A29911A2B3C4D5E6F7A8B9C0D1E2F"
 ```
 
 Run `mvn sigmund:sign` to sign with both — classic signature first, PQC signature second, combined in one `.asc` file.

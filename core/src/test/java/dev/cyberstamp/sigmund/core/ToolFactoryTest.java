@@ -8,9 +8,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class ToolFactoryTest {
 
@@ -49,22 +53,32 @@ class ToolFactoryTest {
         }
 
         @Test
-        void createWithKeyNameSetting() {
-            SignatureTool tool = factory.createSigning(Map.of("key-name", "user@example.com"), null);
+        void theSigningFingerprintSelectsTheKey() {
+            var tool = (GpgRunner) factory.createSigning(
+                    Map.of("signing-fingerprint", "4aee18f83afdeb23468b2e5a2d7baf3c1e9f5a12"), null);
+
             assertThat(tool.canSign()).isTrue();
+            assertThat(tool.signingFingerprint()).isEqualTo("4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12");
         }
 
         @Test
-        void createNoKeyNameNoCredential() {
-            SignatureTool tool = factory.createSigning(Map.of(), null);
+        void keyNameIsNotASetting() {
+            assertThat(factory.acceptedSettings()).doesNotContain("key-name").contains("signing-fingerprint");
+        }
+
+        @Test
+        void withoutASigningFingerprintGpgChoosesItsDefaultKey() {
+            var tool = (GpgRunner) factory.createSigning(Map.of(), null);
+
             assertThat(tool.canSign()).isTrue();
+            assertThat(tool.signingFingerprint()).isNull();
         }
 
         @Test
         void aSigningKeyComesOnlyFromSettings() {
             var tool = (GpgRunner) factory.createSigning(Map.of(), signerPinning(PINNED));
 
-            assertThat(tool.keyName()).isNull();
+            assertThat(tool.signingFingerprint()).isNull();
         }
     }
 
@@ -210,7 +224,7 @@ class ToolFactoryTest {
         @Test
         void createWithTskFile() {
             SignatureTool tool = factory.createSigning(Map.of(
-                    "signing-fingerprint", "ABCD1234",
+                    "signing-fingerprint", PINNED,
                     "tsk-file", "/tmp/key.tsk"), null);
             assertThat(tool.canSign()).isTrue();
         }
@@ -233,6 +247,52 @@ class ToolFactoryTest {
             assertThatThrownBy(() -> builder.addSigningTool("nonexistent", Map.of()))
                     .isInstanceOf(SigmundException.class)
                     .hasMessageContaining("unknown tool 'nonexistent'");
+        }
+    }
+
+    /**
+     * Every OpenPGP tool takes its signing key as a full fingerprint, never a key ID, an address
+     * or a user ID, and rejects anything else when its settings are checked and when it is built.
+     */
+    @Nested
+    class SigningFingerprintSetting {
+
+        static Stream<SignatureToolFactory> openPgpFactories() {
+            return Stream.of(new BcToolFactory(), new SqToolFactory(), new GpgToolFactory());
+        }
+
+        static Stream<Arguments> notFullFingerprints() {
+            return openPgpFactories().flatMap(factory -> Stream.of(
+                    "DEADBEEF",
+                    "0x4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12",
+                    "user@example.com",
+                    "4AEE 18F8 3AFD EB23 468B 2E5A 2D7B AF3C 1E9F 5A12")
+                    .map(value -> Arguments.of(factory, value)));
+        }
+
+        @ParameterizedTest
+        @MethodSource("notFullFingerprints")
+        void anythingButAFullFingerprintIsRejectedWhenBuilt(SignatureToolFactory factory, String value) {
+            assertThatThrownBy(() -> factory.createSigning(Map.of("signing-fingerprint", value), null))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("tools." + factory.toolName() + ".signing-fingerprint")
+                    .hasMessageContaining("not a full fingerprint");
+        }
+
+        @ParameterizedTest
+        @MethodSource("notFullFingerprints")
+        void anythingButAFullFingerprintIsRejectedWhenChecked(SignatureToolFactory factory, String value) {
+            assertThatThrownBy(() -> factory.checkSettingValues(Map.of("signing-fingerprint", value)))
+                    .isInstanceOf(PolicyConfigException.class)
+                    .hasMessageContaining("tools." + factory.toolName() + ".signing-fingerprint");
+        }
+
+        @ParameterizedTest
+        @MethodSource("openPgpFactories")
+        void aV4OrV6FingerprintInEitherCaseIsAccepted(SignatureToolFactory factory) {
+            factory.checkSettingValues(Map.of("signing-fingerprint", "4aee18f83afdeb23468b2e5a2d7baf3c1e9f5a12"));
+            factory.checkSettingValues(Map.of("signing-fingerprint", PINNED));
+            factory.checkSettingValues(Map.of());
         }
     }
 }

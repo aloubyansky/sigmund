@@ -45,7 +45,7 @@ class SchemaAgreementTest {
         return Stream.of(
                 "",
                 "rules: []",
-                "tools: { gpg: { key-name: 0x12345678, executable: 0123 } }",
+                "tools: { gpg: { passphrase-env: 0x12345678, executable: 0123 } }",
                 """
                         issuers: [keys.openpgp.org, "https://token.actions.githubusercontent.com"]
                         signers:
@@ -100,7 +100,8 @@ class SchemaAgreementTest {
                             cipher-suite: ed448
                           sq:
                           gpg:
-                            key-name: "0xDEADBEEF"
+                            home: /tmp/gnupg
+                            signing-fingerprint: "4aee18f83afdeb23468b2e5a2d7baf3c1e9f5a12"
                         """);
     }
 
@@ -162,7 +163,11 @@ class SchemaAgreementTest {
                 "tools: { sqq: { home: /tmp/sq } }",
                 "tools: { bc: { gnupg-hom: /tmp/gnupg } }",
                 "tools: { bc: { credentials: pgp4 } }",
-                "tools: { sq: { gnupg-home: /tmp/gnupg } }");
+                "tools: { sq: { gnupg-home: /tmp/gnupg } }",
+                "tools: { gpg: { key-name: \"4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A12\" } }",
+                "tools: { gpg: { signing-fingerprint: \"0xDEADBEEF\" } }",
+                "tools: { sq: { signing-fingerprint: \"alice@example.com\" } }",
+                "tools: { bc: { signing-fingerprint: \"4AEE18F83AFDEB23468B2E5A2D7BAF3C1E9F5A\" } }");
     }
 
     @ParameterizedTest

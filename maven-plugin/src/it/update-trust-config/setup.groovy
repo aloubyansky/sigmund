@@ -23,6 +23,13 @@ signers:
 rules:
   - match: [org.apache.commons:commons-lang3]
     requires: [gary-gregory]
+
+# gpgHome places gpg's keyring and, through it, the one bc reads; bc's own stores are not
+# GnuPG's, so they are placed here to keep the test off the user's cert-d and private keys.
+tools:
+  bc:
+    cert-d-home: ${new File(gpghome, "cert-d").path}
+    bc-private-home: ${new File(gpghome, "bc-private").path}
 """
 println "Created partial sigmund.yaml (commons-lang3 only, with comments)"
 println "Created clean GNUPGHOME at ${gpghome}"

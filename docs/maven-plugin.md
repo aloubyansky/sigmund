@@ -90,6 +90,7 @@ Signs all project artifacts (JAR, POM, sources, javadoc) with hybrid GPG and PQC
 | Property | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `sigmund.sqHome` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
+| `sigmund.gpgHome` | No | — | GnuPG home directory: overrides `tools.gpg.home`, which BC also reads public keys from unless `tools.bc.gnupg-home` is set |
 | `sigmund.skip` | No | `false` | Skip signing |
 
 **Configuration:**
@@ -108,6 +109,7 @@ Displays the effective signing configuration and signer identities without perfo
 |----------|----------|---------|-------------|
 | `sigmund.profile` | No | default profile | Signing profile to display |
 | `sigmund.sqHome` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
+| `sigmund.gpgHome` | No | — | GnuPG home directory: overrides `tools.gpg.home`, which BC also reads public keys from unless `tools.bc.gnupg-home` is set |
 | `sigmund.skip` | No | `false` | Skip this goal |
 
 **Examples:**
@@ -147,7 +149,7 @@ The report groups results by outcome, then by who attested them. Each artifact l
 | `sigmund.verifyPomFiles` | No | `false` | Also verify signatures on POM files for each dependency |
 | `sigmund.detail` | No | `false` | Add the credentials proven and the trust root to each attester group, and the evidence file and claim time to each artifact, and list ignored artifacts. Results are grouped by outcome and then by attester either way |
 | `sigmund.sqHome` | No | `~/.local/share/sequoia` | Sequoia keystore directory |
-| `sigmund.gpgHome` | No | — | GnuPG home directory, overrides GPG and BC home paths |
+| `sigmund.gpgHome` | No | — | GnuPG home directory: overrides `tools.gpg.home`, which BC also reads public keys from unless `tools.bc.gnupg-home` is set |
 | `sigmund.importToKeyring` | No | — | Persist fetched keys to keyrings. Overrides config file setting. |
 | `sigmund.includeTestDependencies` | No | `false` | Include test-scoped dependencies |
 | `sigmund.skip` | No | `false` | Skip verification |
@@ -250,7 +252,7 @@ Dependencies are grouped by signer, sorted alphabetically. Unsigned artifacts an
 | `sigmund.resolveSigners` | No | `true` | Fetch unknown GPG keys from keyservers to resolve signer identities |
 | `sigmund.keyservers` | No | `hkps://keys.openpgp.org` | Comma-separated list of keyservers for fetching GPG keys |
 | `sigmund.sqHome` | No | `~/.local/share/sequoia` | Sequoia keystore directory for PQC cert lookup |
-| `sigmund.gpgHome` | No | — | GnuPG home directory, overrides GPG and BC home paths |
+| `sigmund.gpgHome` | No | — | GnuPG home directory: overrides `tools.gpg.home`, which BC also reads public keys from unless `tools.bc.gnupg-home` is set |
 | `sigmund.importToKeyring` | No | — | Persist fetched keys to keyrings. Overrides config file setting. |
 | `sigmund.includeTestDependencies` | No | `false` | Include test-scoped dependencies |
 | `sigmund.generateTrustConfig` | No | — | Generate a `sigmund.yaml`. Set to `true` to write to the project root, or provide a file path. Fails if the file already exists unless `sigmund.overwrite=true`. |

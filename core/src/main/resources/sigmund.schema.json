@@ -99,7 +99,7 @@
             "gnupg-home": { "description": "GnuPG home directory to read public keys from. Default ~/.gnupg.", "$ref": "#/$defs/setting" },
             "cert-d-home": { "description": "Shared OpenPGP cert-d directory for public certificates. Default ~/.local/share/pgp.cert.d.", "$ref": "#/$defs/setting" },
             "bc-private-home": { "description": "Directory of BC's private key store. Default ~/.local/share/sigmund/bc-private.", "$ref": "#/$defs/setting" },
-            "signing-fingerprint": { "description": "Fingerprint of the key to sign with.", "$ref": "#/$defs/setting" },
+            "signing-fingerprint": { "description": "Full fingerprint of the key to sign with.", "$ref": "#/$defs/signingFingerprint" },
             "tsk-file": { "description": "Path to an exported Transferable Secret Key to sign with.", "$ref": "#/$defs/setting" },
             "signing-key-env": { "description": "Environment variable holding an ASCII-armored signing key. Default SIGMUND_BC_SIGNING_KEY.", "$ref": "#/$defs/setting" },
             "passphrase-env": { "description": "Environment variable holding the key's passphrase. Default SIGMUND_BC_PASSPHRASE.", "$ref": "#/$defs/setting" },
@@ -113,7 +113,7 @@
           "properties": {
             "home": { "description": "Sequoia home directory. Default ~/.local/share/sequoia.", "$ref": "#/$defs/setting" },
             "executable": { "description": "Path to the sq executable. Default sq.", "$ref": "#/$defs/setting" },
-            "signing-fingerprint": { "description": "Fingerprint of the key to sign with.", "$ref": "#/$defs/setting" }
+            "signing-fingerprint": { "description": "Full fingerprint of the key to sign with. Default: sq's sign.signer-self.", "$ref": "#/$defs/signingFingerprint" }
           }
         },
         "gpg": {
@@ -122,7 +122,7 @@
           "additionalProperties": false,
           "properties": {
             "executable": { "description": "Path to the gpg executable. Default gpg.", "$ref": "#/$defs/setting" },
-            "key-name": { "description": "Key to sign with: fingerprint, key ID or email.", "$ref": "#/$defs/setting" },
+            "signing-fingerprint": { "description": "Full fingerprint of the key to sign with. Default: default-key in gpg.conf, else the first secret key.", "$ref": "#/$defs/signingFingerprint" },
             "home": { "description": "GnuPG home directory (--homedir).", "$ref": "#/$defs/setting" },
             "passphrase-env": { "description": "Environment variable holding the key's passphrase. Default SIGMUND_GPG_PASSPHRASE.", "$ref": "#/$defs/setting" }
           }
@@ -171,6 +171,11 @@
         { "type": "array", "items": { "$ref": "#/$defs/credentialType" } },
         { "type": "null" }
       ]
+    },
+    "signingFingerprint": {
+      "description": "A full OpenPGP fingerprint: 40 hexadecimal characters for a v4 key, 64 for v6. A key ID, an address or a user ID is not accepted.",
+      "type": "string",
+      "pattern": "^([0-9A-Fa-f]{40}|[0-9A-Fa-f]{64})$"
     },
     "pgp4": {
       "description": "A full OpenPGP v4 fingerprint: 40 hexadecimal characters. A key ID is not accepted.",
