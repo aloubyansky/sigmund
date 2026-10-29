@@ -80,6 +80,7 @@ sigmund keygen --userid <USER_ID> [options]
 | `--userid` | Yes | — | User ID in canonical form (e.g., `"Alice <alice@example.com>"`) |
 | `--tool` | Yes | — | Backend: `sq` (PQC/hybrid support) or `bc` (classic OpenPGP) |
 | `--cipher-suite` | No | `mldsa87-ed448` (sq)<br/>`ed25519` (bc) | Cipher suite for the key |
+| `--credential-type` | No | `pgp4` (bc)<br/>`pgp6` (sq) | Key version: `pgp4` or `pgp6`. bc generates v4 by default — the version keyservers serve and GnuPG signs with — and v6 for `ed25519`, `ed448` (v6 only) and `rsa4096`; ECDSA suites are v4 only. sq generates v6 only |
 | `--passphrase-env` | No | `SIGMUND_BC_PASSPHRASE` | Environment variable containing the BC key passphrase (bc keygen only) |
 | `--sq-home` | No | `~/.local/share/sequoia` | Sequoia keystore directory (overrides `SEQUOIA_HOME`) (sq only) |
 
@@ -95,10 +96,16 @@ Generate a PQC key with the default ML-DSA-87 + Ed448 hybrid cipher suite:
 sigmund keygen --tool sq --userid "Alice <alice@example.com>"
 ```
 
-Generate a classic Ed25519 key using Bouncy Castle:
+Generate a classic Ed25519 key using Bouncy Castle (v4, publishable on keys.openpgp.org and usable by GnuPG):
 
 ```bash
 sigmund keygen --userid "Alice <alice@example.com>" --tool bc --cipher-suite ed25519
+```
+
+Generate a v6 Ed25519 key using Bouncy Castle:
+
+```bash
+sigmund keygen --userid "Alice <alice@example.com>" --tool bc --credential-type pgp6
 ```
 
 Generate a passphrase-protected BC key:

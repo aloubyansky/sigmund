@@ -1,6 +1,7 @@
 package dev.cyberstamp.sigmund.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,9 +17,16 @@ import org.junit.jupiter.api.io.TempDir;
 class SqRunnerTest {
 
     @Test
+    void sqGeneratesV6KeysOnly(@TempDir Path tempDir) {
+        assertThatThrownBy(() -> new SqRunner(tempDir).generateKey("A <a@example.org>", "cv25519", Credential.TYPE_PGP4))
+                .isInstanceOf(ToolExecutionException.class)
+                .hasMessageContaining("sq generates pgp6 keys only, not pgp4");
+    }
+
+    @Test
     void primaryFingerprintIsReadFromTheCertificate(@TempDir Path tempDir) throws Exception {
         BcKeyStore store = new BcKeyStore(null, tempDir.resolve("cert-d"), tempDir.resolve("bc"));
-        String primary = new BcRunner(store, null, null).generateKey("A <a@example.org>", "ed25519");
+        String primary = new BcRunner(store, null, null).generateKey("A <a@example.org>", "ed25519", null);
         Path certFile = tempDir.resolve("cert.pgp");
         Files.write(certFile, store.findPublicKey(primary).ring().getEncoded());
         String subkey = "1111111111111111111111111111111111111111";

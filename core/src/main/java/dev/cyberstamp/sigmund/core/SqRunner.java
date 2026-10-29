@@ -187,6 +187,21 @@ public class SqRunner implements SignatureTool, KeyGenerator, CertExporter {
      * @throws IllegalStateException if the fingerprint cannot be parsed from the output
      */
     public String generateKey(String userId, String cipherSuite) {
+        return generateKey(userId, cipherSuite, Credential.TYPE_PGP6);
+    }
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Sequoia keys are generated as v6 ({@code --profile rfc9580}), which its post-quantum
+     * suites require, so the only credential type accepted is {@code pgp6}.
+     */
+    @Override
+    public String generateKey(String userId, String cipherSuite, String credentialType) {
+        if (credentialType != null && !Credential.TYPE_PGP6.equals(credentialType)) {
+            throw new ToolExecutionException("sq generates " + Credential.TYPE_PGP6 + " keys only, not "
+                    + credentialType + "; generate a " + Credential.TYPE_PGP4 + " key with bc");
+        }
         if (userId == null || userId.isEmpty()) {
             throw new IllegalArgumentException("userId cannot be null or empty");
         }

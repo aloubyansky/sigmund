@@ -702,13 +702,15 @@ Configured in the top-level `tools.bc` section.
 **Supported cipher suites (BC):**
 
 - `ed25519` — EdDSA with Curve25519 (default)
-- `ed448` — EdDSA with Curve448
+- `ed448` — EdDSA with Curve448 (v6 only)
 - `rsa4096` — RSA with 4096-bit modulus
-- `nistp256` — ECDSA with NIST P-256 curve
-- `nistp384` — ECDSA with NIST P-384 curve
-- `nistp521` — ECDSA with NIST P-521 curve
+- `nistp256` — ECDSA with NIST P-256 curve (v4 only)
+- `nistp384` — ECDSA with NIST P-384 curve (v4 only)
+- `nistp521` — ECDSA with NIST P-521 curve (v4 only)
 
-BC does not generate post-quantum keys; generate them with [SQ](#sq-sequoia).
+Keys are v4 unless `sigmund keygen --credential-type pgp6` asks for v6: keys.openpgp.org serves
+only v4 keys, and GnuPG signs and verifies only v4. BC does not generate post-quantum keys;
+generate them with [SQ](#sq-sequoia).
 
 **Passphrase resolution order:**
 
