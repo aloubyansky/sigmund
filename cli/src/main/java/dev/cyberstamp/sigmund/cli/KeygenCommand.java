@@ -25,6 +25,10 @@ public class KeygenCommand implements Callable<Integer> {
     private String cipherSuite;
 
     @CommandLine.Option(names = {
+            "--credential-type" }, description = "Key version: pgp4 or pgp6 (default: pgp4 for bc, which keyservers serve and gpg signs with; sq generates pgp6 only)")
+    private String credentialType;
+
+    @CommandLine.Option(names = {
             "--tool" }, required = true, description = "Key generation backend: sq or bc")
     private String tool;
 
@@ -59,7 +63,7 @@ public class KeygenCommand implements Callable<Integer> {
         String suite = cipherSuite != null ? cipherSuite : SqRunner.DEFAULT_CIPHER_SUITE;
         Path sqHomeDir = sqHomeMixin.resolveSequoiaHome();
         SqRunner sq = new SqRunner(sqHomeDir);
-        String fingerprint = sq.generateKey(userId, suite);
+        String fingerprint = sq.generateKey(userId, suite, credentialType);
 
         System.out.println("Key generated successfully!");
         System.out.println();
@@ -92,7 +96,7 @@ public class KeygenCommand implements Callable<Integer> {
         }
         try (Sigmund sigmund = builder.addSigningTool("bc", settings).build()) {
             KeyGenerator keygen = sigmund.findTool(KeyGenerator.class, "bc");
-            String fingerprint = keygen.generateKey(userId, cipherSuite);
+            String fingerprint = keygen.generateKey(userId, cipherSuite, credentialType);
 
             System.out.println("BC key generated successfully!");
             System.out.println();
